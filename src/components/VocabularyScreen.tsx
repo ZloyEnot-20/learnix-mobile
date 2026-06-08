@@ -6,8 +6,12 @@ import {
   Text,
   View,
 } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
+import { ResultStatusIcon, resultVariant } from "./exercise/shared"
+import { BackButton } from "./ui/BackButton"
 import { homeworkApi } from "../lib/api"
+import { recordVocabDeckCompletion } from "../lib/learned-vocabulary"
 import { shuffle } from "../lib/utils"
 import {
   wordTranslation,
@@ -23,23 +27,47 @@ interface VocabScreenProps {
   deck: VocabDeck
   homeworkId?: string
   isStudent: boolean
+  homeworkMode?: boolean
+  studentId?: string
+  onQuizActiveChange?: (active: boolean) => void
 }
 
-export function VocabularyScreen({ deck, homeworkId, isStudent }: VocabScreenProps) {
+export function VocabularyScreen({
+  deck,
+  homeworkId,
+  isStudent,
+  homeworkMode = false,
+  studentId,
+  onQuizActiveChange,
+}: VocabScreenProps) {
   const router = useRouter()
-  const [mode, setMode] = useState<Mode>("menu")
-  const [lang, setLang] = useState<TranslationLang>("ru")
+  const [mode, setMode] = useState<Mode>(homeworkMode ? "quiz" : "menu")
+  const [lang, setLang] = useState<TranslationLang>("uz")
   const [quizScore, setQuizScore] = useState({ correct: 0, total: 0 })
 
   useEffect(() => {
-    if (homeworkId && isStudent) {
+    if (homeworkId && isStudent && !homeworkMode) {
       void homeworkApi.start(homeworkId).catch(() => {})
     }
-  }, [homeworkId, isStudent])
+  }, [homeworkId, isStudent, homeworkMode])
+
+  useEffect(() => {
+    onQuizActiveChange?.(mode === "quiz")
+  }, [mode, onQuizActiveChange])
 
   const handleQuizComplete = (correct: number, total: number) => {
+    onQuizActiveChange?.(false)
     setQuizScore({ correct, total })
     setMode("results")
+    if (studentId) {
+      void recordVocabDeckCompletion(
+        studentId,
+        deck,
+        correct,
+        total,
+        homeworkMode ? "homework" : "game",
+      )
+    }
     if (homeworkId && isStudent) {
       void homeworkApi
         .recordAttempt(homeworkId, {
@@ -51,16 +79,14 @@ export function VocabularyScreen({ deck, homeworkId, isStudent }: VocabScreenPro
     }
   }
 
-  if (mode === "menu") {
+  if (mode === "menu" && !homeworkMode) {
     return (
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <Pressable onPress={() => router.back()} style={styles.back}>
-          <Text style={styles.backText}>← Back</Text>
-        </Pressable>
+        <BackButton onPress={() => router.back()} style={styles.back} />
         <Text style={styles.deckTitle}>{deck.title}</Text>
         <Text style={styles.deckDesc}>{deck.description}</Text>
         <View style={styles.langRow}>
-          {(["ru", "uz"] as const).map((l) => (
+          {(["uz", "ru"] as const).map((l) => (
             <Pressable
               key={l}
               onPress={() => setLang(l)}
@@ -73,12 +99,16 @@ export function VocabularyScreen({ deck, homeworkId, isStudent }: VocabScreenPro
           ))}
         </View>
         <Pressable style={styles.modeCard} onPress={() => setMode("flashcards")}>
-          <Text style={styles.modeEmoji}>🃏</Text>
+          <View style={styles.modeIconWrap}>
+            <Ionicons name="albums-outline" size={28} color={colors.primary} />
+          </View>
           <Text style={styles.modeTitle}>Flashcards</Text>
           <Text style={styles.modeDesc}>{deck.words.length} words · Swipe & flip</Text>
         </Pressable>
         <Pressable style={styles.modeCard} onPress={() => setMode("quiz")}>
-          <Text style={styles.modeEmoji}>🎯</Text>
+          <View style={styles.modeIconWrap}>
+            <Ionicons name="help-circle-outline" size={28} color={colors.primary} />
+          </View>
           <Text style={styles.modeTitle}>Quiz</Text>
           <Text style={styles.modeDesc}>Test yourself with multiple choice</Text>
         </Pressable>
@@ -102,22 +132,30 @@ export function VocabularyScreen({ deck, homeworkId, isStudent }: VocabScreenPro
       <Quiz
         deck={deck}
         lang={lang}
-        onExit={() => setMode("menu")}
+        homeworkMode={homeworkMode}
+        onExit={() => setMode(homeworkMode ? "quiz" : "menu")}
         onComplete={handleQuizComplete}
       />
     )
   }
 
+  const passed = quizScore.correct >= Math.ceil(quizScore.total * 0.6)
+
   return (
     <View style={styles.resultsWrap}>
-      <Text style={styles.resultsEmoji}>🎉</Text>
-      <Text style={styles.resultsTitle}>Quiz complete!</Text>
-      <Text style={styles.resultsScore}>
-        {quizScore.correct}/{quizScore.total} correct
-      </Text>
-      <Pressable style={styles.primaryBtn} onPress={() => router.back()}>
-        <Text style={styles.primaryBtnText}>Done</Text>
-      </Pressable>
+      <View style={styles.resultsBody}>
+        <ResultStatusIcon variant={resultVariant(false, passed)} />
+        <Text style={styles.resultsTitle}>Quiz complete!</Text>
+        <Text style={styles.resultsScore}>
+          {quizScore.correct}/{quizScore.total} correct
+        </Text>
+        <Pressable
+          style={styles.resultsBtn}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.primaryBtnText}>Done</Text>
+        </Pressable>
+      </View>
     </View>
   )
 }
@@ -153,9 +191,7 @@ function Flashcards({
   return (
     <View style={styles.container}>
       <View style={styles.fcHeader}>
-        <Pressable onPress={onExit}>
-          <Text style={styles.backText}>← Menu</Text>
-        </Pressable>
+        <BackButton onPress={onExit} />
         <Text style={styles.fcCounter}>
           {index + 1}/{words.length}
         </Text>
@@ -185,11 +221,13 @@ function Flashcards({
 function Quiz({
   deck,
   lang,
+  homeworkMode,
   onExit,
   onComplete,
 }: {
   deck: VocabDeck
   lang: TranslationLang
+  homeworkMode?: boolean
   onExit: () => void
   onComplete: (correct: number, total: number) => void
 }) {
@@ -232,19 +270,23 @@ function Quiz({
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Pressable onPress={onExit}>
-        <Text style={styles.backText}>← Menu</Text>
-      </Pressable>
-      <Text style={styles.quizProgress}>
-        Question {index + 1}/{questions.length} · ✓ {correct}
-      </Text>
+      {!homeworkMode && <BackButton onPress={onExit} style={styles.back} />}
+      <View style={styles.quizProgressRow}>
+        <Text style={styles.quizProgress}>
+          Question {index + 1}/{questions.length}
+        </Text>
+        <View style={styles.quizCorrectRow}>
+          <Ionicons name="checkmark" size={12} color={colors.success} />
+          <Text style={styles.quizCorrectText}>{correct}</Text>
+        </View>
+      </View>
       <View style={styles.card}>
         <Text style={styles.quizTerm}>{word.term}</Text>
         <Text style={styles.quizDef}>{word.definition}</Text>
         <View style={styles.options}>
-          {options.map((opt) => (
+          {options.map((opt, optIndex) => (
             <Pressable
-              key={opt}
+              key={`${index}-opt-${optIndex}`}
               disabled={checked}
               onPress={() => setSelected(opt)}
               style={[
@@ -282,7 +324,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 40 },
   back: { marginBottom: 12 },
-  backText: { fontSize: 14, color: colors.textSecondary },
   deckTitle: { fontSize: 24, fontWeight: "700", color: colors.text },
   deckDesc: { fontSize: 14, color: colors.textSecondary, marginTop: 6, marginBottom: 16 },
   langRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
@@ -304,7 +345,15 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 12,
   },
-  modeEmoji: { fontSize: 32, marginBottom: 8 },
+  modeIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: "#EEF2FF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
   modeTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
   modeDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
   fcHeader: {
@@ -345,7 +394,15 @@ const styles = StyleSheet.create({
   navBtnText: { fontSize: 15, fontWeight: "600", color: colors.text },
   quizLink: { alignItems: "center", marginTop: 20 },
   quizLinkText: { fontSize: 15, fontWeight: "600", color: colors.primary },
-  quizProgress: { fontSize: 14, color: colors.textSecondary, marginBottom: 12 },
+  quizProgressRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  quizProgress: { fontSize: 14, color: colors.textSecondary },
+  quizCorrectRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  quizCorrectText: { fontSize: 14, color: colors.textSecondary, fontWeight: "500" },
   card: {
     backgroundColor: colors.card,
     borderRadius: 16,
@@ -367,16 +424,53 @@ const styles = StyleSheet.create({
   optionWrong: { borderColor: colors.error, backgroundColor: colors.errorBg },
   optionText: { fontSize: 16, color: colors.text },
   primaryBtn: {
+    alignSelf: "stretch",
     backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
+    paddingHorizontal: 20,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
     marginTop: 16,
   },
   btnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  resultsWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
-  resultsEmoji: { fontSize: 48 },
-  resultsTitle: { fontSize: 24, fontWeight: "700", color: colors.text, marginTop: 12 },
-  resultsScore: { fontSize: 18, color: colors.textSecondary, marginTop: 8 },
+  resultsWrap: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    width: "100%",
+  },
+  resultsBody: {
+    width: "100%",
+    maxWidth: 320,
+    alignItems: "center",
+  },
+  resultsBtn: {
+    alignSelf: "stretch",
+    width: "100%",
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+    marginTop: 24,
+  },
+  resultsTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: colors.text,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  resultsScore: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    marginTop: 8,
+    textAlign: "center",
+  },
 })

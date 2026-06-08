@@ -1,28 +1,64 @@
-import React, { useEffect, useState } from "react"
+import React, { useCallback, useState } from "react"
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
+import { useFocusEffect } from "expo-router"
 import { useAuth } from "../../src/context/AuthContext"
+import { ContinueLearningBanner } from "../../src/components/ContinueLearningBanner"
+import { VocabularyReviewBanner } from "../../src/components/VocabularyReviewBanner"
 import { LevelScale } from "../../src/components/LevelScale"
+import { FadeInDown } from "../../src/components/ui/FadeInDown"
+import { HomeSkeleton } from "../../src/components/skeletons/Layouts"
 import { testResultsApi } from "../../src/lib/api"
+import {
+  getVocabularyReviewPreview,
+  type VocabularyReviewPreview,
+} from "../../src/lib/learned-vocabulary"
+import {
+  resolveContinueLearning,
+  type ContinueLearningItem,
+} from "../../src/lib/continue-learning"
 import type { TestResult } from "../../src/types/domain"
-import { colors, subjectColors } from "../../src/theme/colors"
+import { colors, radius, shadow, spacing, typography, subjectColors } from "../../src/theme/tokens"
+
+const TEST_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  reading: "book-outline",
+  listening: "headset-outline",
+  writing: "create-outline",
+  speaking: "mic-outline",
+}
 
 export default function HomeScreen() {
   const { user } = useAuth()
   const [results, setResults] = useState<TestResult[]>([])
+  const [continueItem, setContinueItem] = useState<ContinueLearningItem | null>(null)
+  const [vocabPreview, setVocabPreview] = useState<VocabularyReviewPreview | null>(null)
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    if (!user) return
     try {
-      const data = await testResultsApi.list()
+      const [data, cont, review] = await Promise.all([
+        testResultsApi.list(),
+        resolveContinueLearning(user.id),
+        getVocabularyReviewPreview(user.id),
+      ])
       setResults(data)
+      setContinueItem(cont)
+      setVocabPreview(review)
     } catch {
       setResults([])
+      setContinueItem(null)
+      setVocabPreview(null)
     }
-  }
+  }, [user])
 
-  useEffect(() => {
-    load()
-  }, [])
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true)
+      load().finally(() => setLoading(false))
+    }, [load]),
+  )
 
   const onRefresh = async () => {
     setRefreshing(true)
@@ -31,6 +67,8 @@ export default function HomeScreen() {
   }
 
   if (!user) return null
+
+  const showSkeleton = loading || refreshing
 
   const avgBand =
     results.length > 0
@@ -41,59 +79,92 @@ export default function HomeScreen() {
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.primary}
+        />
+      }
     >
-      <Text style={styles.greeting}>Hello, {user.name.split(" ")[0]}! 👋</Text>
-      <Text style={styles.subGreeting}>Track your progress and level</Text>
+      <FadeInDown index={0}>
+        <Text style={styles.greeting}>Hello, {user.name.split(" ")[0]}</Text>
+        <Text style={styles.subGreeting}>Track your progress and level</Text>
+      </FadeInDown>
 
-      <View style={styles.section}>
-        <LevelScale studentId={user.id} />
-      </View>
+      {showSkeleton ? (
+        <HomeSkeleton />
+      ) : (
+        <>
+          {continueItem ? (
+            <FadeInDown index={1}>
+              <ContinueLearningBanner item={continueItem} />
+            </FadeInDown>
+          ) : null}
 
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{results.length}</Text>
-          <Text style={styles.statLabel}>Tests taken</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statValue}>{avgBand}</Text>
-          <Text style={styles.statLabel}>Avg band</Text>
-        </View>
-      </View>
+          {vocabPreview ? (
+            <FadeInDown index={continueItem ? 2 : 1}>
+              <VocabularyReviewBanner preview={vocabPreview} />
+            </FadeInDown>
+          ) : null}
 
-      {results.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent results</Text>
-          {results.slice(0, 5).map((r) => (
-            <View key={r.id} style={styles.resultCard}>
-              <View
-                style={[
-                  styles.resultIcon,
-                  { backgroundColor: subjectColors[r.testType] ?? "#E2E8F0" },
-                ]}
-              >
-                <Text style={styles.resultEmoji}>
-                  {r.testType === "reading"
-                    ? "📖"
-                    : r.testType === "listening"
-                      ? "🎧"
-                      : r.testType === "writing"
-                        ? "✍️"
-                        : "🎤"}
-                </Text>
+          <FadeInDown
+            index={continueItem && vocabPreview ? 3 : continueItem || vocabPreview ? 2 : 1}
+            style={styles.section}
+          >
+            <LevelScale studentId={user.id} />
+          </FadeInDown>
+
+          <FadeInDown
+            index={continueItem && vocabPreview ? 4 : continueItem || vocabPreview ? 3 : 2}
+          >
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{results.length}</Text>
+                <Text style={styles.statLabel}>Tests taken</Text>
               </View>
-              <View style={styles.resultBody}>
-                <Text style={styles.resultType}>
-                  {r.testType.charAt(0).toUpperCase() + r.testType.slice(1)}
-                </Text>
-                <Text style={styles.resultDate}>
-                  {new Date(r.date).toLocaleDateString()}
-                </Text>
+              <View style={styles.statCard}>
+                <Text style={styles.statValue}>{avgBand}</Text>
+                <Text style={styles.statLabel}>Avg band</Text>
               </View>
-              <Text style={styles.resultBand}>Band {r.bandScore}</Text>
             </View>
-          ))}
-        </View>
+          </FadeInDown>
+
+          {results.length > 0 && (
+            <FadeInDown
+              index={continueItem && vocabPreview ? 5 : continueItem || vocabPreview ? 4 : 3}
+              style={styles.section}
+            >
+              <Text style={styles.sectionTitle}>Recent results</Text>
+              {results.slice(0, 5).map((r) => (
+                <View key={r.id} style={styles.resultCard}>
+                  <View
+                    style={[
+                      styles.resultIcon,
+                      { backgroundColor: (subjectColors[r.testType] ?? colors.border) + "33" },
+                    ]}
+                  >
+                    <Ionicons
+                      name={TEST_ICONS[r.testType] ?? "document-outline"}
+                      size={18}
+                      color={colors.primary}
+                    />
+                  </View>
+                  <View style={styles.resultBody}>
+                    <Text style={styles.resultType}>
+                      {r.testType.charAt(0).toUpperCase() + r.testType.slice(1)}
+                    </Text>
+                    <Text style={styles.resultDate}>
+                      {new Date(r.date).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Text style={styles.resultBand}>Band {r.bandScore}</Text>
+                </View>
+              ))}
+            </FadeInDown>
+          )}
+        </>
       )}
     </ScrollView>
   )
@@ -101,44 +172,41 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 16, paddingBottom: 32 },
-  greeting: { fontSize: 24, fontWeight: "700", color: colors.text },
-  subGreeting: { fontSize: 14, color: colors.textSecondary, marginTop: 4, marginBottom: 20 },
-  section: { marginBottom: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 12 },
-  statsRow: { flexDirection: "row", gap: 12, marginBottom: 20 },
+  content: { paddingHorizontal: spacing.screen, paddingBottom: spacing.xl },
+  greeting: { ...typography.h2, color: colors.text },
+  subGreeting: { ...typography.bodySm, color: colors.textSecondary, marginTop: spacing.sm, marginBottom: spacing.lg },
+  section: { marginBottom: spacing.lg },
+  sectionTitle: { ...typography.h3, fontSize: 18, color: colors.text, marginBottom: spacing.md },
+  statsRow: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.lg },
   statCard: {
     flex: 1,
     backgroundColor: colors.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 16,
+    borderRadius: radius.card,
+    padding: spacing.section,
     alignItems: "center",
+    ...shadow.card,
   },
   statValue: { fontSize: 28, fontWeight: "800", color: colors.primary },
-  statLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 4 },
+  statLabel: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm },
   resultCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: spacing.md,
     backgroundColor: colors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 12,
-    marginBottom: 8,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    ...shadow.card,
   },
   resultIcon: {
     width: 40,
     height: 40,
-    borderRadius: 10,
+    borderRadius: radius.button,
     alignItems: "center",
     justifyContent: "center",
   },
-  resultEmoji: { fontSize: 20 },
   resultBody: { flex: 1 },
-  resultType: { fontSize: 15, fontWeight: "600", color: colors.text, textTransform: "capitalize" },
-  resultDate: { fontSize: 12, color: colors.textSecondary },
+  resultType: { ...typography.label, color: colors.text, textTransform: "capitalize" },
+  resultDate: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   resultBand: { fontSize: 16, fontWeight: "700", color: colors.text },
 })

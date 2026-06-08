@@ -1,16 +1,13 @@
 import React, { useEffect, useState } from "react"
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native"
+import { StyleSheet, Text, View } from "react-native"
+import { BackButton } from "../../src/components/ui/BackButton"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useAuth } from "../../src/context/AuthContext"
 import { exercisesApi } from "../../src/lib/api"
+import { recordGameVocabulary } from "../../src/lib/record-activity"
 import { VocabularyScreen } from "../../src/components/VocabularyScreen"
+import { VocabScreenSkeleton } from "../../src/components/skeletons/Layouts"
 import type { VocabDeck } from "../../src/types/vocabulary"
 import { colors } from "../../src/theme/colors"
 
@@ -27,7 +24,12 @@ export default function VocabularyDeckScreen() {
     exercisesApi
       .vocabDeck(deckSlug)
       .then((d) => {
-        if (!cancelled) setDeck(d ?? null)
+        if (!cancelled) {
+          setDeck(d ?? null)
+          if (d && !hw && user?.role === "student" && user.id) {
+            recordGameVocabulary(user.id, d, deckSlug)
+          }
+        }
       })
       .catch(() => {
         if (!cancelled) setDeck(null)
@@ -38,28 +40,25 @@ export default function VocabularyDeckScreen() {
     return () => {
       cancelled = true
     }
-  }, [deckSlug])
+  }, [deckSlug, hw, user?.id, user?.role])
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.safe} edges={["top"]}>
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
+          <VocabScreenSkeleton />
         ) : !deck ? (
           <View style={styles.center}>
             <Text style={styles.errorText}>Deck not found</Text>
-            <Pressable onPress={() => router.back()} style={styles.errorBtn}>
-              <Text style={styles.errorBtnText}>Go back</Text>
-            </Pressable>
+            <BackButton onPress={() => router.back()} />
           </View>
         ) : (
           <VocabularyScreen
             deck={deck}
             homeworkId={hw ?? undefined}
             isStudent={user?.role === "student"}
+            studentId={user?.role === "student" ? user.id : undefined}
           />
         )}
       </SafeAreaView>
@@ -71,11 +70,4 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
   errorText: { fontSize: 16, fontWeight: "600", color: colors.text },
-  errorBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  errorBtnText: { color: "#fff", fontWeight: "600" },
 })

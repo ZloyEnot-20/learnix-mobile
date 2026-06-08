@@ -47,6 +47,29 @@ export function groupKey(iso: string): "Today" | "Yesterday" | "Earlier" {
   return "Earlier"
 }
 
+function lerpColor(from: string, to: string, t: number): string {
+  const parse = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255] as const
+  }
+  const [fr, fg, fb] = parse(from)
+  const [tr, tg, tb] = parse(to)
+  const mix = (a: number, b: number) => Math.round(a + (b - a) * t)
+  const toHex = (v: number) => v.toString(16).padStart(2, "0")
+  return `#${toHex(mix(fr, tr))}${toHex(mix(fg, tg))}${toHex(mix(fb, tb))}`
+}
+
+/** Red at 0%, yellow at 50%, green at 100%. */
+export function scoreColor(percent: number): string {
+  const p = Math.max(0, Math.min(100, percent))
+  if (p <= 50) return lerpColor("#EF4444", "#EAB308", p / 50)
+  return lerpColor("#EAB308", "#22C55E", (p - 50) / 50)
+}
+
+export function formatShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+}
+
 export function dateGroupLabel(iso: string): string {
   const key = groupKey(iso)
   if (key !== "Earlier") return key

@@ -25,6 +25,7 @@ export interface TierMeta {
   maxLevel: number
   color: string
   barColor: string
+  icon: string
   tagline: string
   description: string
   perks: string[]
@@ -38,6 +39,7 @@ export const TIERS: TierMeta[] = [
     maxLevel: 5,
     color: "#D97706",
     barColor: "#F59E0B",
+    icon: "/tiers/bronze.png",
     tagline: "Your journey begins",
     description: "Every great path starts with a first step.",
     perks: ["A1 & A2 levels unlocked", "Daily practice", "First achievements"],
@@ -49,6 +51,7 @@ export const TIERS: TierMeta[] = [
     maxLevel: 10,
     color: "#64748B",
     barColor: "#94A3B8",
+    icon: "/tiers/silver.png",
     tagline: "Picking up pace",
     description: "Your knowledge is taking serious shape.",
     perks: ["B1 level unlocked", "Harder exercises", "Silver badge"],
@@ -60,6 +63,7 @@ export const TIERS: TierMeta[] = [
     maxLevel: 20,
     color: "#CA8A04",
     barColor: "#EAB308",
+    icon: "/tiers/gold.png",
     tagline: "Among the best",
     description: "Gold is the fruit of effort and consistency.",
     perks: ["B2 level unlocked", "Advanced grammar", "Gold badge"],
@@ -71,6 +75,7 @@ export const TIERS: TierMeta[] = [
     maxLevel: 30,
     color: "#0891B2",
     barColor: "#06B6D4",
+    icon: "/tiers/diamond.png",
     tagline: "Rare and valuable",
     description: "Your discipline and knowledge are your true worth.",
     perks: ["C1 level unlocked", "IELTS-level materials", "Diamond badge"],
@@ -82,6 +87,7 @@ export const TIERS: TierMeta[] = [
     maxLevel: Number.POSITIVE_INFINITY,
     color: "#A855F7",
     barColor: "#C084FC",
+    icon: "/tiers/master.png",
     tagline: "Legendary tier",
     description: "The highest peak — a true Master.",
     perks: ["All levels open", "C2 exclusive content", "Master badge"],

@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import {
   GRAMMAR_BLANK_TOKEN,
   isBlankCorrect,
@@ -23,29 +24,38 @@ import {
   ResultsScreen,
   type ReviewItem,
 } from "./shared"
-import { colors } from "../../theme/colors"
+import { colors, radius, spacing } from "../../theme/tokens"
 
 export interface ExerciseRunnerProps {
   exercise: GrammarExercise
   homeworkId?: string
   studentId?: string
   timeLimitMinutes?: number
+  /** Active segment anchor — timer only runs while this is set. */
   sessionStartedAt: number
+  /** Accumulated active seconds from previous segments (homework pause). */
+  elapsedSeconds?: number
+  lockNavigation?: boolean
+  onSessionEnd?: () => void
 }
 
 function ExerciseHeader({
   exercise,
   secondsLeft,
+  homeworkMode,
 }: {
   exercise: GrammarExercise
   secondsLeft: number | null
+  homeworkMode?: boolean
 }) {
   return (
     <View style={styles.header}>
       <View style={styles.headerText}>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {exercise.title}
-        </Text>
+        {!homeworkMode ? (
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {exercise.title}
+          </Text>
+        ) : null}
         <Text style={styles.headerMeta}>
           {exercise.level} · {exercise.totalQuestions} questions
         </Text>
@@ -67,10 +77,46 @@ function QuestionCard({ children }: { children: React.ReactNode }) {
   )
 }
 
+function HomeworkInstructions({
+  homeworkId,
+  instructions,
+}: {
+  homeworkId?: string
+  instructions?: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  if (!homeworkId || !instructions?.trim()) return null
+
+  return (
+    <View style={styles.instructionsBox}>
+      <Pressable
+        onPress={() => setOpen((v) => !v)}
+        style={styles.instructionsHeader}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+      >
+        <Text style={styles.instructionsLabel}>Instructions</Text>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color="#1D4ED8" />
+      </Pressable>
+      {open ? <Text style={styles.instructionsText}>{instructions}</Text> : null}
+    </View>
+  )
+}
+
 // ─── Fill in the blank ───────────────────────────────────────────────────────
 
 function FillBlankRunner(props: ExerciseRunnerProps) {
-  const { exercise, homeworkId, studentId, timeLimitMinutes, sessionStartedAt } = props
+  const {
+    exercise,
+    homeworkId,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+  } = props
   const [index, setIndex] = useState(0)
   const [inputs, setInputs] = useState<string[]>([])
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -98,6 +144,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       setFinishedAt(Date.now())
     },
     finished,
+    elapsedSeconds ?? 0,
     sessionStartedAt,
   )
 
@@ -149,10 +196,13 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
         correctCount={correctCount}
         total={questions.length}
         startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
         studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
         timedOut={timedOut}
       />
     )
@@ -161,8 +211,13 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader exercise={exercise} secondsLeft={secondsLeft} />
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={!!homeworkId}
+      />
       <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
       <QuestionCard>
         <Text style={styles.qLabel}>Question {index + 1}</Text>
         <View style={styles.blankRow}>
@@ -214,7 +269,16 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
 // ─── Multiple choice ─────────────────────────────────────────────────────────
 
 function MultipleChoiceRunner(props: ExerciseRunnerProps) {
-  const { exercise, homeworkId, studentId, timeLimitMinutes, sessionStartedAt } = props
+  const {
+    exercise,
+    homeworkId,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+  } = props
   const [index, setIndex] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -236,6 +300,7 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
       setFinishedAt(Date.now())
     },
     finished,
+    elapsedSeconds ?? 0,
     sessionStartedAt,
   )
 
@@ -280,10 +345,13 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
         correctCount={correctCount}
         total={questions.length}
         startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
         studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
         timedOut={timedOut}
       />
     )
@@ -295,19 +363,24 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader exercise={exercise} secondsLeft={secondsLeft} />
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={!!homeworkId}
+      />
       <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
       <QuestionCard>
         <Text style={styles.qLabel}>Question {index + 1}</Text>
         <Text style={styles.questionText}>{renderedText}</Text>
         <View style={styles.options}>
-          {options.map((opt) => {
+          {options.map((opt, optIndex) => {
             const isChosen = selected === opt
             const isCorrectOpt = opt === question.correctAnswer
             const checked = result !== "idle"
             return (
               <Pressable
-                key={opt}
+                key={`${index}-opt-${optIndex}`}
                 disabled={checked}
                 onPress={() => setSelected(opt)}
                 style={[
@@ -345,7 +418,16 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
 // ─── True / False ────────────────────────────────────────────────────────────
 
 function TrueFalseRunner(props: ExerciseRunnerProps) {
-  const { exercise, homeworkId, studentId, timeLimitMinutes, sessionStartedAt } = props
+  const {
+    exercise,
+    homeworkId,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+  } = props
   const [index, setIndex] = useState(0)
   const [selected, setSelected] = useState<boolean | null>(null)
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -366,6 +448,7 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
       setFinishedAt(Date.now())
     },
     finished,
+    elapsedSeconds ?? 0,
     sessionStartedAt,
   )
 
@@ -409,10 +492,13 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
         correctCount={correctCount}
         total={questions.length}
         startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
         studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
         timedOut={timedOut}
       />
     )
@@ -421,8 +507,13 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader exercise={exercise} secondsLeft={secondsLeft} />
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={!!homeworkId}
+      />
       <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
       <QuestionCard>
         <Text style={styles.qLabel}>Question {index + 1}</Text>
         <Text style={styles.questionText}>{question.text}</Text>
@@ -465,7 +556,16 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
 // ─── Text answer (word-formation / sentence-transformation) ──────────────────
 
 function TextAnswerRunner(props: ExerciseRunnerProps) {
-  const { exercise, homeworkId, studentId, timeLimitMinutes, sessionStartedAt } = props
+  const {
+    exercise,
+    homeworkId,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+  } = props
   const [index, setIndex] = useState(0)
   const [input, setInput] = useState("")
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -487,6 +587,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
       setFinishedAt(Date.now())
     },
     finished,
+    elapsedSeconds ?? 0,
     sessionStartedAt,
   )
 
@@ -537,10 +638,13 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
         correctCount={correctCount}
         total={questions.length}
         startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
         studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
         timedOut={timedOut}
       />
     )
@@ -549,8 +653,13 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader exercise={exercise} secondsLeft={secondsLeft} />
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={!!homeworkId}
+      />
       <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
       <QuestionCard>
         <Text style={styles.qLabel}>Question {index + 1}</Text>
         <Text style={styles.questionText}>{question.text}</Text>
@@ -585,28 +694,213 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
 // ─── Matching ────────────────────────────────────────────────────────────────
 
 function MatchingRunner(props: ExerciseRunnerProps) {
-  const pairs = props.exercise.content.pairs ?? []
-  const questions: GrammarQuestion[] = pairs.map((p, i) => ({
-    id: i + 1,
-    text: p.left,
-    correctAnswer: p.right,
-    options: pairs.map((x) => x.right),
-    explanation: "",
-  }))
+  const {
+    exercise,
+    homeworkId,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+  } = props
 
-  const patchedExercise = {
-    ...props.exercise,
-    content: { questions },
-    totalQuestions: questions.length,
+  const pairs = exercise.content.pairs ?? []
+  const [picks, setPicks] = useState<(string | null)[]>(() => pairs.map(() => null))
+  const [checked, setChecked] = useState(false)
+  const [finished, setFinished] = useState(false)
+  const [finishedAt, setFinishedAt] = useState<number | null>(null)
+  const [timedOut, setTimedOut] = useState(false)
+
+  const secondsLeft = useCountdown(
+    timeLimitMinutes,
+    () => {
+      setTimedOut(true)
+      setFinished(true)
+      setFinishedAt(Date.now())
+    },
+    finished,
+    elapsedSeconds ?? 0,
+    sessionStartedAt,
+  )
+
+  const options = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const p of pairs) {
+      if (!seen.has(p.right)) {
+        seen.add(p.right)
+        out.push(p.right)
+      }
+    }
+    return out
+  }, [pairs])
+
+  const total = pairs.length
+  const allAnswered = picks.length === total && picks.every((p) => p != null)
+
+  const correctCount = useMemo(
+    () => pairs.reduce((acc, p, i) => acc + (picks[i] === p.right ? 1 : 0), 0),
+    [pairs, picks],
+  )
+
+  const mistakes: ReviewItem[] = useMemo(
+    () =>
+      pairs
+        .map((p, i) => ({ p, i }))
+        .filter(({ p, i }) => picks[i] !== p.right)
+        .map(({ p, i }) => ({
+          id: i + 1,
+          prompt: p.left,
+          userAnswer: picks[i] ?? "—",
+          correctAnswer: p.right,
+          explanation: `${p.left} → ${p.right}`,
+        })),
+    [pairs, picks],
+  )
+
+  if (finished) {
+    return (
+      <ResultsScreen
+        exercise={exercise}
+        correctCount={correctCount}
+        total={total}
+        startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
+        finishedAt={finishedAt}
+        mistakes={mistakes}
+        homeworkId={homeworkId}
+        studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
+        timedOut={timedOut}
+      />
+    )
   }
 
-  return <MultipleChoiceRunner {...props} exercise={patchedExercise} />
+  if (total === 0) return null
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={!!homeworkId}
+      />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+
+      <View style={styles.matchStatusRow}>
+        <Text style={styles.matchStatusLabel}>Match all {total} pairs</Text>
+        {checked ? (
+          <Text style={styles.matchStatusScore}>
+            <Text style={styles.matchStatusScoreValue}>{correctCount}</Text> / {total} correct
+          </Text>
+        ) : null}
+      </View>
+
+      <QuestionCard>
+        {pairs.map((pair, rowIndex) => {
+          const pick = picks[rowIndex]
+          const isRowCorrect = pick === pair.right
+
+          return (
+            <View
+              key={`pair-${rowIndex}`}
+              style={[
+                styles.matchRow,
+                checked && isRowCorrect && styles.matchRowCorrect,
+                checked && !isRowCorrect && styles.matchRowWrong,
+              ]}
+            >
+              <View style={styles.matchRowInner}>
+                <Text style={styles.matchLeft}>{pair.left}</Text>
+                <Text style={styles.matchArrow}>→</Text>
+                <View style={styles.matchOptions}>
+                  {options.map((opt, optIndex) => {
+                    const isChosen = pick === opt
+                    const isCorrectOpt = opt === pair.right
+                    return (
+                      <Pressable
+                        key={`${rowIndex}-${optIndex}`}
+                        disabled={checked}
+                        onPress={() =>
+                          setPicks((prev) => {
+                            const next = [...prev]
+                            next[rowIndex] = opt
+                            return next
+                          })
+                        }
+                        style={[
+                          styles.matchOption,
+                          !checked && isChosen && styles.matchOptionSelected,
+                          checked && isChosen && isCorrectOpt && styles.matchOptionCorrect,
+                          checked && isChosen && !isCorrectOpt && styles.matchOptionWrong,
+                          checked && !isChosen && isCorrectOpt && styles.matchOptionReveal,
+                          checked && !isChosen && !isCorrectOpt && styles.matchOptionMuted,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.matchOptionText,
+                            checked && isChosen && !isCorrectOpt && styles.matchOptionTextWrong,
+                          ]}
+                        >
+                          {opt}
+                        </Text>
+                      </Pressable>
+                    )
+                  })}
+                </View>
+                {checked ? (
+                  <Ionicons
+                    name={isRowCorrect ? "checkmark-circle" : "close-circle"}
+                    size={22}
+                    color={isRowCorrect ? colors.success : colors.error}
+                    style={styles.matchRowIcon}
+                  />
+                ) : null}
+              </View>
+            </View>
+          )
+        })}
+
+        {!checked ? (
+          <Pressable
+            onPress={() => setChecked(true)}
+            disabled={!allAnswered}
+            style={[styles.matchCheckBtn, !allAnswered && styles.btnDisabled]}
+          >
+            <Text style={styles.matchCheckBtnText}>Check Answers</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => {
+              setFinished(true)
+              setFinishedAt(Date.now())
+            }}
+            style={styles.matchCheckBtn}
+          >
+            <Text style={styles.matchCheckBtnText}>See results</Text>
+          </Pressable>
+        )}
+      </QuestionCard>
+    </ScrollView>
+  )
 }
 
 // ─── Word order ──────────────────────────────────────────────────────────────
 
 function WordOrderRunner(props: ExerciseRunnerProps) {
-  const { exercise, homeworkId, studentId, timeLimitMinutes, sessionStartedAt } = props
+  const {
+    exercise,
+    homeworkId,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+  } = props
   const [index, setIndex] = useState(0)
   const [picked, setPicked] = useState<string[]>([])
   const [remaining, setRemaining] = useState<string[]>([])
@@ -628,6 +922,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
       setFinishedAt(Date.now())
     },
     finished,
+    elapsedSeconds ?? 0,
     sessionStartedAt,
   )
 
@@ -690,10 +985,13 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
         correctCount={correctCount}
         total={questions.length}
         startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
         studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
         timedOut={timedOut}
       />
     )
@@ -702,8 +1000,13 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader exercise={exercise} secondsLeft={secondsLeft} />
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={!!homeworkId}
+      />
       <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
       <QuestionCard>
         <Text style={styles.qLabel}>Question {index + 1} — Arrange the words</Text>
         {(question.prefix ?? []).length > 0 && (
@@ -752,7 +1055,16 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
 // ─── Error correction ────────────────────────────────────────────────────────
 
 function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
-  const { exercise, homeworkId, studentId, timeLimitMinutes, sessionStartedAt } = props
+  const {
+    exercise,
+    homeworkId,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+  } = props
   const [index, setIndex] = useState(0)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -774,6 +1086,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
       setFinishedAt(Date.now())
     },
     finished,
+    elapsedSeconds ?? 0,
     sessionStartedAt,
   )
 
@@ -825,10 +1138,13 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
         correctCount={correctCount}
         total={questions.length}
         startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
         studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
         timedOut={timedOut}
       />
     )
@@ -839,8 +1155,13 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader exercise={exercise} secondsLeft={secondsLeft} />
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={!!homeworkId}
+      />
       <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
       <QuestionCard>
         <Text style={styles.qLabel}>Question {index + 1} — Fix the errors</Text>
         <Text style={styles.instructionHint}>Tap highlighted words to edit them</Text>
@@ -1026,4 +1347,119 @@ const styles = StyleSheet.create({
     minWidth: 60,
     fontSize: 16,
   },
+  matchStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  matchStatusLabel: { fontSize: 14, fontWeight: "600", color: colors.text },
+  matchStatusScore: { fontSize: 13, color: colors.textSecondary },
+  matchStatusScoreValue: { fontWeight: "700", color: colors.text },
+  instructionsBox: {
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+    borderRadius: radius.card,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  instructionsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  instructionsLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: "#1D4ED8",
+  },
+  instructionsText: {
+    fontSize: 14,
+    color: colors.text,
+    marginTop: 4,
+    lineHeight: 20,
+  },
+  matchRow: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.button,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.card,
+  },
+  matchRowCorrect: {
+    borderColor: colors.success,
+    backgroundColor: colors.successBg,
+  },
+  matchRowWrong: {
+    borderColor: colors.errorBg,
+    backgroundColor: colors.errorBg,
+  },
+  matchRowInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  matchLeft: {
+    minWidth: 40,
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  matchArrow: { fontSize: 16, color: colors.textMuted },
+  matchOptions: {
+    flex: 1,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    minWidth: 120,
+  },
+  matchOption: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: colors.card,
+  },
+  matchOptionSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
+  matchOptionCorrect: {
+    borderColor: colors.success,
+    backgroundColor: colors.successBg,
+  },
+  matchOptionWrong: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorBg,
+  },
+  matchOptionReveal: {
+    borderColor: colors.success,
+    backgroundColor: colors.successBg,
+  },
+  matchOptionMuted: {
+    borderColor: colors.borderLight,
+    opacity: 0.7,
+  },
+  matchOptionText: { fontSize: 14, fontWeight: "600", color: colors.text },
+  matchOptionTextWrong: { textDecorationLine: "line-through" },
+  matchRowIcon: { marginLeft: "auto" },
+  matchCheckBtn: {
+    alignSelf: "center",
+    backgroundColor: colors.primary,
+    borderRadius: radius.button,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    minWidth: 180,
+    alignItems: "center",
+  },
+  matchCheckBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  btnDisabled: { opacity: 0.5 },
 })

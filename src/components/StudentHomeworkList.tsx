@@ -1,10 +1,17 @@
-import React, { useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet } from "react-native"
+import React, { useCallback, useRef, useState } from "react"
+import { StyleSheet, View } from "react-native"
+import { useFocusEffect } from "expo-router"
 import { exercisesApi, homeworkApi } from "../lib/api"
+import {
+  getHomeworkListSnapshot,
+  setHomeworkListSnapshot,
+} from "../lib/homework-list-cache"
 import { HomeworkSection, type HomeworkItem } from "./HomeworkSection"
+import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
 import type { GrammarExercise } from "../types/grammar"
-import { colors } from "../theme/colors"
+import type { StudentHomeworkEntry } from "../types/domain"
+import { colors, spacing } from "../theme/tokens"
 
 type Status = "pending" | "in_progress" | "completed"
 
@@ -14,92 +21,119 @@ const STATUS_ORDER: Record<Status, number> = {
   completed: 2,
 }
 
-export function StudentHomeworkList({ studentId }: { studentId: string }) {
-  const [items, setItems] = useState<HomeworkItem[] | null>(null)
-  const [exercises, setExercises] = useState<GrammarExercise[]>([])
-  const [refreshing, setRefreshing] = useState(false)
+function mapHomeworkItems(
+  entries: StudentHomeworkEntry[],
+  exList: GrammarExercise[],
+): HomeworkItem[] {
+  const exerciseBySlug = new Map(exList.map((e) => [e.slug, e]))
 
-  const load = useCallback(async () => {
-    try {
-      const [entries, exList] = await Promise.all([
-        homeworkApi.mine(),
-        exercisesApi.list(),
-      ])
-      setExercises(exList)
+  const mapped: HomeworkItem[] = entries.map(({ homework, submission }) => {
+    const failedCheating =
+      submission.integrityStatus === "cheating_detected" ||
+      submission.attempt?.failedDueToCheating
 
-      const exerciseBySlug = new Map(exList.map((e) => [e.slug, e]))
+    const status: Status =
+      failedCheating || submission.status === "submitted" || submission.status === "graded"
+        ? "completed"
+        : submission.status === "in_progress" || submission.status === "paused"
+          ? "in_progress"
+          : "pending"
 
-      const mapped: HomeworkItem[] = entries.map(({ homework, submission }) => {
-        const status: Status =
-          submission.status === "submitted" || submission.status === "graded"
-            ? "completed"
-            : submission.status === "in_progress"
-              ? "in_progress"
-              : "pending"
-
-        let route: string | undefined
-        if (homework.subject === "grammar" && homework.exerciseSlug) {
-          const ex = exerciseBySlug.get(homework.exerciseSlug)
-          if (ex) route = `/exercise/${ex.topic}/${ex.slug}?hw=${homework.id}`
-        } else if (homework.subject === "vocabulary") {
-          const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
-          if (deckSlug) route = `/vocabulary/${deckSlug}?hw=${homework.id}`
-        }
-
-        return {
-          id: homework.id,
-          subject: homework.subject,
-          title: homework.title,
-          description: homework.description,
-          dueAt: homework.dueAt,
-          createdAt: homework.createdAt,
-          status,
-          timeLimitMinutes: homework.timeLimitMinutes,
-          completedAt: submission.submittedAt ?? undefined,
-          route,
-        }
-      })
-
-      mapped.sort((a, b) => {
-        const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
-        if (s !== 0) return s
-        const byAssigned = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        if (byAssigned !== 0) return byAssigned
-        return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
-      })
-
-      setItems(mapped)
-    } catch {
-      setItems([])
+    let route: string | undefined
+    if (!failedCheating) {
+      if (homework.subject === "grammar" && homework.exerciseSlug) {
+        const ex = exerciseBySlug.get(homework.exerciseSlug)
+        if (ex) route = `/homework/exercise/${ex.topic}/${ex.slug}?hw=${homework.id}`
+      } else if (homework.subject === "vocabulary") {
+        const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
+        if (deckSlug) route = `/homework/vocabulary/${deckSlug}?hw=${homework.id}`
+      }
     }
-  }, [studentId])
 
-  useEffect(() => {
-    load()
-  }, [load])
+    return {
+      id: homework.id,
+      subject: homework.subject,
+      title: homework.title,
+      description: homework.description,
+      dueAt: homework.dueAt,
+      createdAt: homework.createdAt,
+      status,
+      timeLimitMinutes: homework.timeLimitMinutes,
+      completedAt: submission.submittedAt ?? undefined,
+      integrityStatus: submission.integrityStatus,
+      failedCheating,
+      paused: submission.status === "paused",
+      pauseUsed: submission.pauseUsed,
+      route,
+      correctCount: submission.attempt?.correctCount,
+      totalQuestions: submission.attempt?.totalQuestions,
+    }
+  })
+
+  mapped.sort((a, b) => {
+    const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
+    if (s !== 0) return s
+    const byAssigned = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    if (byAssigned !== 0) return byAssigned
+    return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+  })
+
+  return mapped
+}
+
+export function StudentHomeworkList({ studentId }: { studentId: string }) {
+  const [items, setItems] = useState<HomeworkItem[] | null>(() =>
+    getHomeworkListSnapshot(studentId),
+  )
+  const [refreshing, setRefreshing] = useState(false)
+  const hasLoadedRef = useRef(items !== null)
+
+  const load = useCallback(
+    async (opts?: { force?: boolean }) => {
+      try {
+        const [entries, exList] = await Promise.all([
+          homeworkApi.mine(opts),
+          exercisesApi.list(undefined, opts),
+        ])
+
+        const mapped = mapHomeworkItems(entries, exList)
+        setHomeworkListSnapshot(studentId, mapped)
+        setItems(mapped)
+        hasLoadedRef.current = true
+      } catch {
+        if (!hasLoadedRef.current) setItems([])
+      }
+    },
+    [studentId],
+  )
+
+  useFocusEffect(
+    useCallback(() => {
+      void load()
+    }, [load]),
+  )
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
-    await load()
+    await load({ force: true })
     setRefreshing(false)
   }, [load])
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
+    <View style={styles.container}>
       {items === null ? (
-        <ActivityIndicator style={{ marginVertical: 24 }} />
+        <View style={styles.skeletonWrap}>
+          <HomeworkListSkeleton />
+        </View>
       ) : (
-        <HomeworkSection items={items} />
+        <HomeworkSection items={items} refreshing={refreshing} onRefresh={onRefresh} />
       )}
-    </ScrollView>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 16, paddingBottom: 32 },
+  skeletonWrap: { paddingHorizontal: spacing.screen, paddingBottom: spacing.xl },
 })
+

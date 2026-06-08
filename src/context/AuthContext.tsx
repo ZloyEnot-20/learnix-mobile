@@ -6,8 +6,10 @@ import React, {
   useMemo,
   useState,
 } from "react"
-import { authApi, type AuthUser } from "../lib/api"
+import { authApi, clearApiCache, type AuthUser } from "../lib/api"
 import { clearTokens, getAccessToken, setTokens } from "../lib/api-client"
+import { clearHomeworkListSnapshot } from "../lib/homework-list-cache"
+import { clearLastActivity } from "../lib/last-activity"
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -43,15 +45,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refreshUser])
 
   const login = useCallback(async (loginStr: string, password: string) => {
+    clearApiCache()
+    clearHomeworkListSnapshot()
+    await clearLastActivity()
     const res = await authApi.login(loginStr, password)
     await setTokens(res.accessToken, res.refreshToken)
     setUser(res.user)
   }, [])
 
   const logout = useCallback(async () => {
+    const userId = user?.id
     await clearTokens()
+    clearApiCache()
+    clearHomeworkListSnapshot()
+    await clearLastActivity(userId)
     setUser(null)
-  }, [])
+  }, [user?.id])
 
   const value = useMemo(
     () => ({ user, isLoading, login, logout, refreshUser }),

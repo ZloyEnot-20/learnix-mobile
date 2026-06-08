@@ -2,32 +2,36 @@ import { useEffect, useRef, useState } from "react"
 
 export function remainingSeconds(
   minutes: number | undefined,
-  startedAtMs: number,
+  elapsedSeconds: number,
+  startedAtMs: number | null,
 ): number | null {
   if (!minutes || minutes <= 0) return null
   const total = Math.round(minutes * 60)
-  const elapsed = Math.floor((Date.now() - startedAtMs) / 1000)
-  return Math.max(0, total - elapsed)
+  const running = startedAtMs
+    ? elapsedSeconds + Math.floor((Date.now() - startedAtMs) / 1000)
+    : elapsedSeconds
+  return Math.max(0, total - running)
 }
 
 export function useCountdown(
   minutes: number | undefined,
   onExpire: () => void,
   stopped: boolean,
-  startedAtMs: number,
+  elapsedSeconds: number,
+  startedAtMs: number | null,
 ): number | null {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(() =>
-    remainingSeconds(minutes, startedAtMs),
+    remainingSeconds(minutes, elapsedSeconds, startedAtMs),
   )
   const onExpireRef = useRef(onExpire)
   onExpireRef.current = onExpire
 
   useEffect(() => {
-    setSecondsLeft(remainingSeconds(minutes, startedAtMs))
-  }, [minutes, startedAtMs])
+    setSecondsLeft(remainingSeconds(minutes, elapsedSeconds, startedAtMs))
+  }, [minutes, elapsedSeconds, startedAtMs])
 
   useEffect(() => {
-    if (secondsLeft == null || stopped) return
+    if (secondsLeft == null || stopped || startedAtMs == null) return
     if (secondsLeft <= 0) {
       onExpireRef.current()
       return
@@ -37,7 +41,7 @@ export function useCountdown(
       1000,
     )
     return () => clearTimeout(t)
-  }, [secondsLeft, stopped])
+  }, [secondsLeft, stopped, startedAtMs])
 
   return secondsLeft
 }

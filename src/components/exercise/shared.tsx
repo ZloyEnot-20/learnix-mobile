@@ -6,10 +6,49 @@ import {
   Text,
   View,
 } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { analyticsApi, homeworkApi } from "../../lib/api"
+import { recordGameExerciseResult } from "../../lib/learned-vocabulary"
 import type { GrammarExercise } from "../../types/grammar"
-import { colors } from "../../theme/colors"
+import { colors, radius, shadow, spacing } from "../../theme/tokens"
+
+export type ResultVariant = "passed" | "retry" | "timeout"
+
+export function resultVariant(timedOut: boolean, passed: boolean): ResultVariant {
+  if (timedOut) return "timeout"
+  if (passed) return "passed"
+  return "retry"
+}
+
+const RESULT_ICON: Record<
+  ResultVariant,
+  { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string }
+> = {
+  passed: { icon: "checkmark-circle-outline", color: colors.success, bg: colors.successBg },
+  retry: { icon: "book-outline", color: colors.primary, bg: colors.primaryLight },
+  timeout: { icon: "timer-outline", color: colors.warning, bg: colors.warningBg },
+}
+
+export function ResultStatusIcon({ variant }: { variant: ResultVariant }) {
+  const meta = RESULT_ICON[variant]
+  return (
+    <View style={[resultIconStyles.wrap, { backgroundColor: meta.bg }]}>
+      <Ionicons name={meta.icon} size={32} color={meta.color} />
+    </View>
+  )
+}
+
+const resultIconStyles = StyleSheet.create({
+  wrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+})
 
 export interface ReviewItem {
   id: number
@@ -36,7 +75,10 @@ export function ProgressBar({
         <Text style={styles.progressText}>
           Question {index + 1} of {total}
         </Text>
-        <Text style={styles.progressText}>✓ {correctCount}</Text>
+        <View style={styles.progressCorrect}>
+          <Ionicons name="checkmark" size={12} color={colors.success} />
+          <Text style={styles.progressText}>{correctCount}</Text>
+        </View>
       </View>
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${pct}%` }]} />
@@ -57,8 +99,9 @@ export function HintRow({
   if (!hint) return null
   return (
     <View>
-      <Pressable onPress={() => setShowHint(!showHint)}>
-        <Text style={styles.hintToggle}>💡 {showHint ? "Hide hint" : "Show hint"}</Text>
+      <Pressable onPress={() => setShowHint(!showHint)} style={styles.hintRow}>
+        <Ionicons name="bulb-outline" size={16} color={colors.indigo} />
+        <Text style={styles.hintToggle}>{showHint ? "Hide hint" : "Show hint"}</Text>
       </Pressable>
       {showHint && <Text style={styles.hintText}>{hint}</Text>}
     </View>
@@ -76,7 +119,14 @@ export function FeedbackBox({
 }) {
   return (
     <View style={[styles.feedback, correct ? styles.feedbackOk : styles.feedbackBad]}>
-      <Text style={styles.feedbackTitle}>{correct ? "✓ Correct!" : "✗ Incorrect"}</Text>
+      <View style={styles.feedbackTitleRow}>
+        <Ionicons
+          name={correct ? "checkmark-circle" : "close-circle"}
+          size={18}
+          color={correct ? colors.success : colors.error}
+        />
+        <Text style={styles.feedbackTitle}>{correct ? "Correct!" : "Incorrect"}</Text>
+      </View>
       {!correct && correctAnswer ? (
         <Text style={styles.feedbackAnswer}>Answer: {correctAnswer}</Text>
       ) : null}
@@ -121,28 +171,42 @@ export function ResultsScreen({
   correctCount,
   total,
   startedAt,
+  elapsedSeconds,
   finishedAt,
   mistakes,
   homeworkId,
   studentId,
+  lockNavigation,
+  onSessionEnd,
   timedOut,
 }: {
   exercise: GrammarExercise
   correctCount: number
   total: number
   startedAt: number
+  elapsedSeconds?: number
   finishedAt: number | null
   mistakes: ReviewItem[]
   homeworkId?: string
   studentId?: string
+  lockNavigation?: boolean
+  onSessionEnd?: () => void
   timedOut?: boolean
 }) {
   const router = useRouter()
   const recorded = useRef(false)
-  const elapsedMs = (finishedAt ?? Date.now()) - startedAt
+  const segmentMs = (finishedAt ?? Date.now()) - startedAt
+  const elapsedMs =
+    homeworkId && elapsedSeconds != null
+      ? elapsedSeconds * 1000 + segmentMs
+      : segmentMs
   const answeredCount = correctCount + mistakes.length
   const passed = !timedOut && correctCount >= exercise.passingScore
   const scorePct = Math.round((correctCount / total) * 100)
+
+  React.useEffect(() => {
+    onSessionEnd?.()
+  }, [onSessionEnd])
 
   React.useEffect(() => {
     if (recorded.current) return
@@ -161,6 +225,16 @@ export function ResultsScreen({
         studentId,
       })
       .catch(() => {})
+
+    if (studentId && !homeworkId) {
+      void recordGameExerciseResult(studentId, {
+        slug: exercise.slug,
+        title: exercise.title,
+        topic: exercise.topic,
+        correctCount,
+        totalQuestions: total,
+      }).catch(() => {})
+    }
 
     if (!homeworkId || !studentId) return
     void homeworkApi
@@ -181,22 +255,41 @@ export function ResultsScreen({
       .catch(() => {})
   }, [])
 
-  return (
-    <ScrollView style={styles.resultsScroll} contentContainerStyle={styles.resultsContent}>
-      <Text style={styles.resultsEmoji}>{timedOut ? "⏱" : passed ? "🎉" : "📚"}</Text>
-      <Text style={styles.resultsTitle}>
-        {timedOut ? "Time's up!" : passed ? "Well done!" : "Keep practising"}
-      </Text>
-      <Text style={styles.resultsScore}>
-        {correctCount}/{total} correct ({scorePct}%)
-      </Text>
-      <Text style={styles.resultsMeta}>
-        {passed ? "You passed!" : `Need ${exercise.passingScore} to pass`}
-        {" · "}
-        {Math.max(1, Math.round(elapsedMs / 60000))} min
-      </Text>
+  const hasMistakes = mistakes.length > 0
 
-      {mistakes.length > 0 && (
+  return (
+    <ScrollView
+      style={styles.resultsScroll}
+      contentContainerStyle={[
+        styles.resultsContent,
+        !hasMistakes && styles.resultsContentCentered,
+      ]}
+    >
+      <View style={styles.resultsHero}>
+        <ResultStatusIcon variant={resultVariant(!!timedOut, passed)} />
+        <Text style={styles.resultsTitle}>
+          {timedOut ? "Time's up!" : passed ? "Well done!" : "Keep practising"}
+        </Text>
+        <Text style={styles.resultsScore}>
+          {correctCount}/{total} correct ({scorePct}%)
+        </Text>
+        <Text style={styles.resultsMeta}>
+          {passed ? "You passed!" : `Need ${exercise.passingScore} to pass`}
+          {" · "}
+          {Math.max(1, Math.round(elapsedMs / 60000))} min
+        </Text>
+
+        {!hasMistakes ? (
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.resultsBtn}
+          >
+            <Text style={styles.primaryBtnText}>Done</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {hasMistakes ? (
         <View style={styles.mistakesSection}>
           <Text style={styles.mistakesTitle}>Review mistakes</Text>
           {mistakes.map((m) => (
@@ -209,12 +302,14 @@ export function ResultsScreen({
               ) : null}
             </View>
           ))}
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.resultsBtn}
+          >
+            <Text style={styles.primaryBtnText}>Done</Text>
+          </Pressable>
         </View>
-      )}
-
-      <Pressable onPress={() => router.back()} style={styles.primaryBtn}>
-        <Text style={styles.primaryBtnText}>Done</Text>
-      </Pressable>
+      ) : null}
     </ScrollView>
   )
 }
@@ -224,7 +319,13 @@ const styles = StyleSheet.create({
   progressLabels: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 6,
+  },
+  progressCorrect: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   progressText: { fontSize: 13, color: colors.textSecondary, fontWeight: "500" },
   progressTrack: {
@@ -234,7 +335,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressFill: { height: "100%", backgroundColor: colors.primary, borderRadius: 999 },
+  hintRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   hintToggle: { fontSize: 14, color: colors.indigo, fontWeight: "500" },
+  feedbackTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   hintText: { fontSize: 14, color: colors.textSecondary, marginTop: 6, fontStyle: "italic" },
   feedback: { borderRadius: 12, padding: 12, marginTop: 8 },
   feedbackOk: { backgroundColor: colors.successBg },
@@ -243,20 +346,64 @@ const styles = StyleSheet.create({
   feedbackAnswer: { fontSize: 14, color: colors.text, marginTop: 4 },
   feedbackExpl: { fontSize: 13, color: colors.textSecondary, marginTop: 6 },
   primaryBtn: {
+    alignSelf: "stretch",
+    width: "100%",
     backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
     alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
     marginTop: 16,
   },
   btnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   resultsScroll: { flex: 1, backgroundColor: colors.background },
-  resultsContent: { padding: 24, alignItems: "center" },
-  resultsEmoji: { fontSize: 48, marginBottom: 12 },
-  resultsTitle: { fontSize: 24, fontWeight: "700", color: colors.text },
-  resultsScore: { fontSize: 18, color: colors.textSecondary, marginTop: 8 },
-  resultsMeta: { fontSize: 14, color: colors.textMuted, marginTop: 4 },
+  resultsContent: {
+    flexGrow: 1,
+    padding: 24,
+    alignItems: "center",
+    width: "100%",
+  },
+  resultsContentCentered: {
+    justifyContent: "center",
+  },
+  resultsHero: {
+    width: "100%",
+    maxWidth: 320,
+    alignItems: "center",
+  },
+  resultsTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+  },
+  resultsScore: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  resultsMeta: {
+    fontSize: 14,
+    color: colors.textMuted,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  resultsBtn: {
+    alignSelf: "stretch",
+    width: "100%",
+    backgroundColor: colors.primary,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
+    marginTop: 24,
+  },
   mistakesSection: { width: "100%", marginTop: 24 },
   mistakesTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 12 },
   mistakeCard: {

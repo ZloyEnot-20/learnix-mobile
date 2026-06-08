@@ -6,7 +6,11 @@ export type Subject =
   | "grammar"
   | "vocabulary"
 
-export type HomeworkStatus = "pending" | "in_progress" | "submitted" | "graded"
+export type HomeworkStatus = "pending" | "in_progress" | "paused" | "submitted" | "graded"
+
+export type IntegrityStatus = "ok" | "cheating_suspicion" | "cheating_detected"
+
+export type ViolationReason = "app_background" | "network_lost" | "navigation" | "unknown"
 
 export interface HomeworkAssignment {
   id: string
@@ -37,6 +41,8 @@ export interface HomeworkAttempt {
   mistakes: HomeworkMistake[]
   timedOut?: boolean
   answeredCount?: number
+  failedDueToCheating?: boolean
+  cheatingReason?: string
 }
 
 export interface HomeworkSubmission {
@@ -44,11 +50,26 @@ export interface HomeworkSubmission {
   homeworkId: string
   studentId: string
   status: HomeworkStatus
+  integrityStatus?: IntegrityStatus
+  violationCount?: number
   score?: number
   startedAt?: string
+  sessionStartedAt?: string
+  elapsedSeconds?: number
+  pauseUsed?: boolean
+  pausedAt?: string
   submittedAt?: string
   feedback?: string
   attempt?: HomeworkAttempt
+}
+
+export interface ViolationResponse {
+  action: "warn" | "fail" | "already_done" | "pause" | "paused"
+  violationCount?: number
+  pauseUsed?: boolean
+  integrityStatus?: IntegrityStatus
+  message?: string
+  submission?: HomeworkSubmission
 }
 
 export interface StudentHomeworkEntry {

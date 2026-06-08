@@ -1,9 +1,10 @@
 import { Tabs, Redirect } from "expo-router"
-import { View, ActivityIndicator, StyleSheet } from "react-native"
+import { View, StyleSheet } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
 import { NotificationsBell } from "../../src/components/NotificationsBell"
-import { colors } from "../../src/theme/colors"
+import { TabShellSkeleton } from "../../src/components/skeletons/Layouts"
+import { colors, spacing } from "../../src/theme/tokens"
 
 function HeaderRight() {
   return (
@@ -13,15 +14,19 @@ function HeaderRight() {
   )
 }
 
+type TabIcon = keyof typeof Ionicons.glyphMap
+
+function tabIcon(outline: TabIcon, filled: TabIcon) {
+  return ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
+    <Ionicons name={focused ? filled : outline} size={size} color={color} />
+  )
+}
+
 export default function TabsLayout() {
   const { user, isLoading } = useAuth()
 
   if (isLoading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    )
+    return <TabShellSkeleton />
   }
 
   if (!user || user.role !== "student") {
@@ -34,12 +39,19 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
-          borderTopColor: colors.border,
-          paddingBottom: 4,
-          height: 56,
+          backgroundColor: colors.card,
+          borderTopColor: colors.borderLight,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          paddingBottom: 6,
+          paddingTop: 6,
+          height: 60,
         },
-        headerStyle: { backgroundColor: colors.card },
-        headerTitleStyle: { fontWeight: "700", color: colors.text },
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: "600",
+        },
+        headerStyle: { backgroundColor: colors.background },
+        headerTitle: () => null,
         headerShadowVisible: false,
         headerRight: () => <HeaderRight />,
       }}
@@ -48,36 +60,28 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
-          ),
+          tabBarIcon: tabIcon("home-outline", "home"),
         }}
       />
       <Tabs.Screen
         name="homework"
         options={{
           title: "Homework",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="clipboard-outline" size={size} color={color} />
-          ),
+          tabBarIcon: tabIcon("clipboard-outline", "clipboard"),
         }}
       />
       <Tabs.Screen
         name="games"
         options={{
           title: "Game",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="game-controller-outline" size={size} color={color} />
-          ),
+          tabBarIcon: tabIcon("game-controller-outline", "game-controller"),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-outline" size={size} color={color} />
-          ),
+          tabBarIcon: tabIcon("person-outline", "person"),
         }}
       />
     </Tabs>
@@ -85,6 +89,5 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  headerRight: { marginRight: 16 },
+  headerRight: { marginRight: spacing.screen },
 })

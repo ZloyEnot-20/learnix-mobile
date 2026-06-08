@@ -1,0 +1,11 @@
+<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="silverGrad" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F1F5F9"/>
+      <stop offset="1" stop-color="#64748B"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="28" r="22" fill="url(#silverGrad)" stroke="#475569" stroke-width="2"/>
+  <path d="M20 48L32 58L44 48L38 42H26L20 48Z" fill="#475569"/>
+  <path d="M32 18L35.5 26.5H44.5L37.5 31.5L40 40L32 35L24 40L26.5 31.5L19.5 26.5H28.5L32 18Z" fill="#FFFFFF"/>
+</svg>

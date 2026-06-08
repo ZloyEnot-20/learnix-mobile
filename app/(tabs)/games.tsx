@@ -1,30 +1,35 @@
 import React, { useEffect, useMemo, useState } from "react"
 import {
-  ActivityIndicator,
+  LayoutAnimation,
+  Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  UIManager,
   View,
 } from "react-native"
 import { useRouter } from "expo-router"
 import { useAuth } from "../../src/context/AuthContext"
 import { exercisesApi, studentsApi } from "../../src/lib/api"
 import { LevelScale } from "../../src/components/LevelScale"
+import { GamesSkeleton } from "../../src/components/skeletons/Layouts"
 import {
   buildTopicSummaries,
   clampToFixedLevel,
   primaryLevel,
 } from "../../src/lib/utils"
 import {
-  CEFR_ORDER,
   isCefrUnlocked,
   requiredLevelFor,
   type StudentLevel,
 } from "../../src/types/gamification"
 import type { GrammarExercise } from "../../src/types/grammar"
 import type { TopicSummary, VocabDeck } from "../../src/types/vocabulary"
-import { colors } from "../../src/theme/colors"
+import { Ionicons } from "@expo/vector-icons"
+import { FadeInDown } from "../../src/components/ui/FadeInDown"
+import { colors, radius, shadow, spacing, typography } from "../../src/theme/tokens"
 
 const LEVELS = [
   { key: "A1", label: "Beginner" },
@@ -44,6 +49,22 @@ const LEVEL_COLORS: Record<string, string> = {
   C2: "#A855F7",
 }
 
+type GameItem = {
+  id: string
+  title: string
+  subtitle: string
+  route: string
+  kind: "vocab" | "topic"
+}
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true)
+}
+
+function animateExpand() {
+  LayoutAnimation.configureNext(LayoutAnimation.create(280, "easeInEaseOut", "opacity"))
+}
+
 export default function GamesScreen() {
   const { user } = useAuth()
   const router = useRouter()
@@ -52,25 +73,32 @@ export default function GamesScreen() {
   const [studentLevel, setStudentLevel] = useState<StudentLevel | null>(null)
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const load = async () => {
+    try {
+      const [exercises, metas, decks] = await Promise.all([
+        exercisesApi.list(),
+        exercisesApi.topics(),
+        exercisesApi.vocab(),
+      ])
+      setTopics(buildTopicSummaries(exercises as GrammarExercise[], metas))
+      setVocabDecks(decks)
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      try {
-        const [exercises, metas, decks] = await Promise.all([
-          exercisesApi.list(),
-          exercisesApi.topics(),
-          exercisesApi.vocab(),
-        ])
-        setTopics(buildTopicSummaries(exercises as GrammarExercise[], metas))
-        setVocabDecks(decks)
-      } catch {
-        /* ignore */
-      } finally {
-        setLoading(false)
-      }
-    }
-    void load()
+    setLoading(true)
+    load().finally(() => setLoading(false))
   }, [])
+
+  const onRefresh = async () => {
+    setRefreshing(true)
+    await load()
+    setRefreshing(false)
+  }
 
   useEffect(() => {
     if (!user) return
@@ -93,102 +121,148 @@ export default function GamesScreen() {
     [topics],
   )
 
-  const gamesForLevel = useMemo(() => {
-    if (!selectedLevel) return []
-    const decks = vocabDecks
-      .filter((d) => clampToFixedLevel(primaryLevel([d.level])) === selectedLevel)
-      .map((d) => ({
-        id: `deck-${d.slug}`,
-        title: d.title,
-        subtitle: `${d.words.length} words · Flashcards & Quiz`,
-        route: `/vocabulary/${d.slug}`,
-        kind: "vocab" as const,
-      }))
-    const topicGames = playableTopics
-      .filter((t) => clampToFixedLevel(primaryLevel(t.levels)) === selectedLevel)
-      .map((t) => ({
-        id: `topic-${t.topic}`,
-        title: t.title,
-        subtitle: `${t.exerciseCount} rounds · ${t.questionCount} questions`,
-        route: `/exercises/${t.topic}`,
-        kind: "topic" as const,
-      }))
-    return [...decks, ...topicGames]
-  }, [selectedLevel, vocabDecks, playableTopics])
+  const gamesByLevel = useMemo(() => {
+    const map = new Map<string, GameItem[]>()
+
+    for (const { key } of LEVELS) {
+      const decks = vocabDecks
+        .filter((d) => clampToFixedLevel(primaryLevel([d.level])) === key)
+        .map((d) => ({
+          id: `deck-${d.slug}`,
+          title: d.title,
+          subtitle: `${d.words.length} words · Flashcards & Quiz`,
+          route: `/vocabulary/${d.slug}`,
+          kind: "vocab" as const,
+        }))
+
+      const topicGames = playableTopics
+        .filter((t) => clampToFixedLevel(primaryLevel(t.levels)) === key)
+        .map((t) => ({
+          id: `topic-${t.topic}`,
+          title: t.title,
+          subtitle: `${t.exerciseCount} rounds · ${t.questionCount} questions`,
+          route: `/exercises/${t.topic}`,
+          kind: "topic" as const,
+        }))
+
+      map.set(key, [...decks, ...topicGames])
+    }
+
+    return map
+  }, [vocabDecks, playableTopics])
+
+  const toggleLevel = (key: string) => {
+    animateExpand()
+    setSelectedLevel((prev) => (prev === key ? null : key))
+  }
 
   if (!user) return null
 
-  if (loading) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    )
-  }
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>🎮 Game Station</Text>
-      <Text style={styles.subtitle}>Practise vocabulary and grammar by level</Text>
-
-      <View style={styles.section}>
-        <LevelScale studentId={user.id} compact />
-      </View>
-
-      {!selectedLevel ? (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+      }
+    >
+      {loading ? (
+        <GamesSkeleton />
+      ) : (
         <>
+          <FadeInDown index={0}>
+            <Text style={styles.subtitle}>Practise vocabulary and grammar by level</Text>
+          </FadeInDown>
+
+          <FadeInDown index={1} style={styles.section}>
+            <LevelScale studentId={user.id} compact />
+          </FadeInDown>
+
           <Text style={styles.pickTitle}>Choose a level</Text>
           <View style={styles.levelGrid}>
             {LEVELS.map(({ key, label }) => {
               const unlocked = isCefrUnlocked(key, currentLevel)
               const req = requiredLevelFor(key)
+              const expanded = selectedLevel === key
+              const accent = LEVEL_COLORS[key]
+              const games = gamesByLevel.get(key) ?? []
+
               return (
-                <Pressable
+                <View
                   key={key}
-                  disabled={!unlocked}
-                  onPress={() => setSelectedLevel(key)}
                   style={[
-                    styles.levelCard,
-                    { borderLeftColor: LEVEL_COLORS[key] },
+                    styles.levelBlock,
+                    { borderLeftColor: accent },
+                    expanded && { borderColor: accent + "44" },
                     !unlocked && styles.levelLocked,
                   ]}
                 >
-                  <Text style={styles.levelKey}>{key}</Text>
-                  <Text style={styles.levelLabel}>{label}</Text>
-                  {!unlocked && (
-                    <Text style={styles.lockText}>🔒 Level {req}</Text>
-                  )}
-                </Pressable>
+                  <Pressable
+                    disabled={!unlocked}
+                    onPress={() => unlocked && toggleLevel(key)}
+                    style={[
+                      styles.levelCard,
+                      expanded && styles.levelCardExpanded,
+                      expanded && { backgroundColor: accent + "0D" },
+                    ]}
+                  >
+                    <View style={styles.levelHeader}>
+                      <View style={styles.levelTextWrap}>
+                        <Text style={styles.levelKey}>{key}</Text>
+                        <Text style={styles.levelLabel}>{label}</Text>
+                        {!unlocked && (
+                          <View style={styles.lockRow}>
+                            <Ionicons name="lock-closed" size={12} color={colors.textMuted} />
+                            <Text style={styles.lockText}>Level {req}</Text>
+                          </View>
+                        )}
+                      </View>
+                      {unlocked ? (
+                        <Ionicons
+                          name={expanded ? "chevron-up" : "chevron-down"}
+                          size={18}
+                          color={expanded ? accent : colors.textMuted}
+                        />
+                      ) : null}
+                    </View>
+                  </Pressable>
+
+                  {expanded ? (
+                    <View style={[styles.gamesPanel, { backgroundColor: accent + "08" }]}>
+                      {games.length === 0 ? (
+                        <Text style={styles.empty}>No games available for this level yet.</Text>
+                      ) : (
+                        games.map((game, index) => (
+                          <FadeInDown key={game.id} index={index} delay={40}>
+                            <Pressable
+                              style={({ pressed }) => [
+                                styles.gameCard,
+                                pressed && styles.gameCardPressed,
+                              ]}
+                              onPress={() => router.push(game.route as never)}
+                            >
+                              <View style={[styles.gameIconWrap, { backgroundColor: accent + "22" }]}>
+                                <Ionicons
+                                  name={game.kind === "vocab" ? "library-outline" : "school-outline"}
+                                  size={20}
+                                  color={accent}
+                                />
+                              </View>
+                              <View style={styles.gameBody}>
+                                <Text style={styles.gameTitle}>{game.title}</Text>
+                                <Text style={styles.gameSubtitle}>{game.subtitle}</Text>
+                              </View>
+                              <Text style={styles.gameArrow}>›</Text>
+                            </Pressable>
+                          </FadeInDown>
+                        ))
+                      )}
+                    </View>
+                  ) : null}
+                </View>
               )
             })}
           </View>
-        </>
-      ) : (
-        <>
-          <Pressable onPress={() => setSelectedLevel(null)} style={styles.backBtn}>
-            <Text style={styles.backText}>← All levels</Text>
-          </Pressable>
-          <Text style={styles.pickTitle}>{selectedLevel} games</Text>
-          {gamesForLevel.length === 0 ? (
-            <Text style={styles.empty}>No games available for this level yet.</Text>
-          ) : (
-            gamesForLevel.map((game) => (
-              <Pressable
-                key={game.id}
-                style={styles.gameCard}
-                onPress={() => router.push(game.route as never)}
-              >
-                <Text style={styles.gameEmoji}>
-                  {game.kind === "vocab" ? "📚" : "📝"}
-                </Text>
-                <View style={styles.gameBody}>
-                  <Text style={styles.gameTitle}>{game.title}</Text>
-                  <Text style={styles.gameSubtitle}>{game.subtitle}</Text>
-                </View>
-                <Text style={styles.gameArrow}>›</Text>
-              </Pressable>
-            ))
-          )}
         </>
       )}
     </ScrollView>
@@ -197,40 +271,74 @@ export default function GamesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: 16, paddingBottom: 32 },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center" },
-  title: { fontSize: 22, fontWeight: "700", color: colors.text },
-  subtitle: { fontSize: 14, color: colors.textSecondary, marginTop: 4, marginBottom: 16 },
+  content: { paddingHorizontal: spacing.screen, paddingBottom: spacing.xl },
+  subtitle: { ...typography.bodySm, color: colors.textSecondary, marginBottom: spacing.section },
   section: { marginBottom: 20 },
   pickTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 12 },
   levelGrid: { gap: 10 },
-  levelCard: {
+  levelBlock: {
     backgroundColor: colors.card,
-    borderRadius: 14,
+    borderRadius: radius.card,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderLight,
     borderLeftWidth: 4,
-    padding: 16,
+    overflow: "hidden",
+    ...shadow.card,
   },
+  levelCard: {
+    padding: spacing.section,
+  },
+  levelCardExpanded: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  levelHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  levelTextWrap: { flex: 1, minWidth: 0 },
   levelLocked: { opacity: 0.55 },
   levelKey: { fontSize: 20, fontWeight: "800", color: colors.text },
   levelLabel: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  lockText: { fontSize: 11, color: colors.textMuted, marginTop: 6 },
-  backBtn: { marginBottom: 12 },
-  backText: { fontSize: 14, color: colors.primary, fontWeight: "600" },
-  empty: { fontSize: 14, color: colors.textSecondary, textAlign: "center", paddingVertical: 24 },
+  lockRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+  },
+  lockText: { fontSize: 11, color: colors.textMuted },
+  gamesPanel: {
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  empty: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
   gameCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: spacing.md,
     backgroundColor: colors.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 14,
-    marginBottom: 8,
+    borderRadius: radius.card,
+    padding: spacing.md,
+    ...shadow.card,
   },
-  gameEmoji: { fontSize: 28 },
+  gameCardPressed: { opacity: 0.94 },
+  gameIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.button,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   gameBody: { flex: 1 },
   gameTitle: { fontSize: 15, fontWeight: "600", color: colors.text },
   gameSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },

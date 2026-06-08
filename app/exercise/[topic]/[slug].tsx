@@ -1,16 +1,13 @@
 import React, { useEffect, useState } from "react"
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native"
+import { StyleSheet, Text, View } from "react-native"
+import { BackButton } from "../../../src/components/ui/BackButton"
 import { Stack, useLocalSearchParams, useRouter } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useAuth } from "../../../src/context/AuthContext"
 import { exercisesApi, homeworkApi } from "../../../src/lib/api"
 import { ExerciseRunner } from "../../../src/components/exercise/ExerciseRunner"
+import { ExerciseScreenSkeleton } from "../../../src/components/skeletons/Layouts"
+import { recordGameExercise } from "../../../src/lib/record-activity"
 import type { GrammarExercise } from "../../../src/types/grammar"
 import { colors } from "../../../src/theme/colors"
 
@@ -59,6 +56,9 @@ export default function ExerciseScreen() {
           )
         } else {
           setSessionStartedAt(Date.now())
+          if (studentId && topic) {
+            recordGameExercise(studentId, ex, topic, slug)
+          }
         }
       } catch {
         if (!cancelled) setError(true)
@@ -78,22 +78,17 @@ export default function ExerciseScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.safe} edges={["top"]}>
         {!homeworkId && (
-          <Pressable onPress={() => router.back()} style={styles.back}>
-            <Text style={styles.backText}>← Back</Text>
-          </Pressable>
+          <View style={styles.backWrap}>
+            <BackButton onPress={() => router.back()} />
+          </View>
         )}
 
         {loading || sessionStartedAt === null ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={styles.loadingText}>Loading exercise…</Text>
-          </View>
+          <ExerciseScreenSkeleton />
         ) : error || !exercise ? (
           <View style={styles.center}>
             <Text style={styles.errorText}>Exercise not found</Text>
-            <Pressable onPress={() => router.back()} style={styles.errorBtn}>
-              <Text style={styles.errorBtnText}>Go back</Text>
-            </Pressable>
+            <BackButton onPress={() => router.back()} />
           </View>
         ) : (
           <ExerciseRunner
@@ -111,16 +106,7 @@ export default function ExerciseScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  back: { paddingHorizontal: 16, paddingVertical: 8 },
-  backText: { fontSize: 14, color: colors.textSecondary },
+  backWrap: { paddingHorizontal: 16, paddingVertical: 8 },
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
-  loadingText: { fontSize: 14, color: colors.textSecondary },
   errorText: { fontSize: 16, fontWeight: "600", color: colors.text },
-  errorBtn: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  errorBtnText: { color: "#fff", fontWeight: "600" },
 })
