@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import type { VocabDeck, VocabWord } from "../types/vocabulary"
+import { analyticsApi } from "./api"
 
 const KEY_PREFIX = "learnix_learning_progress:"
 
@@ -114,6 +115,23 @@ export async function recordVocabDeckCompletion(
   progress.vocabResults = progress.vocabResults.slice(0, 100)
 
   await saveProgress(userId, progress)
+
+  void analyticsApi
+    .recordVocab({
+      deckSlug: deck.slug,
+      deckTitle: deck.title,
+      correct,
+      total,
+      source,
+      words: deck.words.map((w) => ({
+        term: w.term,
+        partOfSpeech: w.partOfSpeech,
+        definition: w.definition,
+        deckSlug: deck.slug,
+        deckTitle: deck.title,
+      })),
+    })
+    .catch(() => {})
 }
 
 export async function recordGameExerciseResult(

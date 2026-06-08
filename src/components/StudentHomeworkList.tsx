@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react"
 import { StyleSheet, View } from "react-native"
 import { useFocusEffect } from "expo-router"
-import { exercisesApi, homeworkApi } from "../lib/api"
+import { exercisesApi, homeworkApi, controlWorkApi } from "../lib/api"
 import {
   getHomeworkListSnapshot,
   setHomeworkListSnapshot,
@@ -10,7 +10,7 @@ import { HomeworkSection, type HomeworkItem } from "./HomeworkSection"
 import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
 import type { GrammarExercise } from "../types/grammar"
-import type { StudentHomeworkEntry } from "../types/domain"
+import type { StudentHomeworkEntry, StudentControlWorkEntry } from "../types/domain"
 import { colors, spacing } from "../theme/tokens"
 
 type Status = "pending" | "in_progress" | "completed"
@@ -70,6 +70,60 @@ function mapHomeworkItems(
     }
   })
 
+  return mapped
+}
+
+function mapControlWorkItems(entries: StudentControlWorkEntry[]): HomeworkItem[] {
+  return entries.map(({ controlWork: cw, submission }) => {
+    const failedCheating = submission.integrityStatus === "cheating_detected"
+    const status: Status =
+      failedCheating || submission.status === "submitted" || submission.status === "graded"
+        ? "completed"
+        : submission.status === "in_progress" || submission.status === "paused"
+          ? "in_progress"
+          : "pending"
+
+    const sectionDone = submission.stepResults?.filter((s) => s.status === "completed").length ?? 0
+
+    return {
+      id: cw.id,
+      subject: "grammar",
+      title: cw.title,
+      description: cw.description || `${cw.steps.length} sections`,
+      dueAt: cw.dueAt,
+      createdAt: cw.createdAt,
+      status,
+      timeLimitMinutes: cw.timeLimitMinutes,
+      completedAt: submission.submittedAt ?? undefined,
+      integrityStatus: submission.integrityStatus,
+      failedCheating,
+      paused: submission.status === "paused",
+      pauseUsed: submission.pauseUsed,
+      route: failedCheating ? undefined : `/homework/control/${cw.id}`,
+      kind: "control_work",
+      sectionDone,
+      sectionTotal: cw.steps.length,
+      correctCount: submission.stepResults?.reduce(
+        (acc, s) => acc + (s.attempt?.correctCount ?? 0),
+        0,
+      ),
+      totalQuestions: submission.stepResults?.reduce(
+        (acc, s) => acc + (s.attempt?.totalQuestions ?? 0),
+        0,
+      ),
+    }
+  })
+}
+
+function mergeHomeworkItems(
+  homeworkEntries: StudentHomeworkEntry[],
+  controlEntries: StudentControlWorkEntry[],
+  exList: GrammarExercise[],
+): HomeworkItem[] {
+  const mapped = [
+    ...mapHomeworkItems(homeworkEntries, exList),
+    ...mapControlWorkItems(controlEntries),
+  ]
   mapped.sort((a, b) => {
     const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
     if (s !== 0) return s
@@ -77,7 +131,6 @@ function mapHomeworkItems(
     if (byAssigned !== 0) return byAssigned
     return new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
   })
-
   return mapped
 }
 
@@ -91,12 +144,13 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
   const load = useCallback(
     async (opts?: { force?: boolean }) => {
       try {
-        const [entries, exList] = await Promise.all([
+        const [entries, controlEntries, exList] = await Promise.all([
           homeworkApi.mine(opts),
+          controlWorkApi.mine(opts),
           exercisesApi.list(undefined, opts),
         ])
 
-        const mapped = mapHomeworkItems(entries, exList)
+        const mapped = mergeHomeworkItems(entries, controlEntries, exList)
         setHomeworkListSnapshot(studentId, mapped)
         setItems(mapped)
         hasLoadedRef.current = true

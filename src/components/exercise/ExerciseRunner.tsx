@@ -29,6 +29,8 @@ import { colors, radius, spacing } from "../../theme/tokens"
 export interface ExerciseRunnerProps {
   exercise: GrammarExercise
   homeworkId?: string
+  controlWorkId?: string
+  stepIndex?: number
   studentId?: string
   timeLimitMinutes?: number
   /** Active segment anchor — timer only runs while this is set. */
@@ -110,6 +112,8 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
   const {
     exercise,
     homeworkId,
+    controlWorkId,
+    stepIndex,
     studentId,
     timeLimitMinutes,
     sessionStartedAt,
@@ -200,6 +204,8 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         studentId={studentId}
         lockNavigation={lockNavigation}
         onSessionEnd={onSessionEnd}
@@ -272,6 +278,8 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
   const {
     exercise,
     homeworkId,
+    controlWorkId,
+    stepIndex,
     studentId,
     timeLimitMinutes,
     sessionStartedAt,
@@ -349,6 +357,8 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         studentId={studentId}
         lockNavigation={lockNavigation}
         onSessionEnd={onSessionEnd}
@@ -421,6 +431,8 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
   const {
     exercise,
     homeworkId,
+    controlWorkId,
+    stepIndex,
     studentId,
     timeLimitMinutes,
     sessionStartedAt,
@@ -496,6 +508,8 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         studentId={studentId}
         lockNavigation={lockNavigation}
         onSessionEnd={onSessionEnd}
@@ -559,6 +573,8 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
   const {
     exercise,
     homeworkId,
+    controlWorkId,
+    stepIndex,
     studentId,
     timeLimitMinutes,
     sessionStartedAt,
@@ -642,6 +658,8 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         studentId={studentId}
         lockNavigation={lockNavigation}
         onSessionEnd={onSessionEnd}
@@ -697,6 +715,8 @@ function MatchingRunner(props: ExerciseRunnerProps) {
   const {
     exercise,
     homeworkId,
+    controlWorkId,
+    stepIndex,
     studentId,
     timeLimitMinutes,
     sessionStartedAt,
@@ -770,6 +790,8 @@ function MatchingRunner(props: ExerciseRunnerProps) {
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         studentId={studentId}
         lockNavigation={lockNavigation}
         onSessionEnd={onSessionEnd}
@@ -894,6 +916,8 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
   const {
     exercise,
     homeworkId,
+    controlWorkId,
+    stepIndex,
     studentId,
     timeLimitMinutes,
     sessionStartedAt,
@@ -989,6 +1013,8 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         studentId={studentId}
         lockNavigation={lockNavigation}
         onSessionEnd={onSessionEnd}
@@ -1058,6 +1084,8 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
   const {
     exercise,
     homeworkId,
+    controlWorkId,
+    stepIndex,
     studentId,
     timeLimitMinutes,
     sessionStartedAt,
@@ -1142,6 +1170,8 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
         finishedAt={finishedAt}
         mistakes={mistakes}
         homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         studentId={studentId}
         lockNavigation={lockNavigation}
         onSessionEnd={onSessionEnd}

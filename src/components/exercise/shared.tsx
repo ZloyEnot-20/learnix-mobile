@@ -8,7 +8,7 @@ import {
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
-import { analyticsApi, homeworkApi } from "../../lib/api"
+import { analyticsApi, controlWorkApi, homeworkApi } from "../../lib/api"
 import { recordGameExerciseResult } from "../../lib/learned-vocabulary"
 import type { GrammarExercise } from "../../types/grammar"
 import { colors, radius, shadow, spacing } from "../../theme/tokens"
@@ -175,6 +175,8 @@ export function ResultsScreen({
   finishedAt,
   mistakes,
   homeworkId,
+  controlWorkId,
+  stepIndex,
   studentId,
   lockNavigation,
   onSessionEnd,
@@ -188,6 +190,8 @@ export function ResultsScreen({
   finishedAt: number | null
   mistakes: ReviewItem[]
   homeworkId?: string
+  controlWorkId?: string
+  stepIndex?: number
   studentId?: string
   lockNavigation?: boolean
   onSessionEnd?: () => void
@@ -234,6 +238,26 @@ export function ResultsScreen({
         correctCount,
         totalQuestions: total,
       }).catch(() => {})
+    }
+
+    if (controlWorkId != null && stepIndex != null && studentId) {
+      void controlWorkApi
+        .completeStep(controlWorkId, stepIndex, {
+          totalQuestions: total,
+          correctCount,
+          durationSeconds: Math.round(elapsedMs / 1000),
+          timedOut: timedOut || undefined,
+          answeredCount,
+          mistakes: mistakes.map((m) => ({
+            questionId: m.id,
+            prompt: m.prompt,
+            userAnswer: m.userAnswer,
+            correctAnswer: m.correctAnswer,
+            explanation: m.explanation,
+          })),
+        })
+        .catch(() => {})
+      return
     }
 
     if (!homeworkId || !studentId) return

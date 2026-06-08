@@ -27,6 +27,10 @@ export interface HomeworkItem {
   route?: string
   correctCount?: number
   totalQuestions?: number
+  /** Multi-section unit test (control work). */
+  kind?: "homework" | "control_work"
+  sectionDone?: number
+  sectionTotal?: number
 }
 
 const SUBJECT_ICONS: Record<Subject, keyof typeof Ionicons.glyphMap> = {
@@ -188,6 +192,17 @@ function HomeworkCard({ hw }: { hw: HomeworkItem }) {
               </Text>
             </View>
           </View>
+
+          {hw.kind === "control_work" ? (
+            <View style={styles.unitBadge}>
+              <Text style={styles.unitBadgeText}>Unit test</Text>
+              {hw.sectionTotal != null ? (
+                <Text style={styles.unitBadgeSub}>
+                  {hw.sectionDone ?? 0}/{hw.sectionTotal} sections
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
 
           {hw.description ? (
             <Text style={styles.description} numberOfLines={2}>
@@ -569,5 +584,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.textMuted,
     marginTop: 1,
+  },
+  unitBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 4,
+  },
+  unitBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.primaryDark,
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    overflow: "hidden",
+  },
+  unitBadgeSub: {
+    fontSize: 11,
+    color: colors.textMuted,
+    fontWeight: "600",
   },
 })

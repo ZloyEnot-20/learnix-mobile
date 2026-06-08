@@ -10,7 +10,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { ResultStatusIcon, resultVariant } from "./exercise/shared"
 import { BackButton } from "./ui/BackButton"
-import { homeworkApi } from "../lib/api"
+import { controlWorkApi, homeworkApi } from "../lib/api"
 import { recordVocabDeckCompletion } from "../lib/learned-vocabulary"
 import { shuffle } from "../lib/utils"
 import {
@@ -26,6 +26,8 @@ type Mode = "menu" | "flashcards" | "quiz" | "results"
 interface VocabScreenProps {
   deck: VocabDeck
   homeworkId?: string
+  controlWorkId?: string
+  stepIndex?: number
   isStudent: boolean
   homeworkMode?: boolean
   studentId?: string
@@ -35,6 +37,8 @@ interface VocabScreenProps {
 export function VocabularyScreen({
   deck,
   homeworkId,
+  controlWorkId,
+  stepIndex,
   isStudent,
   homeworkMode = false,
   studentId,
@@ -68,7 +72,15 @@ export function VocabularyScreen({
         homeworkMode ? "homework" : "game",
       )
     }
-    if (homeworkId && isStudent) {
+    if (controlWorkId != null && stepIndex != null && isStudent) {
+      void controlWorkApi
+        .completeStep(controlWorkId, stepIndex, {
+          totalQuestions: total,
+          correctCount: correct,
+          mistakes: [],
+        })
+        .catch(() => {})
+    } else if (homeworkId && isStudent) {
       void homeworkApi
         .recordAttempt(homeworkId, {
           totalQuestions: total,

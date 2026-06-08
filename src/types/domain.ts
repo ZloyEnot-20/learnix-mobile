@@ -77,6 +77,56 @@ export interface StudentHomeworkEntry {
   submission: HomeworkSubmission
 }
 
+export type ControlWorkSubject = "vocabulary" | "grammar" | "reading" | "listening" | "writing"
+
+export interface ControlWorkStep {
+  subject: ControlWorkSubject
+  title: string
+  exerciseSlug?: string
+  deckSlug?: string
+  testId?: string
+  topic?: string
+}
+
+export interface ControlWork {
+  id: string
+  title: string
+  description: string
+  groupId: string
+  dueAt: string
+  timeLimitMinutes?: number
+  createdBy: string
+  createdAt: string
+  steps: ControlWorkStep[]
+}
+
+export interface ControlWorkStepResult {
+  stepIndex: number
+  status: "pending" | "completed"
+  attempt?: HomeworkAttempt
+  submittedAt?: string
+}
+
+export interface ControlWorkSubmission {
+  id: string
+  controlWorkId: string
+  studentId: string
+  status: HomeworkStatus
+  currentStep: number
+  stepResults: ControlWorkStepResult[]
+  score?: number
+  startedAt?: string
+  submittedAt?: string
+  integrityStatus?: IntegrityStatus
+  pauseUsed?: boolean
+  pausedAt?: string
+}
+
+export interface StudentControlWorkEntry {
+  controlWork: ControlWork
+  submission: ControlWorkSubmission
+}
+
 export interface TestResult {
   id: string
   testType: "reading" | "listening" | "writing" | "speaking"
