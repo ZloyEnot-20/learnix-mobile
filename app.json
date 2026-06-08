@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "IELTS Student",
+    "slug": "ielts-student",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "ielts",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#C8102E"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.ielts.student"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#C8102E"
+      },
+      "package": "com.ielts.student"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
