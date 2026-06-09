@@ -117,9 +117,9 @@ export default function ControlWorkScreen() {
         <View style={styles.topBar}>
           <BackButton />
           <View style={styles.topBarText}>
-            <Text style={styles.badge}>Unit test</Text>
+            <Text style={styles.badge}>Progress test</Text>
             <Text style={styles.title} numberOfLines={2}>
-              {cw?.title ?? "Control work"}
+              {cw?.title ?? "Progress test"}
             </Text>
           </View>
         </View>
@@ -130,7 +130,7 @@ export default function ControlWorkScreen() {
           </View>
         ) : !cw ? (
           <View style={styles.center}>
-            <Text style={styles.error}>Control work not found</Text>
+            <Text style={styles.error}>Progress test not found</Text>
           </View>
         ) : (
           <ScrollView
@@ -149,7 +149,7 @@ export default function ControlWorkScreen() {
             {completed && sub?.status === "submitted" && typeof sub.score === "number" ? (
               <View style={styles.doneCard}>
                 <Ionicons name="checkmark-circle" size={32} color={colors.success} />
-                <Text style={styles.doneTitle}>Control work complete</Text>
+                <Text style={styles.doneTitle}>Progress test complete</Text>
                 <Text style={styles.doneScore}>Band {sub.score.toFixed(1)}</Text>
               </View>
             ) : null}

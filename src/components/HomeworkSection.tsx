@@ -195,7 +195,7 @@ function HomeworkCard({ hw }: { hw: HomeworkItem }) {
 
           {hw.kind === "control_work" ? (
             <View style={styles.unitBadge}>
-              <Text style={styles.unitBadgeText}>Unit test</Text>
+              <Text style={styles.unitBadgeText}>Progress test</Text>
               {hw.sectionTotal != null ? (
                 <Text style={styles.unitBadgeSub}>
                   {hw.sectionDone ?? 0}/{hw.sectionTotal} sections
