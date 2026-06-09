@@ -226,7 +226,10 @@ export function ResultsScreen({
         correctCount,
         totalQuestions: total,
         timedOut: timedOut || undefined,
-        studentId,
+        source: homeworkId ? "homework" : controlWorkId != null ? "control_work" : "game",
+        homeworkId: homeworkId ?? undefined,
+        controlWorkId: controlWorkId != null ? String(controlWorkId) : undefined,
+        durationSeconds: elapsedSeconds,
       })
       .catch(() => {})
 
