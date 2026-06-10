@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from "react-native"
-import { Audio } from "expo-av"
+import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import type { GrammarExercise, GrammarQuestion } from "../../types/grammar"
@@ -184,43 +184,25 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [showHint, setShowHint] = useState(false)
-  const [playback, setPlayback] = useState<Audio.Sound | null>(null)
-  const [playing, setPlaying] = useState(false)
+  const previewPlayer = useAudioPlayer(null)
+  const previewStatus = useAudioPlayerStatus(previewPlayer)
+  const playing = previewStatus.playing
   const recorder = useAudioRecorder()
 
   const q: GrammarQuestion | undefined = questions[index]
   const finished = index >= questions.length
 
-  useEffect(() => {
-    return () => {
-      void playback?.unloadAsync().catch(() => {})
-    }
-  }, [playback])
-
-  const stopPlayback = useCallback(async () => {
-    if (playback) {
-      await playback.stopAsync().catch(() => {})
-      await playback.unloadAsync().catch(() => {})
-      setPlayback(null)
-    }
-    setPlaying(false)
-  }, [playback])
+  const stopPlayback = useCallback(() => {
+    previewPlayer.pause()
+  }, [previewPlayer])
 
   const playLocal = useCallback(
     async (uri: string) => {
-      await stopPlayback()
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true })
-      const { sound } = await Audio.Sound.createAsync({ uri })
-      sound.setOnPlaybackStatusUpdate((st) => {
-        if (st.isLoaded && st.didJustFinish) {
-          setPlaying(false)
-        }
-      })
-      setPlayback(sound)
-      setPlaying(true)
-      await sound.playAsync()
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })
+      previewPlayer.replace({ uri })
+      previewPlayer.play()
     },
-    [stopPlayback],
+    [previewPlayer],
   )
 
   const handleRecordToggle = useCallback(async () => {
@@ -232,8 +214,9 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
       await recorder.resume()
       return
     }
+    await stopPlayback()
     await recorder.start()
-  }, [recorder])
+  }, [recorder, stopPlayback])
 
   const handleStop = useCallback(async () => {
     await recorder.stop()
@@ -307,100 +290,91 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
   const canSubmit = recorder.hasRecording && !uploading
 
   const body = (
-    <View style={styles.card}>
-      <Text style={styles.qLabel}>Question {index + 1}</Text>
-      <Text style={styles.questionText}>{q.text}</Text>
-      {q.prepTimeSeconds ? (
-        <Text style={styles.timeHint}>
-          Prep: {q.prepTimeSeconds}s · Speak up to {q.speakTimeSeconds ?? 60}s
-        </Text>
-      ) : null}
-      <HintRow showHint={showHint} setShowHint={setShowHint} hint={q.hint} />
+    <>
+      <View style={styles.card}>
+        <Text style={styles.qLabel}>Question {index + 1}</Text>
+        <Text style={styles.questionText}>{q.text}</Text>
+        {q.prepTimeSeconds ? (
+          <Text style={styles.timeHint}>
+            Prep: {q.prepTimeSeconds}s · Speak up to {q.speakTimeSeconds ?? 60}s
+          </Text>
+        ) : null}
+        <HintRow showHint={showHint} setShowHint={setShowHint} hint={q.hint} />
+      </View>
 
       {recorder.error ? <Text style={styles.errorText}>{recorder.error}</Text> : null}
       {uploadError ? <Text style={styles.errorText}>{uploadError}</Text> : null}
 
       <View style={styles.recorderPanel}>
-        <View style={styles.recorderStatus}>
-          <View
-            style={[
-              styles.recDot,
-              recorder.isRecording && styles.recDotActive,
-              recorder.isPaused && styles.recDotPaused,
-            ]}
-          />
-          <Text style={styles.recorderStatusText}>
-            {recorder.isRecording
-              ? "Recording…"
-              : recorder.isPaused
-                ? "Paused"
-                : recorder.hasRecording
-                  ? `Recorded ${formatDuration(recorder.durationMs)}`
-                  : "Tap Record to start"}
-          </Text>
-        </View>
+        <Text style={styles.recorderStatusText}>
+          {recorder.isRecording
+            ? "Recording…"
+            : recorder.isPaused
+              ? "Paused"
+              : recorder.hasRecording
+                ? `Recorded ${formatDuration(recorder.durationMs)}`
+                : "Tap the button to record your answer"}
+        </Text>
 
-        <View style={styles.recorderActions}>
+        <View style={styles.recordButtonWrap}>
           <Pressable
             onPress={handleRecordToggle}
             disabled={uploading || recorder.hasRecording}
+            accessibilityRole="button"
+            accessibilityLabel={recordButtonLabel}
             style={({ pressed }) => [
-              styles.recordBtn,
-              (recorder.isRecording || recorder.isPaused) && styles.recordBtnActive,
+              styles.recordCircleBtn,
+              (recorder.isRecording || recorder.isPaused) && styles.recordCircleBtnActive,
               pressed && styles.btnPressed,
               (uploading || recorder.hasRecording) && styles.btnDisabled,
             ]}
           >
             <Ionicons
               name={recordButtonIcon}
-              size={28}
+              size={40}
               color={recorder.isRecording || recorder.isPaused ? "#fff" : colors.primary}
             />
-            <Text
-              style={[
-                styles.recordBtnText,
-                (recorder.isRecording || recorder.isPaused) && styles.recordBtnTextActive,
-              ]}
-            >
-              {recordButtonLabel}
-            </Text>
           </Pressable>
-
-          {(recorder.isRecording || recorder.isPaused) && (
-            <Pressable
-              onPress={handleStop}
-              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
-            >
-              <Ionicons name="stop" size={22} color={colors.text} />
-              <Text style={styles.secondaryBtnText}>Stop</Text>
-            </Pressable>
-          )}
-
-          {recorder.hasRecording && (
-            <>
-              <Pressable
-                onPress={() => (playing ? stopPlayback() : playLocal(recorder.uri!))}
-                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
-              >
-                <Ionicons
-                  name={playing ? "pause-circle-outline" : "play-circle-outline"}
-                  size={22}
-                  color={colors.primary}
-                />
-                <Text style={styles.secondaryBtnText}>{playing ? "Stop" : "Listen"}</Text>
-              </Pressable>
-              <Pressable
-                onPress={handleReRecord}
-                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
-              >
-                <Ionicons name="refresh-outline" size={22} color={colors.textSecondary} />
-                <Text style={styles.secondaryBtnText}>Re-record</Text>
-              </Pressable>
-            </>
-          )}
         </View>
+
+        {(recorder.isRecording || recorder.isPaused || recorder.hasRecording) && (
+          <View style={styles.recorderActions}>
+            {(recorder.isRecording || recorder.isPaused) && (
+              <Pressable
+                onPress={handleStop}
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+              >
+                <Ionicons name="stop" size={22} color={colors.text} />
+                <Text style={styles.secondaryBtnText}>Stop</Text>
+              </Pressable>
+            )}
+
+            {recorder.hasRecording && (
+              <>
+                <Pressable
+                  onPress={() => (playing ? stopPlayback() : playLocal(recorder.uri!))}
+                  style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+                >
+                  <Ionicons
+                    name={playing ? "pause-circle-outline" : "play-circle-outline"}
+                    size={22}
+                    color={colors.primary}
+                  />
+                  <Text style={styles.secondaryBtnText}>{playing ? "Stop" : "Listen"}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleReRecord}
+                  style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+                >
+                  <Ionicons name="refresh-outline" size={22} color={colors.textSecondary} />
+                  <Text style={styles.secondaryBtnText}>Re-record</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
       </View>
-    </View>
+    </>
   )
 
   const footer = (
@@ -442,7 +416,7 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
   return (
     <View style={styles.container}>
       <ProgressBar index={index} total={questions.length} correctCount={responses.length} />
-      {body}
+      <View style={styles.bodyWrap}>{body}</View>
       <View style={styles.footerWrap}>{footer}</View>
     </View>
   )
@@ -450,6 +424,7 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: spacing.md },
+  bodyWrap: { flex: 1 },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
@@ -461,40 +436,59 @@ const styles = StyleSheet.create({
   qLabel: { fontSize: 13, fontWeight: "600", color: colors.textSecondary, marginBottom: 8 },
   questionText: { fontSize: 18, lineHeight: 26, color: colors.text, marginBottom: 8 },
   timeHint: { fontSize: 12, color: colors.textMuted, marginBottom: 8 },
-  errorText: { color: colors.error, fontSize: 13, marginBottom: 8 },
+  errorText: {
+    color: colors.error,
+    fontSize: 13,
+    marginBottom: 8,
+    textAlign: "center",
+    paddingHorizontal: spacing.md,
+  },
   recorderPanel: {
+    flex: 1,
     marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  recorderStatus: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: spacing.md },
-  recDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.border,
-  },
-  recDotActive: { backgroundColor: colors.error },
-  recDotPaused: { backgroundColor: colors.warning },
-  recorderStatusText: { fontSize: 14, color: colors.textSecondary },
-  recorderActions: { flexDirection: "row", flexWrap: "wrap", gap: 10, alignItems: "center" },
-  recordBtn: {
-    flexDirection: "row",
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+    justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: radius.full,
-    borderWidth: 2,
+    minHeight: 300,
+  },
+  recorderStatusText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginBottom: spacing.lg,
+  },
+  recordButtonWrap: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.lg,
+  },
+  recordCircleBtn: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 3,
     borderColor: colors.primary,
     backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  recordBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  recordBtnText: { fontSize: 16, fontWeight: "700", color: colors.primary },
-  recordBtnTextActive: { color: "#fff" },
+  recordCircleBtnActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  recorderActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   secondaryBtn: {
     flexDirection: "row",
     alignItems: "center",

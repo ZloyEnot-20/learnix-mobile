@@ -15,19 +15,23 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ielts.student"
+      "bundleIdentifier": "com.ielts.student",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Allow IELTS Student to record your speaking answers."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#C8102E"
       },
-      "package": "com.ielts.student"
+      "package": "com.ielts.student",
+      "permissions": ["RECORD_AUDIO"]
     },
     "plugins": [
       "expo-router",
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "Allow IELTS Student to record your speaking answers."
         }
