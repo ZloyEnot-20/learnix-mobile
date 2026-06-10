@@ -11,6 +11,11 @@ import { useRouter } from "expo-router"
 import { analyticsApi, controlWorkApi, homeworkApi } from "../../lib/api"
 import { recordGameExerciseResult } from "../../lib/learned-vocabulary"
 import type { GrammarExercise } from "../../types/grammar"
+import {
+  HomeworkFooterButton,
+  HomeworkMistakeCard,
+  HomeworkResultsLayout,
+} from "../homework/HomeworkExerciseLayout"
 import { colors, radius, shadow, spacing } from "../../theme/tokens"
 
 export type ResultVariant = "passed" | "retry" | "timeout"
@@ -141,27 +146,35 @@ export function ActionRow({
   isLast,
   onCheck,
   onNext,
+  variant = "default",
 }: {
   result: "idle" | "correct" | "incorrect"
   canCheck: boolean
   isLast: boolean
   onCheck: () => void
   onNext: () => void
+  variant?: "default" | "homework"
 }) {
+  const isHomework = variant === "homework"
+  const btnStyle = isHomework ? styles.homeworkBtn : styles.primaryBtn
+  const btnTextStyle = isHomework ? styles.homeworkBtnText : styles.primaryBtnText
+
   if (result === "idle") {
     return (
       <Pressable
         onPress={onCheck}
         disabled={!canCheck}
-        style={[styles.primaryBtn, !canCheck && styles.btnDisabled]}
+        style={[btnStyle, !canCheck && styles.btnDisabled]}
       >
-        <Text style={styles.primaryBtnText}>Check</Text>
+        <Text style={btnTextStyle}>
+          {isHomework ? (isLast ? "See results" : "Next") : "Check"}
+        </Text>
       </Pressable>
     )
   }
   return (
-    <Pressable onPress={onNext} style={styles.primaryBtn}>
-      <Text style={styles.primaryBtnText}>{isLast ? "See results" : "Next question"}</Text>
+    <Pressable onPress={onNext} style={btnStyle}>
+      <Text style={btnTextStyle}>{isLast ? "See results" : "Next question"}</Text>
     </Pressable>
   )
 }
@@ -233,13 +246,14 @@ export function ResultsScreen({
       })
       .catch(() => {})
 
-    if (studentId && !homeworkId) {
+    if (studentId && !homeworkId && controlWorkId == null) {
       void recordGameExerciseResult(studentId, {
         slug: exercise.slug,
         title: exercise.title,
         topic: exercise.topic,
         correctCount,
         totalQuestions: total,
+        passed,
       }).catch(() => {})
     }
 
@@ -283,6 +297,44 @@ export function ResultsScreen({
   }, [])
 
   const hasMistakes = mistakes.length > 0
+  const resultTitle = timedOut ? "Time's up!" : passed ? "Well done!" : "Keep practising"
+  const doneButton = (
+    <HomeworkFooterButton label="Done" onPress={() => router.back()} />
+  )
+
+  if (homeworkId) {
+    return (
+      <HomeworkResultsLayout footer={doneButton}>
+        <View style={[styles.homeworkResultsHero, !hasMistakes && styles.homeworkResultsHeroCentered]}>
+          <ResultStatusIcon variant={resultVariant(!!timedOut, passed)} />
+          <Text style={styles.homeworkResultsTitle}>{resultTitle}</Text>
+          <Text style={styles.homeworkResultsScore}>
+            {correctCount}/{total} correct ({scorePct}%)
+          </Text>
+          <Text style={styles.homeworkResultsMeta}>
+            {passed ? "You passed!" : `Need ${exercise.passingScore} to pass`}
+            {" · "}
+            {Math.max(1, Math.round(elapsedMs / 60000))} min
+          </Text>
+        </View>
+
+        {hasMistakes ? (
+          <View style={styles.homeworkMistakesSection}>
+            <Text style={styles.homeworkMistakesTitle}>Review mistakes</Text>
+            {mistakes.map((m) => (
+              <HomeworkMistakeCard
+                key={m.id}
+                prompt={m.prompt}
+                userAnswer={m.userAnswer}
+                correctAnswer={m.correctAnswer}
+                explanation={m.explanation}
+              />
+            ))}
+          </View>
+        ) : null}
+      </HomeworkResultsLayout>
+    )
+  }
 
   return (
     <ScrollView
@@ -294,9 +346,7 @@ export function ResultsScreen({
     >
       <View style={styles.resultsHero}>
         <ResultStatusIcon variant={resultVariant(!!timedOut, passed)} />
-        <Text style={styles.resultsTitle}>
-          {timedOut ? "Time's up!" : passed ? "Well done!" : "Keep practising"}
-        </Text>
+        <Text style={styles.resultsTitle}>{resultTitle}</Text>
         <Text style={styles.resultsScore}>
           {correctCount}/{total} correct ({scorePct}%)
         </Text>
@@ -384,8 +434,20 @@ const styles = StyleSheet.create({
     minHeight: 48,
     marginTop: 16,
   },
-  btnDisabled: { opacity: 0.5 },
+  homeworkBtn: {
+    alignSelf: "stretch",
+    width: "100%",
+    backgroundColor: colors.brand,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  btnDisabled: { opacity: 0.45 },
   primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  homeworkBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
   resultsScroll: { flex: 1, backgroundColor: colors.background },
   resultsContent: {
     flexGrow: 1,
@@ -445,4 +507,42 @@ const styles = StyleSheet.create({
   mistakeWrong: { fontSize: 13, color: colors.error, marginTop: 6 },
   mistakeRight: { fontSize: 13, color: colors.success, marginTop: 2 },
   mistakeExpl: { fontSize: 12, color: colors.textSecondary, marginTop: 6 },
+  homeworkResultsHero: {
+    width: "100%",
+    alignItems: "center",
+    paddingTop: spacing.md,
+  },
+  homeworkResultsHeroCentered: {
+    flexGrow: 1,
+    justifyContent: "center",
+  },
+  homeworkResultsTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
+  homeworkResultsScore: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  homeworkResultsMeta: {
+    fontSize: 14,
+    color: colors.textMuted,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  homeworkMistakesSection: {
+    width: "100%",
+    marginTop: spacing.xl,
+  },
+  homeworkMistakesTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
 })

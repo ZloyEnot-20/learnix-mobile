@@ -41,7 +41,7 @@ export default function HomeworkVocabularyScreen() {
 
   const homeworkId = hw
 
-  const isStudent = user?.role === "student"
+  const isStudent = user?.type === "student"
 
 
 
@@ -354,7 +354,7 @@ export default function HomeworkVocabularyScreen() {
 
 const styles = StyleSheet.create({
 
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: "#FFFFFF" },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
 

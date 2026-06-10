@@ -65,7 +65,7 @@ export interface AuthUser {
   login: string
   email: string
   name: string
-  role: "admin" | "teacher" | "student" | "super_admin"
+  type: "admin" | "teacher" | "student" | "super_admin"
   isPremium: boolean
 }
 

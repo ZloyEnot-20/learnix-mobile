@@ -192,8 +192,7 @@ export function useHomeworkIntegrity(
 
   const dismissSuspicious = useCallback(() => {
     setSuspicious(false)
-    onPaused()
-  }, [onPaused])
+  }, [])
 
   return {
     failed,

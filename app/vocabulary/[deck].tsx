@@ -26,7 +26,7 @@ export default function VocabularyDeckScreen() {
       .then((d) => {
         if (!cancelled) {
           setDeck(d ?? null)
-          if (d && !hw && user?.role === "student" && user.id) {
+          if (d && !hw && user?.type === "student" && user.id) {
             recordGameVocabulary(user.id, d, deckSlug)
           }
         }
@@ -40,7 +40,7 @@ export default function VocabularyDeckScreen() {
     return () => {
       cancelled = true
     }
-  }, [deckSlug, hw, user?.id, user?.role])
+  }, [deckSlug, hw, user?.id, user?.type])
 
   return (
     <>
@@ -57,8 +57,8 @@ export default function VocabularyDeckScreen() {
           <VocabularyScreen
             deck={deck}
             homeworkId={hw ?? undefined}
-            isStudent={user?.role === "student"}
-            studentId={user?.role === "student" ? user.id : undefined}
+            isStudent={user?.type === "student"}
+            studentId={user?.type === "student" ? user.id : undefined}
           />
         )}
       </SafeAreaView>

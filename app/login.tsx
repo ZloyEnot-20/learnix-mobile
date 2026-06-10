@@ -32,7 +32,7 @@ export default function LoginScreen() {
     )
   }
 
-  if (user?.role === "student") {
+  if (user?.type === "student") {
     return <Redirect href="/(tabs)" />
   }
 

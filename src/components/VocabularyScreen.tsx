@@ -10,6 +10,12 @@ import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { ResultStatusIcon, resultVariant } from "./exercise/shared"
 import { BackButton } from "./ui/BackButton"
+import {
+  HomeworkExerciseLayout,
+  HomeworkFooterButton,
+  HomeworkResultsLayout,
+  HomeworkSourceCard,
+} from "./homework/HomeworkExerciseLayout"
 import { controlWorkApi, homeworkApi } from "../lib/api"
 import { recordVocabDeckCompletion } from "../lib/learned-vocabulary"
 import { shuffle } from "../lib/utils"
@@ -153,6 +159,22 @@ export function VocabularyScreen({
 
   const passed = quizScore.correct >= Math.ceil(quizScore.total * 0.6)
 
+  if (homeworkMode) {
+    return (
+      <HomeworkResultsLayout
+        footer={<HomeworkFooterButton label="Done" onPress={() => router.back()} />}
+      >
+        <View style={styles.homeworkResultsHero}>
+          <ResultStatusIcon variant={resultVariant(false, passed)} />
+          <Text style={styles.homeworkResultsTitle}>Quiz complete!</Text>
+          <Text style={styles.homeworkResultsScore}>
+            {quizScore.correct}/{quizScore.total} correct
+          </Text>
+        </View>
+      </HomeworkResultsLayout>
+    )
+  }
+
   return (
     <View style={styles.resultsWrap}>
       <View style={styles.resultsBody}>
@@ -263,6 +285,17 @@ function Quiz({
     if (selected == null || checked) return
     const isCorrect = selected === wordTranslation(word, lang)
     if (isCorrect) setCorrect((c) => c + 1)
+
+    if (homeworkMode) {
+      if (index + 1 >= questions.length) {
+        onComplete(isCorrect ? correct + 1 : correct, questions.length)
+      } else {
+        setIndex((i) => i + 1)
+        setSelected(null)
+      }
+      return
+    }
+
     setChecked(true)
   }
 
@@ -280,6 +313,66 @@ function Quiz({
 
   const correctAnswer = wordTranslation(word, lang)
 
+  const optionsBlock = (
+    <View style={homeworkMode ? styles.homeworkMcOptions : styles.options}>
+      {options.map((opt, optIndex) => (
+        <Pressable
+          key={`${index}-opt-${optIndex}`}
+          disabled={checked}
+          onPress={() => setSelected(opt)}
+          style={[
+            homeworkMode ? styles.homeworkMcOption : styles.option,
+            selected === opt && !checked && (homeworkMode ? styles.homeworkOptionSelected : styles.optionSelected),
+            !homeworkMode && checked && opt === correctAnswer && styles.optionCorrect,
+            !homeworkMode && checked && selected === opt && opt !== correctAnswer && styles.optionWrong,
+          ]}
+        >
+          <Text style={homeworkMode ? styles.homeworkMcOptionText : styles.optionText}>{opt}</Text>
+        </Pressable>
+      ))}
+    </View>
+  )
+
+  const actionButton = homeworkMode ? (
+    <Pressable
+      style={[styles.homeworkBtn, selected == null && styles.btnDisabled]}
+      onPress={handleCheck}
+      disabled={selected == null}
+    >
+      <Text style={styles.homeworkBtnText}>
+        {index + 1 >= questions.length ? "See results" : "Next"}
+      </Text>
+    </Pressable>
+  ) : !checked ? (
+    <Pressable
+      style={[styles.primaryBtn, selected == null && styles.btnDisabled]}
+      onPress={handleCheck}
+      disabled={selected == null}
+    >
+      <Text style={styles.primaryBtnText}>Check</Text>
+    </Pressable>
+  ) : (
+    <Pressable style={styles.primaryBtn} onPress={handleNext}>
+      <Text style={styles.primaryBtnText}>
+        {index + 1 >= questions.length ? "See results" : "Next"}
+      </Text>
+    </Pressable>
+  )
+
+  if (homeworkMode) {
+    return (
+      <HomeworkExerciseLayout
+        index={index}
+        total={questions.length}
+        instruction="Choose the correct translation."
+        footer={actionButton}
+      >
+        <HomeworkSourceCard source={word.term} />
+        {optionsBlock}
+      </HomeworkExerciseLayout>
+    )
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {!homeworkMode && <BackButton onPress={onExit} style={styles.back} />}
@@ -295,38 +388,8 @@ function Quiz({
       <View style={styles.card}>
         <Text style={styles.quizTerm}>{word.term}</Text>
         <Text style={styles.quizDef}>{word.definition}</Text>
-        <View style={styles.options}>
-          {options.map((opt, optIndex) => (
-            <Pressable
-              key={`${index}-opt-${optIndex}`}
-              disabled={checked}
-              onPress={() => setSelected(opt)}
-              style={[
-                styles.option,
-                selected === opt && !checked && styles.optionSelected,
-                checked && opt === correctAnswer && styles.optionCorrect,
-                checked && selected === opt && opt !== correctAnswer && styles.optionWrong,
-              ]}
-            >
-              <Text style={styles.optionText}>{opt}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {!checked ? (
-          <Pressable
-            style={[styles.primaryBtn, selected == null && styles.btnDisabled]}
-            onPress={handleCheck}
-            disabled={selected == null}
-          >
-            <Text style={styles.primaryBtnText}>Check</Text>
-          </Pressable>
-        ) : (
-          <Pressable style={styles.primaryBtn} onPress={handleNext}>
-            <Text style={styles.primaryBtnText}>
-              {index + 1 >= questions.length ? "See results" : "Next"}
-            </Text>
-          </Pressable>
-        )}
+        {optionsBlock}
+        {actionButton}
       </View>
     </ScrollView>
   )
@@ -480,6 +543,61 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   resultsScore: {
+    fontSize: 18,
+    color: colors.textSecondary,
+    marginTop: 8,
+    textAlign: "center",
+  },
+  homeworkMcOptions: {
+    gap: 8,
+    marginTop: 16,
+  },
+  homeworkMcOption: {
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: "#FFFFFF",
+    width: "100%",
+  },
+  homeworkOptionSelected: {
+    borderColor: "#01AEF9",
+    backgroundColor: "#E8F6FF",
+  },
+  homeworkMcOptionText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    lineHeight: 22,
+  },
+  homeworkBtn: {
+    alignSelf: "stretch",
+    width: "100%",
+    backgroundColor: "#01AEF9",
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  homeworkBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  homeworkResultsHero: {
+    width: "100%",
+    alignItems: "center",
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingTop: 16,
+  },
+  homeworkResultsTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  homeworkResultsScore: {
     fontSize: 18,
     color: colors.textSecondary,
     marginTop: 8,

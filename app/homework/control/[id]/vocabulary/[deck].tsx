@@ -51,10 +51,10 @@ export default function ControlWorkVocabStep() {
           <VocabularyScreen
             deck={vocabDeck}
             homeworkMode
-            isStudent={user?.role === "student"}
+            isStudent={user?.type === "student"}
             controlWorkId={id}
             stepIndex={stepIndex}
-            studentId={user?.role === "student" ? user.id : undefined}
+            studentId={user?.type === "student" ? user.id : undefined}
           />
         )}
       </SafeAreaView>

@@ -59,7 +59,7 @@ export default function ControlWorkScreen() {
       const entry = entries.find((e) => e.controlWork.id === id)
       setCw(work)
       setSub(entry?.submission ?? null)
-      if (entry && user?.role === "student" && entry.submission.status === "pending") {
+      if (entry && user?.type === "student" && entry.submission.status === "pending") {
         const started = await controlWorkApi.start(id, { force })
         setSub(started)
       }
@@ -68,7 +68,7 @@ export default function ControlWorkScreen() {
     } finally {
       setLoading(false)
     }
-  }, [id, user?.role])
+  }, [id, user?.type])
 
   useFocusEffect(
     useCallback(() => {

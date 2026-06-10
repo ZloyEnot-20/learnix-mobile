@@ -26,7 +26,7 @@ export default function ExerciseScreen() {
   const [error, setError] = useState(false)
 
   const homeworkId = hw ?? undefined
-  const studentId = user?.role === "student" ? user.id : undefined
+  const studentId = user?.type === "student" ? user.id : undefined
 
   useEffect(() => {
     if (!slug) return

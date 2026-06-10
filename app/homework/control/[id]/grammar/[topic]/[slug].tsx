@@ -18,7 +18,7 @@ export default function ControlWorkGrammarStep() {
     step: string
   }>()
   const { user } = useAuth()
-  const studentId = user?.role === "student" ? user.id : undefined
+  const studentId = user?.type === "student" ? user.id : undefined
   const stepIndex = step != null ? Number.parseInt(step, 10) : 0
   const [exercise, setExercise] = useState<GrammarExercise | null>(null)
   const [loading, setLoading] = useState(true)

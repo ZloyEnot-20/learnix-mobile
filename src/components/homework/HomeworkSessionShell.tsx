@@ -1,11 +1,9 @@
 import React from "react"
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { Alert, StyleSheet, View } from "react-native"
 import { useRouter } from "expo-router"
 import { useHomeworkIntegrity } from "../../hooks/useHomeworkIntegrity"
 import { HomeworkCheatingFailed } from "./HomeworkCheatingFailed"
 import { HomeworkSuspiciousActivity } from "./HomeworkSuspiciousActivity"
-import { colors, radius, spacing, typography } from "../../theme/tokens"
 
 interface HomeworkSessionShellProps {
   homeworkId: string
@@ -15,11 +13,20 @@ interface HomeworkSessionShellProps {
   children: React.ReactNode
 }
 
+interface HomeworkSessionContextValue {
+  confirmPause: () => void
+  pauseAvailable: boolean
+}
+
+export const HomeworkSessionContext = React.createContext<HomeworkSessionContextValue>({
+  confirmPause: () => {},
+  pauseAvailable: false,
+})
+
 export function HomeworkSessionShell({
   homeworkId,
   active,
   pauseUsed,
-  title,
   children,
 }: HomeworkSessionShellProps) {
   const router = useRouter()
@@ -50,57 +57,17 @@ export function HomeworkSessionShell({
   }
 
   return (
-    <View style={styles.shell}>
-      {active ? (
-        <View style={styles.topBar}>
-          <View style={styles.topMain}>
-            {title ? (
-              <Text style={styles.topTitle} numberOfLines={1}>
-                {title}
-              </Text>
-            ) : null}
-            <Text style={styles.topHint}>Protected mode</Text>
-          </View>
-          {!integrity.pauseUsed ? (
-            <Pressable
-              style={({ pressed }) => [styles.pauseBtn, pressed && styles.pauseBtnPressed]}
-              onPress={confirmPause}
-            >
-              <Ionicons name="pause" size={14} color={colors.text} />
-              <Text style={styles.pauseBtnText}>Pause</Text>
-            </Pressable>
-          ) : null}
-        </View>
-      ) : null}
-      {children}
-    </View>
+    <HomeworkSessionContext.Provider
+      value={{
+        confirmPause,
+        pauseAvailable: active && !integrity.pauseUsed,
+      }}
+    >
+      <View style={styles.shell}>{children}</View>
+    </HomeworkSessionContext.Provider>
   )
 }
 
 const styles = StyleSheet.create({
   shell: { flex: 1 },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.screen,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderLight,
-    backgroundColor: colors.card,
-  },
-  topMain: { flex: 1, minWidth: 0 },
-  topTitle: { ...typography.label, fontSize: 16, color: colors.text },
-  topHint: { ...typography.caption, color: colors.primary, marginTop: 2, fontWeight: "600" },
-  pauseBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.button,
-    backgroundColor: colors.borderLight,
-  },
-  pauseBtnPressed: { opacity: 0.85 },
-  pauseBtnText: { fontSize: 13, fontWeight: "600", color: colors.text },
 })

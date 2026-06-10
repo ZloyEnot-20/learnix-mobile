@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
   LayoutAnimation,
   Platform,
@@ -10,11 +10,23 @@ import {
   UIManager,
   View,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { useFocusEffect, useRouter } from "expo-router"
 import { useAuth } from "../../src/context/AuthContext"
 import { exercisesApi, studentsApi } from "../../src/lib/api"
 import { LevelScale } from "../../src/components/LevelScale"
+import { GamesHistorySection } from "../../src/components/GamesHistorySection"
 import { GamesSkeleton } from "../../src/components/skeletons/Layouts"
+import {
+  buildDeckProgressMap,
+  buildGameHistory,
+  buildLearningProgressSummary,
+  buildTopicProgressMap,
+  getLearningProgress,
+  type DeckProgress,
+  type GameHistoryEntry,
+  type LearningProgressSummary,
+  type TopicProgress,
+} from "../../src/lib/learned-vocabulary"
 import {
   buildTopicSummaries,
   clampToFixedLevel,
@@ -55,7 +67,11 @@ type GameItem = {
   subtitle: string
   route: string
   kind: "vocab" | "topic"
+  topic?: string
+  deckSlug?: string
 }
+
+type Tab = "play" | "history"
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true)
@@ -65,34 +81,156 @@ function animateExpand() {
   LayoutAnimation.configureNext(LayoutAnimation.create(280, "easeInEaseOut", "opacity"))
 }
 
+function progressLabel(
+  kind: GameItem["kind"],
+  topicProgress: Map<string, TopicProgress>,
+  deckProgress: Map<string, DeckProgress>,
+  item: GameItem,
+): { text: string; tone: "done" | "progress" } | null {
+  if (item.kind === "topic" && item.topic) {
+    const progress = topicProgress.get(item.topic)
+    if (!progress || progress.status === "not_started") return null
+    if (progress.status === "completed") {
+      return { text: "Completed", tone: "done" }
+    }
+    return {
+      text: `${progress.passedRounds}/${progress.totalRounds} rounds`,
+      tone: "progress",
+    }
+  }
+
+  if (item.kind === "vocab" && item.deckSlug) {
+    const progress = deckProgress.get(item.deckSlug)
+    if (!progress) return null
+    if (progress.completed) {
+      return {
+        text:
+          progress.wordsLearned >= progress.totalWords
+            ? "Quiz done"
+            : `${progress.wordsLearned}/${progress.totalWords} words`,
+        tone: progress.wordsLearned >= progress.totalWords ? "done" : "progress",
+      }
+    }
+    if (progress.wordsLearned > 0) {
+      return {
+        text: `${progress.wordsLearned}/${progress.totalWords} words`,
+        tone: "progress",
+      }
+    }
+  }
+
+  return null
+}
+
+function ProgressSummary({ summary }: { summary: LearningProgressSummary }) {
+  return (
+    <View style={styles.summaryRow}>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryValue}>{summary.wordsLearned}</Text>
+        <Text style={styles.summaryLabel}>Words learned</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryValue}>{summary.topicsCompleted}</Text>
+        <Text style={styles.summaryLabel}>Topics done</Text>
+      </View>
+      <View style={styles.summaryCard}>
+        <Text style={styles.summaryValue}>{summary.decksCompleted}</Text>
+        <Text style={styles.summaryLabel}>Decks played</Text>
+      </View>
+    </View>
+  )
+}
+
 export default function GamesScreen() {
   const { user } = useAuth()
   const router = useRouter()
+  const [tab, setTab] = useState<Tab>("play")
+  const [exercises, setExercises] = useState<GrammarExercise[]>([])
   const [topics, setTopics] = useState<TopicSummary[]>([])
   const [vocabDecks, setVocabDecks] = useState<VocabDeck[]>([])
   const [studentLevel, setStudentLevel] = useState<StudentLevel | null>(null)
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [history, setHistory] = useState<GameHistoryEntry[]>([])
+  const [summary, setSummary] = useState<LearningProgressSummary>({
+    wordsLearned: 0,
+    topicsCompleted: 0,
+    topicsInProgress: 0,
+    decksCompleted: 0,
+    totalGameSessions: 0,
+  })
+  const [topicProgress, setTopicProgress] = useState<Map<string, TopicProgress>>(new Map())
+  const [deckProgress, setDeckProgress] = useState<Map<string, DeckProgress>>(new Map())
 
-  const load = async () => {
+  const loadProgress = useCallback(
+    async (
+      exerciseList: GrammarExercise[] = exercises,
+      decks: VocabDeck[] = vocabDecks,
+    ) => {
+      if (!user) return
+      try {
+        const progress = await getLearningProgress(user.id)
+        const nextTopicProgress = buildTopicProgressMap(progress.gameResults, exerciseList)
+        const nextDeckProgress = buildDeckProgressMap(progress, decks)
+        setTopicProgress(nextTopicProgress)
+        setDeckProgress(nextDeckProgress)
+        setSummary(buildLearningProgressSummary(progress, nextTopicProgress))
+        setHistory(buildGameHistory(progress))
+      } catch {
+        setHistory([])
+        setTopicProgress(new Map())
+        setDeckProgress(new Map())
+        setSummary({
+          wordsLearned: 0,
+          topicsCompleted: 0,
+          topicsInProgress: 0,
+          decksCompleted: 0,
+          totalGameSessions: 0,
+        })
+      }
+    },
+    [user, exercises, vocabDecks],
+  )
+
+  const loadContent = async () => {
     try {
-      const [exercises, metas, decks] = await Promise.all([
+      const [exerciseList, metas, decks] = await Promise.all([
         exercisesApi.list(),
         exercisesApi.topics(),
         exercisesApi.vocab(),
       ])
-      setTopics(buildTopicSummaries(exercises as GrammarExercise[], metas))
+      setExercises(exerciseList as GrammarExercise[])
+      setTopics(buildTopicSummaries(exerciseList as GrammarExercise[], metas))
       setVocabDecks(decks)
+      return {
+        exerciseList: exerciseList as GrammarExercise[],
+        decks,
+      }
     } catch {
-      /* ignore */
+      return { exerciseList: [] as GrammarExercise[], decks: [] as VocabDeck[] }
     }
+  }
+
+  const load = async () => {
+    const { exerciseList, decks } = await loadContent()
+    await loadProgress(exerciseList, decks)
   }
 
   useEffect(() => {
     setLoading(true)
     load().finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!loading) void loadProgress()
+  }, [exercises, vocabDecks, loadProgress, loading])
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadProgress()
+    }, [loadProgress]),
+  )
 
   const onRefresh = async () => {
     setRefreshing(true)
@@ -133,6 +271,7 @@ export default function GamesScreen() {
           subtitle: `${d.words.length} words · Flashcards & Quiz`,
           route: `/vocabulary/${d.slug}`,
           kind: "vocab" as const,
+          deckSlug: d.slug,
         }))
 
       const topicGames = playableTopics
@@ -143,6 +282,7 @@ export default function GamesScreen() {
           subtitle: `${t.exerciseCount} rounds · ${t.questionCount} questions`,
           route: `/exercises/${t.topic}`,
           kind: "topic" as const,
+          topic: t.topic,
         }))
 
       map.set(key, [...decks, ...topicGames])
@@ -175,94 +315,175 @@ export default function GamesScreen() {
           </FadeInDown>
 
           <FadeInDown index={1} style={styles.section}>
+            <ProgressSummary summary={summary} />
+          </FadeInDown>
+
+          <FadeInDown index={2} style={styles.section}>
             <LevelScale studentId={user.id} compact />
           </FadeInDown>
 
-          <Text style={styles.pickTitle}>Choose a level</Text>
-          <View style={styles.levelGrid}>
-            {LEVELS.map(({ key, label }) => {
-              const unlocked = isCefrUnlocked(key, currentLevel)
-              const req = requiredLevelFor(key)
-              const expanded = selectedLevel === key
-              const accent = LEVEL_COLORS[key]
-              const games = gamesByLevel.get(key) ?? []
+          <View style={styles.tabs}>
+            <Pressable
+              onPress={() => setTab("play")}
+              style={[styles.tab, tab === "play" && styles.tabActive]}
+            >
+              <Text style={[styles.tabText, tab === "play" && styles.tabTextActive]}>Play</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setTab("history")}
+              style={[styles.tab, tab === "history" && styles.tabActive]}
+            >
+              <Text style={[styles.tabText, tab === "history" && styles.tabTextActive]}>
+                History {history.length > 0 ? `(${history.length})` : ""}
+              </Text>
+            </Pressable>
+          </View>
 
-              return (
-                <View
-                  key={key}
-                  style={[
-                    styles.levelBlock,
-                    { borderLeftColor: accent },
-                    expanded && { borderColor: accent + "44" },
-                    !unlocked && styles.levelLocked,
-                  ]}
-                >
-                  <Pressable
-                    disabled={!unlocked}
-                    onPress={() => unlocked && toggleLevel(key)}
-                    style={[
-                      styles.levelCard,
-                      expanded && styles.levelCardExpanded,
-                      expanded && { backgroundColor: accent + "0D" },
-                    ]}
-                  >
-                    <View style={styles.levelHeader}>
-                      <View style={styles.levelTextWrap}>
-                        <Text style={styles.levelKey}>{key}</Text>
-                        <Text style={styles.levelLabel}>{label}</Text>
-                        {!unlocked && (
-                          <View style={styles.lockRow}>
-                            <Ionicons name="lock-closed" size={12} color={colors.textMuted} />
-                            <Text style={styles.lockText}>Level {req}</Text>
+          {tab === "history" ? (
+            <GamesHistorySection history={history} />
+          ) : (
+            <>
+              <Text style={styles.pickTitle}>Choose a level</Text>
+              <View style={styles.levelGrid}>
+                {LEVELS.map(({ key, label }) => {
+                  const unlocked = isCefrUnlocked(key, currentLevel)
+                  const req = requiredLevelFor(key)
+                  const expanded = selectedLevel === key
+                  const accent = LEVEL_COLORS[key]
+                  const games = gamesByLevel.get(key) ?? []
+                  const levelCompleted = games.filter((game) => {
+                    const badge = progressLabel(game.kind, topicProgress, deckProgress, game)
+                    return badge?.tone === "done"
+                  }).length
+
+                  return (
+                    <View
+                      key={key}
+                      style={[
+                        styles.levelBlock,
+                        { borderLeftColor: accent },
+                        expanded && { borderColor: accent + "44" },
+                        !unlocked && styles.levelLocked,
+                      ]}
+                    >
+                      <Pressable
+                        disabled={!unlocked}
+                        onPress={() => unlocked && toggleLevel(key)}
+                        style={[
+                          styles.levelCard,
+                          expanded && styles.levelCardExpanded,
+                          expanded && { backgroundColor: accent + "0D" },
+                        ]}
+                      >
+                        <View style={styles.levelHeader}>
+                          <View style={styles.levelTextWrap}>
+                            <Text style={styles.levelKey}>{key}</Text>
+                            <Text style={styles.levelLabel}>{label}</Text>
+                            {unlocked && games.length > 0 ? (
+                              <Text style={styles.levelProgress}>
+                                {levelCompleted}/{games.length} completed
+                              </Text>
+                            ) : null}
+                            {!unlocked && (
+                              <View style={styles.lockRow}>
+                                <Ionicons name="lock-closed" size={12} color={colors.textMuted} />
+                                <Text style={styles.lockText}>Level {req}</Text>
+                              </View>
+                            )}
                           </View>
-                        )}
-                      </View>
-                      {unlocked ? (
-                        <Ionicons
-                          name={expanded ? "chevron-up" : "chevron-down"}
-                          size={18}
-                          color={expanded ? accent : colors.textMuted}
-                        />
+                          {unlocked ? (
+                            <Ionicons
+                              name={expanded ? "chevron-up" : "chevron-down"}
+                              size={18}
+                              color={expanded ? accent : colors.textMuted}
+                            />
+                          ) : null}
+                        </View>
+                      </Pressable>
+
+                      {expanded ? (
+                        <View style={[styles.gamesPanel, { backgroundColor: accent + "08" }]}>
+                          {games.length === 0 ? (
+                            <Text style={styles.empty}>No games available for this level yet.</Text>
+                          ) : (
+                            games.map((game, index) => {
+                              const badge = progressLabel(
+                                game.kind,
+                                topicProgress,
+                                deckProgress,
+                                game,
+                              )
+
+                              return (
+                                <FadeInDown key={game.id} index={index} delay={40}>
+                                  <Pressable
+                                    style={({ pressed }) => [
+                                      styles.gameCard,
+                                      pressed && styles.gameCardPressed,
+                                      badge?.tone === "done" && styles.gameCardDone,
+                                    ]}
+                                    onPress={() => router.push(game.route as never)}
+                                  >
+                                    <View
+                                      style={[styles.gameIconWrap, { backgroundColor: accent + "22" }]}
+                                    >
+                                      <Ionicons
+                                        name={
+                                          game.kind === "vocab"
+                                            ? "library-outline"
+                                            : "school-outline"
+                                        }
+                                        size={20}
+                                        color={accent}
+                                      />
+                                    </View>
+                                    <View style={styles.gameBody}>
+                                      <View style={styles.gameTitleRow}>
+                                        <Text style={styles.gameTitle}>{game.title}</Text>
+                                        {badge ? (
+                                          <View
+                                            style={[
+                                              styles.progressBadge,
+                                              badge.tone === "done" && styles.progressBadgeDone,
+                                              badge.tone === "progress" && styles.progressBadgeActive,
+                                            ]}
+                                          >
+                                            {badge.tone === "done" ? (
+                                              <Ionicons
+                                                name="checkmark"
+                                                size={10}
+                                                color={colors.success}
+                                              />
+                                            ) : null}
+                                            <Text
+                                              style={[
+                                                styles.progressBadgeText,
+                                                badge.tone === "done" && styles.progressBadgeTextDone,
+                                                badge.tone === "progress" &&
+                                                  styles.progressBadgeTextActive,
+                                              ]}
+                                            >
+                                              {badge.text}
+                                            </Text>
+                                          </View>
+                                        ) : null}
+                                      </View>
+                                      <Text style={styles.gameSubtitle}>{game.subtitle}</Text>
+                                    </View>
+                                    <Text style={styles.gameArrow}>›</Text>
+                                  </Pressable>
+                                </FadeInDown>
+                              )
+                            })
+                          )}
+                        </View>
                       ) : null}
                     </View>
-                  </Pressable>
-
-                  {expanded ? (
-                    <View style={[styles.gamesPanel, { backgroundColor: accent + "08" }]}>
-                      {games.length === 0 ? (
-                        <Text style={styles.empty}>No games available for this level yet.</Text>
-                      ) : (
-                        games.map((game, index) => (
-                          <FadeInDown key={game.id} index={index} delay={40}>
-                            <Pressable
-                              style={({ pressed }) => [
-                                styles.gameCard,
-                                pressed && styles.gameCardPressed,
-                              ]}
-                              onPress={() => router.push(game.route as never)}
-                            >
-                              <View style={[styles.gameIconWrap, { backgroundColor: accent + "22" }]}>
-                                <Ionicons
-                                  name={game.kind === "vocab" ? "library-outline" : "school-outline"}
-                                  size={20}
-                                  color={accent}
-                                />
-                              </View>
-                              <View style={styles.gameBody}>
-                                <Text style={styles.gameTitle}>{game.title}</Text>
-                                <Text style={styles.gameSubtitle}>{game.subtitle}</Text>
-                              </View>
-                              <Text style={styles.gameArrow}>›</Text>
-                            </Pressable>
-                          </FadeInDown>
-                        ))
-                      )}
-                    </View>
-                  ) : null}
-                </View>
-              )
-            })}
-          </View>
+                  )
+                })}
+              </View>
+            </>
+          )}
         </>
       )}
     </ScrollView>
@@ -273,7 +494,43 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.screen, paddingBottom: spacing.xl },
   subtitle: { ...typography.bodySm, color: colors.textSecondary, marginBottom: spacing.section },
-  section: { marginBottom: 20 },
+  section: { marginBottom: 16 },
+  summaryRow: { flexDirection: "row", gap: spacing.sm },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    alignItems: "center",
+    ...shadow.card,
+  },
+  summaryValue: { fontSize: 20, fontWeight: "800", color: colors.text },
+  summaryLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 4,
+    textAlign: "center",
+  },
+  tabs: {
+    flexDirection: "row",
+    backgroundColor: colors.borderLight,
+    borderRadius: radius.button,
+    padding: 4,
+    marginBottom: spacing.section,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: radius.button - 2,
+    alignItems: "center",
+  },
+  tabActive: {
+    backgroundColor: colors.card,
+    ...shadow.card,
+  },
+  tabText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
+  tabTextActive: { color: colors.text },
   pickTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 12 },
   levelGrid: { gap: 10 },
   levelBlock: {
@@ -302,6 +559,7 @@ const styles = StyleSheet.create({
   levelLocked: { opacity: 0.55 },
   levelKey: { fontSize: 20, fontWeight: "800", color: colors.text },
   levelLabel: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  levelProgress: { fontSize: 11, color: colors.textMuted, marginTop: 4, fontWeight: "600" },
   lockRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -331,6 +589,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadow.card,
   },
+  gameCardDone: {
+    borderWidth: 1,
+    borderColor: colors.success + "44",
+  },
   gameCardPressed: { opacity: 0.94 },
   gameIconWrap: {
     width: 40,
@@ -340,7 +602,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   gameBody: { flex: 1 },
-  gameTitle: { fontSize: 15, fontWeight: "600", color: colors.text },
+  gameTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  gameTitle: { flex: 1, fontSize: 15, fontWeight: "600", color: colors.text },
   gameSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
   gameArrow: { fontSize: 22, color: colors.textMuted },
+  progressBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: colors.borderLight,
+  },
+  progressBadgeDone: { backgroundColor: colors.successBg },
+  progressBadgeActive: { backgroundColor: "#FEF3C7" },
+  progressBadgeText: { fontSize: 10, fontWeight: "700", color: colors.textMuted },
+  progressBadgeTextDone: { color: colors.success },
+  progressBadgeTextActive: { color: "#B45309" },
 })

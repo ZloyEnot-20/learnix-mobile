@@ -29,7 +29,7 @@ export default function TabsLayout() {
     return <TabShellSkeleton />
   }
 
-  if (!user || user.role !== "student") {
+  if (!user || user.type !== "student") {
     return <Redirect href="/login" />
   }
 

@@ -16,7 +16,7 @@ export default function Index() {
   }
 
   if (!user) return <Redirect href="/login" />
-  if (user.role !== "student") return <Redirect href="/login" />
+  if (user.type !== "student") return <Redirect href="/login" />
   return <Redirect href="/(tabs)" />
 }
 

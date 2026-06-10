@@ -17,6 +17,12 @@ import {
 } from "../../types/grammar"
 import { useCountdown, formatTimer } from "../../hooks/useCountdown"
 import {
+  HomeworkExerciseLayout,
+  HomeworkSourceCard,
+  HomeworkWordChip,
+  homeworkInstructionForType,
+} from "../homework/HomeworkExerciseLayout"
+import {
   ActionRow,
   FeedbackBox,
   HintRow,
@@ -106,6 +112,74 @@ function HomeworkInstructions({
   )
 }
 
+function applyHomeworkAdvance(
+  homeworkId: string | undefined,
+  index: number,
+  total: number,
+  setIndex: React.Dispatch<React.SetStateAction<number>>,
+  finish: () => void,
+): boolean {
+  if (!homeworkId) return false
+  if (index + 1 >= total) finish()
+  else setIndex((i) => i + 1)
+  return true
+}
+
+function ExerciseScreenFrame({
+  homeworkId,
+  exercise,
+  index,
+  total,
+  correctCount,
+  secondsLeft,
+  questionInstruction,
+  children,
+  footer,
+}: {
+  homeworkId?: string
+  exercise: GrammarExercise
+  index: number
+  total: number
+  correctCount: number
+  secondsLeft: number | null
+  questionInstruction?: string
+  children: React.ReactNode
+  footer: React.ReactNode
+}) {
+  const instruction =
+    questionInstruction?.trim() || homeworkInstructionForType(exercise.type)
+
+  if (homeworkId) {
+    return (
+      <HomeworkExerciseLayout
+        index={index}
+        total={total}
+        instruction={instruction}
+        footer={footer}
+      >
+        <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+        {children}
+      </HomeworkExerciseLayout>
+    )
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={false}
+      />
+      <ProgressBar index={index} total={total} correctCount={correctCount} />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+      <QuestionCard>
+        {children}
+        {footer}
+      </QuestionCard>
+    </ScrollView>
+  )
+}
+
 // ─── Fill in the blank ───────────────────────────────────────────────────────
 
 function FillBlankRunner(props: ExerciseRunnerProps) {
@@ -167,8 +241,6 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       isBlankCorrect(val, question.acceptableAnswers?.[i] ?? []),
     )
     const allCorrect = checks.every(Boolean)
-    setPerBlank(checks)
-    setResult(allCorrect ? "correct" : "incorrect")
     if (allCorrect) setCorrectCount((c) => c + 1)
     else {
       setMistakes((prev) => [
@@ -182,7 +254,17 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
         },
       ])
     }
-  }, [allFilled, inputs, question, result])
+    if (
+      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      })
+    ) {
+      return
+    }
+    setPerBlank(checks)
+    setResult(allCorrect ? "correct" : "incorrect")
+  }, [allFilled, homeworkId, index, inputs, question, questions.length, result])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -215,17 +297,50 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
   }
   if (!question) return null
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader
-        exercise={exercise}
-        secondsLeft={secondsLeft}
-        homeworkMode={!!homeworkId}
-      />
-      <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
-      <QuestionCard>
-        <Text style={styles.qLabel}>Question {index + 1}</Text>
+  const actionRow = (
+    <ActionRow
+      result={result}
+      canCheck={allFilled}
+      isLast={index + 1 >= questions.length}
+      onCheck={handleCheck}
+      onNext={handleNext}
+      variant={homeworkId ? "homework" : "default"}
+    />
+  )
+
+  const questionBody = (
+    <>
+      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {homeworkId ? (
+        <HomeworkSourceCard source={question.text}>
+          <View style={styles.homeworkBlankRow}>
+            {segments.map((seg, i) => (
+              <React.Fragment key={i}>
+                {seg ? <Text style={styles.homeworkSentenceText}>{seg}</Text> : null}
+                {i < blanksCount && (
+                  <TextInput
+                    style={[
+                      styles.homeworkBlankInput,
+                      result !== "idle" && (perBlank[i] ? styles.inputOk : styles.inputBad),
+                    ]}
+                    value={inputs[i] ?? ""}
+                    onChangeText={(val) => {
+                      setInputs((prev) => {
+                        const next = [...prev]
+                        next[i] = val
+                        return next
+                      })
+                    }}
+                    editable={result === "idle"}
+                    placeholder="..."
+                    autoCapitalize="none"
+                  />
+                )}
+              </React.Fragment>
+            ))}
+          </View>
+        </HomeworkSourceCard>
+      ) : (
         <View style={styles.blankRow}>
           {segments.map((seg, i) => (
             <React.Fragment key={i}>
@@ -252,23 +367,31 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
             </React.Fragment>
           ))}
         </View>
-        <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
-        {result !== "idle" && (
-          <FeedbackBox
-            correct={result === "correct"}
-            correctAnswer={question.blanks?.join(" / ") ?? ""}
-            explanation={question.explanation}
-          />
-        )}
-        <ActionRow
-          result={result}
-          canCheck={allFilled}
-          isLast={index + 1 >= questions.length}
-          onCheck={handleCheck}
-          onNext={handleNext}
+      )}
+      <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
+      {result !== "idle" && !homeworkId && (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer={question.blanks?.join(" / ") ?? ""}
+          explanation={question.explanation}
         />
-      </QuestionCard>
-    </ScrollView>
+      )}
+    </>
+  )
+
+  return (
+    <ExerciseScreenFrame
+      homeworkId={homeworkId}
+      exercise={exercise}
+      index={index}
+      total={questions.length}
+      correctCount={correctCount}
+      secondsLeft={secondsLeft}
+      questionInstruction={question.instruction}
+      footer={actionRow}
+    >
+      {questionBody}
+    </ExerciseScreenFrame>
   )
 }
 
@@ -321,7 +444,6 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
   const handleCheck = useCallback(() => {
     if (!question || result !== "idle" || selected == null) return
     const isCorrect = selected === question.correctAnswer
-    setResult(isCorrect ? "correct" : "incorrect")
     if (isCorrect) setCorrectCount((c) => c + 1)
     else {
       setMistakes((prev) => [
@@ -335,7 +457,16 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
         },
       ])
     }
-  }, [question, result, selected])
+    if (
+      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      })
+    ) {
+      return
+    }
+    setResult(isCorrect ? "correct" : "incorrect")
+  }, [homeworkId, index, question, questions.length, result, selected])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -371,57 +502,80 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
   const options = question.options ?? []
   const renderedText = question.text.replace(GRAMMAR_BLANK_TOKEN, "_____")
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader
-        exercise={exercise}
-        secondsLeft={secondsLeft}
-        homeworkMode={!!homeworkId}
-      />
-      <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
-      <QuestionCard>
-        <Text style={styles.qLabel}>Question {index + 1}</Text>
-        <Text style={styles.questionText}>{renderedText}</Text>
-        <View style={styles.options}>
-          {options.map((opt, optIndex) => {
-            const isChosen = selected === opt
-            const isCorrectOpt = opt === question.correctAnswer
-            const checked = result !== "idle"
-            return (
-              <Pressable
-                key={`${index}-opt-${optIndex}`}
-                disabled={checked}
-                onPress={() => setSelected(opt)}
-                style={[
-                  styles.option,
-                  !checked && isChosen && styles.optionSelected,
-                  checked && isCorrectOpt && styles.optionCorrect,
-                  checked && isChosen && !isCorrectOpt && styles.optionWrong,
-                ]}
-              >
-                <Text style={styles.optionText}>{opt}</Text>
-              </Pressable>
-            )
-          })}
-        </View>
-        <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
-        {result !== "idle" && (
-          <FeedbackBox
-            correct={result === "correct"}
-            correctAnswer={question.correctAnswer ?? ""}
-            explanation={question.explanation}
-          />
-        )}
-        <ActionRow
-          result={result}
-          canCheck={selected != null}
-          isLast={index + 1 >= questions.length}
-          onCheck={handleCheck}
-          onNext={handleNext}
+  const actionRow = (
+    <ActionRow
+      result={result}
+      canCheck={selected != null}
+      isLast={index + 1 >= questions.length}
+      onCheck={handleCheck}
+      onNext={handleNext}
+      variant={homeworkId ? "homework" : "default"}
+    />
+  )
+
+  const optionsBlock = (
+    <View style={homeworkId ? styles.homeworkMcOptions : styles.options}>
+      {options.map((opt, optIndex) => {
+        const isChosen = selected === opt
+        const isCorrectOpt = opt === question.correctAnswer
+        const checked = result !== "idle"
+        return (
+          <Pressable
+            key={`${index}-opt-${optIndex}`}
+            disabled={checked}
+            onPress={() => setSelected(opt)}
+            style={[
+              homeworkId ? styles.homeworkMcOption : styles.option,
+              !checked && isChosen && (homeworkId ? styles.homeworkOptionSelected : styles.optionSelected),
+              checked && isCorrectOpt && styles.optionCorrect,
+              checked && isChosen && !isCorrectOpt && styles.optionWrong,
+            ]}
+          >
+            <Text style={homeworkId ? styles.homeworkMcOptionText : styles.optionText}>{opt}</Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+
+  const questionBody = (
+    <>
+      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {homeworkId ? (
+        <>
+          <HomeworkSourceCard source={renderedText} />
+          {optionsBlock}
+        </>
+      ) : (
+        <>
+          <Text style={styles.questionText}>{renderedText}</Text>
+          {optionsBlock}
+        </>
+      )}
+      <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
+      {result !== "idle" && !homeworkId && (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer={question.correctAnswer ?? ""}
+          explanation={question.explanation}
         />
-      </QuestionCard>
-    </ScrollView>
+      )}
+    </>
+  )
+
+  return (
+    <ExerciseScreenFrame
+      homeworkId={homeworkId}
+      exercise={exercise}
+      index={index}
+      total={questions.length}
+      correctCount={correctCount}
+      secondsLeft={secondsLeft}
+      questionInstruction={question.instruction}
+      footer={actionRow}
+    >
+      {questionBody}
+    </ExerciseScreenFrame>
   )
 }
 
@@ -472,7 +626,6 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
   const handleCheck = useCallback(() => {
     if (!question || result !== "idle" || selected == null) return
     const isCorrect = selected === question.correctBool
-    setResult(isCorrect ? "correct" : "incorrect")
     if (isCorrect) setCorrectCount((c) => c + 1)
     else {
       setMistakes((prev) => [
@@ -486,7 +639,16 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
         },
       ])
     }
-  }, [question, result, selected])
+    if (
+      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      })
+    ) {
+      return
+    }
+    setResult(isCorrect ? "correct" : "incorrect")
+  }, [homeworkId, index, question, questions.length, result, selected])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -519,51 +681,70 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
   }
   if (!question) return null
 
+  const actionRow = (
+    <ActionRow
+      result={result}
+      canCheck={selected != null}
+      isLast={index + 1 >= questions.length}
+      onCheck={handleCheck}
+      onNext={handleNext}
+      variant={homeworkId ? "homework" : "default"}
+    />
+  )
+
+  const tfButtons = (
+    <View style={homeworkId ? styles.homeworkTfRow : styles.tfRow}>
+      {[true, false].map((val) => (
+        <Pressable
+          key={String(val)}
+          disabled={result !== "idle"}
+          onPress={() => setSelected(val)}
+          style={[
+            homeworkId ? styles.homeworkTfBtn : styles.tfBtn,
+            selected === val && result === "idle" && (homeworkId ? styles.homeworkOptionSelected : styles.optionSelected),
+            result !== "idle" && val === question.correctBool && styles.optionCorrect,
+            result !== "idle" && selected === val && val !== question.correctBool && styles.optionWrong,
+          ]}
+        >
+          <Text style={homeworkId ? styles.homeworkOptionText : styles.tfText}>
+            {val ? "Correct" : "Incorrect"}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  )
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader
-        exercise={exercise}
-        secondsLeft={secondsLeft}
-        homeworkMode={!!homeworkId}
-      />
-      <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
-      <QuestionCard>
-        <Text style={styles.qLabel}>Question {index + 1}</Text>
-        <Text style={styles.questionText}>{question.text}</Text>
-        <View style={styles.tfRow}>
-          {[true, false].map((val) => (
-            <Pressable
-              key={String(val)}
-              disabled={result !== "idle"}
-              onPress={() => setSelected(val)}
-              style={[
-                styles.tfBtn,
-                selected === val && result === "idle" && styles.optionSelected,
-                result !== "idle" && val === question.correctBool && styles.optionCorrect,
-                result !== "idle" && selected === val && val !== question.correctBool && styles.optionWrong,
-              ]}
-            >
-              <Text style={styles.tfText}>{val ? "Correct" : "Incorrect"}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {result !== "idle" && (
-          <FeedbackBox
-            correct={result === "correct"}
-            correctAnswer={question.correctBool ? "Correct" : "Incorrect"}
-            explanation={question.explanation}
-          />
-        )}
-        <ActionRow
-          result={result}
-          canCheck={selected != null}
-          isLast={index + 1 >= questions.length}
-          onCheck={handleCheck}
-          onNext={handleNext}
+    <ExerciseScreenFrame
+      homeworkId={homeworkId}
+      exercise={exercise}
+      index={index}
+      total={questions.length}
+      correctCount={correctCount}
+      secondsLeft={secondsLeft}
+      questionInstruction={question.instruction}
+      footer={actionRow}
+    >
+      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {homeworkId ? (
+        <>
+          <HomeworkSourceCard source={question.text} />
+          {tfButtons}
+        </>
+      ) : (
+        <>
+          <Text style={styles.questionText}>{question.text}</Text>
+          {tfButtons}
+        </>
+      )}
+      {result !== "idle" && !homeworkId && (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer={question.correctBool ? "Correct" : "Incorrect"}
+          explanation={question.explanation}
         />
-      </QuestionCard>
-    </ScrollView>
+      )}
+    </ExerciseScreenFrame>
   )
 }
 
@@ -622,7 +803,6 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
   const handleCheck = useCallback(() => {
     if (!question || result !== "idle" || !input.trim()) return
     const isCorrect = checkAnswer(question, input)
-    setResult(isCorrect ? "correct" : "incorrect")
     if (isCorrect) setCorrectCount((c) => c + 1)
     else {
       setMistakes((prev) => [
@@ -636,7 +816,16 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
         },
       ])
     }
-  }, [question, result, input])
+    if (
+      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      })
+    ) {
+      return
+    }
+    setResult(isCorrect ? "correct" : "incorrect")
+  }, [homeworkId, index, input, question, questions.length, result])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -669,43 +858,66 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
   }
   if (!question) return null
 
+  const actionRow = (
+    <ActionRow
+      result={result}
+      canCheck={input.trim().length > 0}
+      isLast={index + 1 >= questions.length}
+      onCheck={handleCheck}
+      onNext={handleNext}
+      variant={homeworkId ? "homework" : "default"}
+    />
+  )
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader
-        exercise={exercise}
-        secondsLeft={secondsLeft}
-        homeworkMode={!!homeworkId}
-      />
-      <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
-      <QuestionCard>
-        <Text style={styles.qLabel}>Question {index + 1}</Text>
-        <Text style={styles.questionText}>{question.text}</Text>
-        <TextInput
-          style={[styles.textInput, result !== "idle" && (result === "correct" ? styles.inputOk : styles.inputBad)]}
-          value={input}
-          onChangeText={setInput}
-          editable={result === "idle"}
-          placeholder="Type your answer..."
-          autoCapitalize="none"
-        />
-        <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
-        {result !== "idle" && (
-          <FeedbackBox
-            correct={result === "correct"}
-            correctAnswer={question.answer ?? ""}
-            explanation={question.explanation}
+    <ExerciseScreenFrame
+      homeworkId={homeworkId}
+      exercise={exercise}
+      index={index}
+      total={questions.length}
+      correctCount={correctCount}
+      secondsLeft={secondsLeft}
+      questionInstruction={question.instruction}
+      footer={actionRow}
+    >
+      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {homeworkId ? (
+        <>
+          <HomeworkSourceCard source={question.text} />
+          <TextInput
+            style={[
+              styles.homeworkTextInput,
+              result !== "idle" && (result === "correct" ? styles.inputOk : styles.inputBad),
+            ]}
+            value={input}
+            onChangeText={setInput}
+            editable={result === "idle"}
+            placeholder="Type your answer..."
+            autoCapitalize="none"
           />
-        )}
-        <ActionRow
-          result={result}
-          canCheck={input.trim().length > 0}
-          isLast={index + 1 >= questions.length}
-          onCheck={handleCheck}
-          onNext={handleNext}
+        </>
+      ) : (
+        <>
+          <Text style={styles.questionText}>{question.text}</Text>
+          <TextInput
+            style={[styles.textInput, result !== "idle" && (result === "correct" ? styles.inputOk : styles.inputBad)]}
+            value={input}
+            onChangeText={setInput}
+            editable={result === "idle"}
+            placeholder="Type your answer..."
+            autoCapitalize="none"
+          />
+        </>
+      )}
+      <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
+      {result !== "idle" && !homeworkId && (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer={question.answer ?? ""}
+          explanation={question.explanation}
         />
-      </QuestionCard>
-    </ScrollView>
+      )}
+    </ExerciseScreenFrame>
   )
 }
 
@@ -802,25 +1014,49 @@ function MatchingRunner(props: ExerciseRunnerProps) {
 
   if (total === 0) return null
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader
-        exercise={exercise}
-        secondsLeft={secondsLeft}
-        homeworkMode={!!homeworkId}
-      />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+  const answeredCount = picks.filter((p) => p != null).length
 
-      <View style={styles.matchStatusRow}>
-        <Text style={styles.matchStatusLabel}>Match all {total} pairs</Text>
-        {checked ? (
-          <Text style={styles.matchStatusScore}>
-            <Text style={styles.matchStatusScoreValue}>{correctCount}</Text> / {total} correct
-          </Text>
-        ) : null}
-      </View>
+  const matchFooter = !checked ? (
+    <Pressable
+      onPress={() => {
+        if (homeworkId) {
+          setFinished(true)
+          setFinishedAt(Date.now())
+          return
+        }
+        setChecked(true)
+      }}
+      disabled={!allAnswered}
+      style={[styles.homeworkBtn, !allAnswered && styles.btnDisabled]}
+    >
+      <Text style={styles.homeworkBtnText}>Next</Text>
+    </Pressable>
+  ) : (
+    <Pressable
+      onPress={() => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      }}
+      style={styles.homeworkBtn}
+    >
+      <Text style={styles.homeworkBtnText}>See results</Text>
+    </Pressable>
+  )
 
-      <QuestionCard>
+  const matchContent = (
+    <>
+      {!homeworkId ? (
+        <View style={styles.matchStatusRow}>
+          <Text style={styles.matchStatusLabel}>Match all {total} pairs</Text>
+          {checked ? (
+            <Text style={styles.matchStatusScore}>
+              <Text style={styles.matchStatusScoreValue}>{correctCount}</Text> / {total} correct
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+
+      <View style={homeworkId ? undefined : styles.card}>
         {pairs.map((pair, rowIndex) => {
           const pick = picks[rowIndex]
           const isRowCorrect = pick === pair.right
@@ -853,8 +1089,8 @@ function MatchingRunner(props: ExerciseRunnerProps) {
                           })
                         }
                         style={[
-                          styles.matchOption,
-                          !checked && isChosen && styles.matchOptionSelected,
+                          homeworkId ? styles.homeworkMatchOption : styles.matchOption,
+                          !checked && isChosen && (homeworkId ? styles.homeworkOptionSelected : styles.matchOptionSelected),
                           checked && isChosen && isCorrectOpt && styles.matchOptionCorrect,
                           checked && isChosen && !isCorrectOpt && styles.matchOptionWrong,
                           checked && !isChosen && isCorrectOpt && styles.matchOptionReveal,
@@ -863,7 +1099,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
                       >
                         <Text
                           style={[
-                            styles.matchOptionText,
+                            homeworkId ? styles.homeworkOptionText : styles.matchOptionText,
                             checked && isChosen && !isCorrectOpt && styles.matchOptionTextWrong,
                           ]}
                         >
@@ -886,26 +1122,54 @@ function MatchingRunner(props: ExerciseRunnerProps) {
           )
         })}
 
-        {!checked ? (
-          <Pressable
-            onPress={() => setChecked(true)}
-            disabled={!allAnswered}
-            style={[styles.matchCheckBtn, !allAnswered && styles.btnDisabled]}
-          >
-            <Text style={styles.matchCheckBtnText}>Check Answers</Text>
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={() => {
-              setFinished(true)
-              setFinishedAt(Date.now())
-            }}
-            style={styles.matchCheckBtn}
-          >
-            <Text style={styles.matchCheckBtnText}>See results</Text>
-          </Pressable>
-        )}
-      </QuestionCard>
+        {!homeworkId ? (
+          !checked ? (
+            <Pressable
+              onPress={() => setChecked(true)}
+              disabled={!allAnswered}
+              style={[styles.matchCheckBtn, !allAnswered && styles.btnDisabled]}
+            >
+              <Text style={styles.matchCheckBtnText}>Check Answers</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => {
+                setFinished(true)
+                setFinishedAt(Date.now())
+              }}
+              style={styles.matchCheckBtn}
+            >
+              <Text style={styles.matchCheckBtnText}>See results</Text>
+            </Pressable>
+          )
+        ) : null}
+      </View>
+    </>
+  )
+
+  if (homeworkId) {
+    return (
+      <HomeworkExerciseLayout
+        index={answeredCount}
+        total={total}
+        instruction={homeworkInstructionForType("matching")}
+        footer={matchFooter}
+      >
+        <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+        {matchContent}
+      </HomeworkExerciseLayout>
+    )
+  }
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ExerciseHeader
+        exercise={exercise}
+        secondsLeft={secondsLeft}
+        homeworkMode={false}
+      />
+      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+      {matchContent}
     </ScrollView>
   )
 }
@@ -926,8 +1190,8 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
     onSessionEnd,
   } = props
   const [index, setIndex] = useState(0)
-  const [picked, setPicked] = useState<string[]>([])
-  const [remaining, setRemaining] = useState<string[]>([])
+  const [picked, setPicked] = useState<{ word: string; bankIndex: number }[]>([])
+  const [bankUsed, setBankUsed] = useState<boolean[]>([])
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
   const [correctCount, setCorrectCount] = useState(0)
   const [mistakes, setMistakes] = useState<ReviewItem[]>([])
@@ -937,6 +1201,9 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
 
   const questions = exercise.content.questions ?? []
   const question = questions[index] ?? null
+  const scrambled = question?.scrambled ?? []
+  const remainingCount = bankUsed.filter((used) => !used).length
+  const pickedWords = picked.map((item) => item.word)
 
   const secondsLeft = useCountdown(
     timeLimitMinutes,
@@ -952,30 +1219,41 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
 
   useEffect(() => {
     if (!question) return
-    setRemaining([...(question.scrambled ?? [])])
+    setBankUsed((question.scrambled ?? []).map(() => false))
     setPicked([])
     setResult("idle")
   }, [index, question])
 
-  const handlePick = (word: string, fromRemaining: boolean) => {
+  const handlePickFromBank = (bankIndex: number) => {
+    if (result !== "idle" || bankUsed[bankIndex]) return
+    const word = scrambled[bankIndex]
+    setBankUsed((used) => {
+      const next = [...used]
+      next[bankIndex] = true
+      return next
+    })
+    setPicked((items) => [...items, { word, bankIndex }])
+  }
+
+  const handleUnpick = (pickIndex: number) => {
     if (result !== "idle") return
-    if (fromRemaining) {
-      setRemaining((r) => r.filter((w, i) => !(w === word && r.indexOf(word) === i)))
-      setPicked((p) => [...p, word])
-    } else {
-      setPicked((p) => p.filter((w, i) => !(w === word && p.indexOf(word) === i)))
-      setRemaining((r) => [...r, word])
-    }
+    const item = picked[pickIndex]
+    if (!item) return
+    setBankUsed((used) => {
+      const next = [...used]
+      next[item.bankIndex] = false
+      return next
+    })
+    setPicked((items) => items.filter((_, i) => i !== pickIndex))
   }
 
   const handleCheck = useCallback(() => {
-    if (!question || result !== "idle" || remaining.length > 0) return
+    if (!question || result !== "idle" || remainingCount > 0) return
     const correct = question.correct ?? []
     const alternates = question.alternates ?? []
     const isCorrect =
-      JSON.stringify(picked) === JSON.stringify(correct) ||
-      alternates.some((alt) => JSON.stringify(picked) === JSON.stringify(alt))
-    setResult(isCorrect ? "correct" : "incorrect")
+      JSON.stringify(pickedWords) === JSON.stringify(correct) ||
+      alternates.some((alt) => JSON.stringify(pickedWords) === JSON.stringify(alt))
     if (isCorrect) setCorrectCount((c) => c + 1)
     else {
       const prefix = (question.prefix ?? []).join(" ")
@@ -985,13 +1263,22 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
         {
           id: question.id,
           prompt: question.text || "Arrange the words",
-          userAnswer: [prefix, ...picked, suffix].filter(Boolean).join(" "),
+          userAnswer: [prefix, ...pickedWords, suffix].filter(Boolean).join(" "),
           correctAnswer: [prefix, ...correct, suffix].filter(Boolean).join(" "),
           explanation: question.explanation,
         },
       ])
     }
-  }, [question, result, picked, remaining])
+    if (
+      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      })
+    ) {
+      return
+    }
+    setResult(isCorrect ? "correct" : "incorrect")
+  }, [homeworkId, index, pickedWords, question, questions.length, remainingCount, result])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -1024,57 +1311,125 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
   }
   if (!question) return null
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader
-        exercise={exercise}
-        secondsLeft={secondsLeft}
-        homeworkMode={!!homeworkId}
-      />
-      <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
-      <QuestionCard>
-        <Text style={styles.qLabel}>Question {index + 1} — Arrange the words</Text>
-        {(question.prefix ?? []).length > 0 && (
-          <Text style={styles.prefixText}>{question.prefix!.join(" ")}</Text>
+  const sourceText = [
+    ...(question.prefix ?? []),
+    question.text,
+    ...(question.suffix ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+
+  const actionRow = (
+    <ActionRow
+      result={result}
+      canCheck={remainingCount === 0 && picked.length > 0}
+      isLast={index + 1 >= questions.length}
+      onCheck={handleCheck}
+      onNext={handleNext}
+      variant={homeworkId ? "homework" : "default"}
+    />
+  )
+
+  const homeworkContent = (
+    <>
+      <HomeworkSourceCard source={sourceText || question.text}>
+        {picked.length === 0 ? (
+          <Text style={styles.homeworkPlaceholder}>Tap words below</Text>
+        ) : (
+          picked.map((item, i) => (
+            <HomeworkWordChip
+              key={`p-${item.bankIndex}-${i}`}
+              label={item.word}
+              onPress={() => handleUnpick(i)}
+            />
+          ))
         )}
-        <View style={styles.wordOrderArea}>
-          {picked.length === 0 ? (
-            <Text style={styles.placeholder}>Tap words below to build the sentence</Text>
+      </HomeworkSourceCard>
+
+      <View style={styles.homeworkWordBank}>
+        {scrambled.map((word, bankIndex) =>
+          bankUsed[bankIndex] ? (
+            <HomeworkWordChip key={`slot-${bankIndex}`} empty />
           ) : (
-            picked.map((w, i) => (
-              <Pressable key={`p-${i}-${w}`} onPress={() => handlePick(w, false)} style={styles.wordChip}>
-                <Text>{w}</Text>
-              </Pressable>
-            ))
-          )}
-        </View>
-        {(question.suffix ?? []).length > 0 && (
-          <Text style={styles.prefixText}>{question.suffix!.join(" ")}</Text>
+            <HomeworkWordChip
+              key={`bank-${bankIndex}-${word}`}
+              label={word}
+              onPress={() => handlePickFromBank(bankIndex)}
+            />
+          ),
         )}
-        <View style={styles.wordBank}>
-          {remaining.map((w, i) => (
-            <Pressable key={`r-${i}-${w}`} onPress={() => handlePick(w, true)} style={styles.wordChip}>
-              <Text>{w}</Text>
-            </Pressable>
-          ))}
-        </View>
-        {result !== "idle" && (
-          <FeedbackBox
-            correct={result === "correct"}
-            correctAnswer={(question.correct ?? []).join(" ")}
-            explanation={question.explanation}
-          />
-        )}
-        <ActionRow
-          result={result}
-          canCheck={remaining.length === 0 && picked.length > 0}
-          isLast={index + 1 >= questions.length}
-          onCheck={handleCheck}
-          onNext={handleNext}
+      </View>
+
+      {result !== "idle" && !homeworkId ? (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer={(question.correct ?? []).join(" ")}
+          explanation={question.explanation}
         />
-      </QuestionCard>
-    </ScrollView>
+      ) : null}
+    </>
+  )
+
+  const defaultContent = (
+    <>
+      <Text style={styles.qLabel}>Question {index + 1} — Arrange the words</Text>
+      {(question.prefix ?? []).length > 0 && (
+        <Text style={styles.prefixText}>{question.prefix!.join(" ")}</Text>
+      )}
+      <View style={styles.wordOrderArea}>
+        {picked.length === 0 ? (
+          <Text style={styles.placeholder}>Tap words below to build the sentence</Text>
+        ) : (
+          picked.map((item, i) => (
+            <Pressable
+              key={`p-${item.bankIndex}-${i}`}
+              onPress={() => handleUnpick(i)}
+              style={styles.wordChip}
+            >
+              <Text>{item.word}</Text>
+            </Pressable>
+          ))
+        )}
+      </View>
+      {(question.suffix ?? []).length > 0 && (
+        <Text style={styles.prefixText}>{question.suffix!.join(" ")}</Text>
+      )}
+      <View style={styles.wordBank}>
+        {scrambled.map((word, bankIndex) =>
+          bankUsed[bankIndex] ? null : (
+            <Pressable
+              key={`r-${bankIndex}-${word}`}
+              onPress={() => handlePickFromBank(bankIndex)}
+              style={styles.wordChip}
+            >
+              <Text>{word}</Text>
+            </Pressable>
+          ),
+        )}
+      </View>
+      {result !== "idle" && !homeworkId && (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer={(question.correct ?? []).join(" ")}
+          explanation={question.explanation}
+        />
+      )}
+    </>
+  )
+
+  return (
+    <ExerciseScreenFrame
+      homeworkId={homeworkId}
+      exercise={exercise}
+      index={index}
+      total={questions.length}
+      correctCount={correctCount}
+      secondsLeft={secondsLeft}
+      questionInstruction={question.instruction}
+      footer={actionRow}
+    >
+      {homeworkId ? homeworkContent : defaultContent}
+    </ExerciseScreenFrame>
   )
 }
 
@@ -1134,7 +1489,6 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
       const accepted = [seg.correctText, ...(seg.acceptableText ?? [])].map(normalizeAnswer)
       if (!accepted.includes(userVal)) allCorrect = false
     }
-    setResult(allCorrect ? "correct" : "incorrect")
     if (allCorrect) setCorrectCount((c) => c + 1)
     else {
       setMistakes((prev) => [
@@ -1148,7 +1502,16 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
         },
       ])
     }
-  }, [question, result, edits])
+    if (
+      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      })
+    ) {
+      return
+    }
+    setResult(allCorrect ? "correct" : "incorrect")
+  }, [edits, homeworkId, index, question, questions.length, result])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -1183,18 +1546,57 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
 
   const segments = question.segments ?? []
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <ExerciseHeader
-        exercise={exercise}
-        secondsLeft={secondsLeft}
-        homeworkMode={!!homeworkId}
-      />
-      <ProgressBar index={index} total={questions.length} correctCount={correctCount} />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
-      <QuestionCard>
-        <Text style={styles.qLabel}>Question {index + 1} — Fix the errors</Text>
-        <Text style={styles.instructionHint}>Tap highlighted words to edit them</Text>
+  const actionRow = (
+    <ActionRow
+      result={result}
+      canCheck={true}
+      isLast={index + 1 >= questions.length}
+      onCheck={handleCheck}
+      onNext={handleNext}
+      variant={homeworkId ? "homework" : "default"}
+    />
+  )
+
+  const errorContent = (
+    <>
+      {!homeworkId ? (
+        <>
+          <Text style={styles.qLabel}>Question {index + 1} — Fix the errors</Text>
+          <Text style={styles.instructionHint}>Tap highlighted words to edit them</Text>
+        </>
+      ) : null}
+      {homeworkId ? (
+        <HomeworkSourceCard source="Fix the highlighted words">
+          <View style={styles.homeworkErrorRow}>
+            {segments.map((seg) => {
+              const isEditable = !!seg.correctText
+              const display = edits[seg.id] ?? seg.text
+              const isEditing = editingId === seg.id
+              return (
+                <React.Fragment key={seg.id}>
+                  {isEditing ? (
+                    <TextInput
+                      style={styles.homeworkErrorInput}
+                      value={edits[seg.id] ?? seg.text}
+                      onChangeText={(t) => setEdits((e) => ({ ...e, [seg.id]: t }))}
+                      onBlur={() => setEditingId(null)}
+                      autoFocus
+                    />
+                  ) : (
+                    <Pressable
+                      onPress={() => isEditable && result === "idle" && setEditingId(seg.id)}
+                      style={[styles.errorSegment, isEditable && styles.homeworkErrorSegment]}
+                    >
+                      <Text style={styles.homeworkErrorText}>{display}</Text>
+                    </Pressable>
+                  )}
+                  {seg.after ? <Text style={styles.homeworkErrorText}>{seg.after}</Text> : null}
+                </React.Fragment>
+              )
+            })}
+          </View>
+        </HomeworkSourceCard>
+      ) : (
         <View style={styles.errorRow}>
           {segments.map((seg) => {
             const isEditable = !!seg.correctText
@@ -1223,22 +1625,30 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
             )
           })}
         </View>
-        {result !== "idle" && (
-          <FeedbackBox
-            correct={result === "correct"}
-            correctAnswer=""
-            explanation={question.explanation}
-          />
-        )}
-        <ActionRow
-          result={result}
-          canCheck={true}
-          isLast={index + 1 >= questions.length}
-          onCheck={handleCheck}
-          onNext={handleNext}
+      )}
+      {result !== "idle" && !homeworkId && (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer=""
+          explanation={question.explanation}
         />
-      </QuestionCard>
-    </ScrollView>
+      )}
+    </>
+  )
+
+  return (
+    <ExerciseScreenFrame
+      homeworkId={homeworkId}
+      exercise={exercise}
+      index={index}
+      total={questions.length}
+      correctCount={correctCount}
+      secondsLeft={secondsLeft}
+      questionInstruction={question.instruction}
+      footer={actionRow}
+    >
+      {errorContent}
+    </ExerciseScreenFrame>
   )
 }
 
@@ -1491,5 +1901,156 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   matchCheckBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  btnDisabled: { opacity: 0.5 },
+  btnDisabled: { opacity: 0.45 },
+  homeworkPlaceholder: {
+    fontSize: 15,
+    color: colors.textMuted,
+    fontWeight: "500",
+  },
+  homeworkWordBank: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  homeworkBlankRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 4,
+  },
+  homeworkSentenceText: {
+    fontSize: 18,
+    lineHeight: 28,
+    color: colors.text,
+    fontWeight: "600",
+  },
+  homeworkBlankInput: {
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 96,
+    fontSize: 16,
+    fontWeight: "600",
+    backgroundColor: "#FFFFFF",
+  },
+  homeworkTextInput: {
+    alignSelf: "stretch",
+    width: "100%",
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    fontWeight: "600",
+    backgroundColor: "#FFFFFF",
+    marginTop: spacing.md,
+  },
+  homeworkMcOptions: {
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  homeworkMcOption: {
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    borderRadius: radius.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: "#FFFFFF",
+    width: "100%",
+  },
+  homeworkMcOptionText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+    lineHeight: 22,
+  },
+  homeworkOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  homeworkOption: {
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#FFFFFF",
+  },
+  homeworkOptionSelected: {
+    borderColor: colors.brand,
+    backgroundColor: "#E8F6FF",
+  },
+  homeworkOptionText: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  homeworkTfRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  homeworkTfBtn: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    borderRadius: radius.sm,
+    paddingVertical: 14,
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  homeworkBtn: {
+    alignSelf: "stretch",
+    width: "100%",
+    backgroundColor: colors.brand,
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 52,
+  },
+  homeworkBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  homeworkErrorRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 2,
+  },
+  homeworkErrorSegment: {
+    backgroundColor: "#FFF4CC",
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  homeworkErrorText: {
+    fontSize: 18,
+    lineHeight: 28,
+    color: colors.text,
+    fontWeight: "600",
+  },
+  homeworkErrorInput: {
+    borderWidth: 1.5,
+    borderColor: colors.brand,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 72,
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  homeworkMatchOption: {
+    borderWidth: 1.5,
+    borderColor: "#E0E0E0",
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#FFFFFF",
+  },
 })

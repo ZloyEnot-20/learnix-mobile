@@ -49,7 +49,7 @@ export default function HomeworkExerciseScreen() {
 
   const homeworkId = hw
 
-  const studentId = user?.role === "student" ? user.id : undefined
+  const studentId = user?.type === "student" ? user.id : undefined
 
 
 
@@ -312,7 +312,7 @@ export default function HomeworkExerciseScreen() {
 
 const styles = StyleSheet.create({
 
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: "#FFFFFF" },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12 },
 

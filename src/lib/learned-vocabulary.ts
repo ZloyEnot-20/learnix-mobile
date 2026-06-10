@@ -31,7 +31,60 @@ export interface GameExerciseResult {
   topic: string
   correctCount: number
   totalQuestions: number
+  passed?: boolean
   completedAt: string
+}
+
+export type TopicProgressStatus = "not_started" | "in_progress" | "completed"
+
+export interface TopicProgress {
+  topic: string
+  completedRounds: number
+  totalRounds: number
+  passedRounds: number
+  status: TopicProgressStatus
+  bestScorePct: number | null
+}
+
+export interface DeckProgress {
+  deckSlug: string
+  wordsLearned: number
+  totalWords: number
+  quizAttempts: number
+  lastScorePct: number | null
+  completed: boolean
+}
+
+export type GameHistoryEntry =
+  | {
+      kind: "exercise"
+      id: string
+      title: string
+      subtitle: string
+      route: string
+      correctCount: number
+      totalQuestions: number
+      passed: boolean
+      completedAt: string
+    }
+  | {
+      kind: "vocab"
+      id: string
+      title: string
+      subtitle: string
+      route: string
+      correctCount: number
+      totalQuestions: number
+      passed: boolean
+      completedAt: string
+    }
+
+export interface LearningProgressSummary {
+  wordsLearned: number
+  topicsCompleted: number
+  topicsInProgress: number
+  decksCompleted: number
+  totalGameSessions: number
 }
 
 interface LearningProgress {
@@ -145,6 +198,165 @@ export async function recordGameExerciseResult(
   })
   progress.gameResults = progress.gameResults.slice(0, 100)
   await saveProgress(userId, progress)
+}
+
+export async function getLearningProgress(userId: string): Promise<LearningProgress> {
+  return loadProgress(userId)
+}
+
+function scorePct(correct: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.round((correct / total) * 100)
+}
+
+function isExercisePassed(
+  result: Pick<GameExerciseResult, "correctCount" | "totalQuestions" | "passed">,
+  passingScore?: number,
+): boolean {
+  if (result.passed != null) return result.passed
+  if (passingScore != null) return result.correctCount >= passingScore
+  return scorePct(result.correctCount, result.totalQuestions) >= 70
+}
+
+export function buildTopicProgressMap(
+  gameResults: GameExerciseResult[],
+  exercises: { topic: string; slug: string; passingScore: number }[],
+): Map<string, TopicProgress> {
+  const byTopic = new Map<string, { slug: string; passingScore: number }[]>()
+  for (const ex of exercises) {
+    const list = byTopic.get(ex.topic) ?? []
+    list.push({ slug: ex.slug, passingScore: ex.passingScore })
+    byTopic.set(ex.topic, list)
+  }
+
+  const map = new Map<string, TopicProgress>()
+  for (const [topic, rounds] of byTopic) {
+    const totalRounds = rounds.length
+    const bestBySlug = new Map<string, GameExerciseResult>()
+    for (const result of gameResults) {
+      if (result.topic !== topic) continue
+      const prev = bestBySlug.get(result.slug)
+      if (!prev || scorePct(result.correctCount, result.totalQuestions) > scorePct(prev.correctCount, prev.totalQuestions)) {
+        bestBySlug.set(result.slug, result)
+      }
+    }
+
+    let passedRounds = 0
+    let bestScorePct: number | null = null
+    for (const round of rounds) {
+      const best = bestBySlug.get(round.slug)
+      if (!best) continue
+      const pct = scorePct(best.correctCount, best.totalQuestions)
+      bestScorePct = bestScorePct == null ? pct : Math.max(bestScorePct, pct)
+      if (isExercisePassed(best, round.passingScore)) passedRounds += 1
+    }
+
+    const completedRounds = bestBySlug.size
+    let status: TopicProgressStatus = "not_started"
+    if (passedRounds >= totalRounds && totalRounds > 0) status = "completed"
+    else if (completedRounds > 0) status = "in_progress"
+
+    map.set(topic, {
+      topic,
+      completedRounds,
+      totalRounds,
+      passedRounds,
+      status,
+      bestScorePct,
+    })
+  }
+
+  return map
+}
+
+export function buildDeckProgressMap(
+  progress: LearningProgress,
+  decks: { slug: string; words: unknown[] }[],
+): Map<string, DeckProgress> {
+  const map = new Map<string, DeckProgress>()
+
+  for (const deck of decks) {
+    const wordsLearned = progress.words.filter((w) => w.deckSlug === deck.slug).length
+    const attempts = progress.vocabResults.filter(
+      (r) => r.deckSlug === deck.slug && r.source === "game",
+    )
+    const last = attempts[0]
+    map.set(deck.slug, {
+      deckSlug: deck.slug,
+      wordsLearned,
+      totalWords: deck.words.length,
+      quizAttempts: attempts.length,
+      lastScorePct: last ? scorePct(last.correct, last.total) : null,
+      completed: attempts.length > 0,
+    })
+  }
+
+  return map
+}
+
+export function buildLearningProgressSummary(
+  progress: LearningProgress,
+  topicProgress: Map<string, TopicProgress>,
+): LearningProgressSummary {
+  let topicsCompleted = 0
+  let topicsInProgress = 0
+  for (const item of topicProgress.values()) {
+    if (item.status === "completed") topicsCompleted += 1
+    else if (item.status === "in_progress") topicsInProgress += 1
+  }
+
+  const deckSlugs = new Set(
+    progress.vocabResults.filter((r) => r.source === "game").map((r) => r.deckSlug),
+  )
+
+  return {
+    wordsLearned: progress.words.length,
+    topicsCompleted,
+    topicsInProgress,
+    decksCompleted: deckSlugs.size,
+    totalGameSessions:
+      progress.gameResults.length +
+      progress.vocabResults.filter((r) => r.source === "game").length,
+  }
+}
+
+export function buildGameHistory(progress: LearningProgress): GameHistoryEntry[] {
+  const items: GameHistoryEntry[] = []
+
+  for (const result of progress.gameResults) {
+    const pct = scorePct(result.correctCount, result.totalQuestions)
+    items.push({
+      kind: "exercise",
+      id: `exercise-${result.slug}-${result.completedAt}`,
+      title: result.title,
+      subtitle: `Grammar · ${pct}%`,
+      route: `/exercise/${result.topic}/${result.slug}`,
+      correctCount: result.correctCount,
+      totalQuestions: result.totalQuestions,
+      passed: isExercisePassed(result),
+      completedAt: result.completedAt,
+    })
+  }
+
+  for (const result of progress.vocabResults) {
+    if (result.source !== "game") continue
+    const pct = scorePct(result.correct, result.total)
+    items.push({
+      kind: "vocab",
+      id: `vocab-${result.deckSlug}-${result.completedAt}`,
+      title: result.deckTitle,
+      subtitle: `Vocabulary · ${pct}%`,
+      route: `/vocabulary/${result.deckSlug}`,
+      correctCount: result.correct,
+      totalQuestions: result.total,
+      passed: pct >= 70,
+      completedAt: result.completedAt,
+    })
+  }
+
+  return items.sort(
+    (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+  )
 }
 
 function toLearnedWord(word: VocabWord, deck: VocabDeck, learnedAt: string): LearnedWord {

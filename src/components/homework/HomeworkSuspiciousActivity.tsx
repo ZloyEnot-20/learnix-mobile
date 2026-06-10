@@ -20,7 +20,7 @@ export function HomeworkSuspiciousActivity({ onDismiss }: { onDismiss?: () => vo
       iconBg="#FEF3C7"
       title="Suspicious activity"
       description="You left the app during protected homework. Your work has been paused. If you leave again, this homework will fail."
-      buttonLabel="Back to homework"
+      buttonLabel="Continue assignment"
       onButtonPress={handlePress}
     />
   )
