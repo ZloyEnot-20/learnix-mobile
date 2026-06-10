@@ -21,6 +21,7 @@ import {
   HomeworkSourceCard,
   HomeworkWordChip,
   homeworkInstructionForType,
+  resolveHomeworkInstruction,
 } from "../homework/HomeworkExerciseLayout"
 import {
   ActionRow,
@@ -133,6 +134,7 @@ function ExerciseScreenFrame({
   correctCount,
   secondsLeft,
   questionInstruction,
+  questionPrompt,
   children,
   footer,
 }: {
@@ -143,11 +145,15 @@ function ExerciseScreenFrame({
   correctCount: number
   secondsLeft: number | null
   questionInstruction?: string
+  questionPrompt?: string
   children: React.ReactNode
   footer: React.ReactNode
 }) {
-  const instruction =
-    questionInstruction?.trim() || homeworkInstructionForType(exercise.type)
+  const instruction = resolveHomeworkInstruction(
+    questionInstruction,
+    questionPrompt,
+    exercise.type,
+  )
 
   if (homeworkId) {
     return (
@@ -312,7 +318,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
     <>
       {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
       {homeworkId ? (
-        <HomeworkSourceCard source={question.text}>
+        <HomeworkSourceCard>
           <View style={styles.homeworkBlankRow}>
             {segments.map((seg, i) => (
               <React.Fragment key={i}>
@@ -388,6 +394,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       correctCount={correctCount}
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
+      questionPrompt={question.text}
       footer={actionRow}
     >
       {questionBody}
@@ -572,6 +579,7 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
       correctCount={correctCount}
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
+      questionPrompt={renderedText}
       footer={actionRow}
     >
       {questionBody}
@@ -723,6 +731,7 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
       correctCount={correctCount}
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
+      questionPrompt={question.text}
       footer={actionRow}
     >
       {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
@@ -878,6 +887,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
       correctCount={correctCount}
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
+      questionPrompt={question.text}
       footer={actionRow}
     >
       {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
@@ -1426,6 +1436,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
       correctCount={correctCount}
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
+      questionPrompt={sourceText || question.text}
       footer={actionRow}
     >
       {homeworkId ? homeworkContent : defaultContent}
@@ -1645,6 +1656,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
       correctCount={correctCount}
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
+      questionPrompt={segments.map((s) => s.text).join("")}
       footer={actionRow}
     >
       {errorContent}

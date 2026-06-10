@@ -14,7 +14,29 @@ import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight"
 import { HomeworkSessionContext } from "./HomeworkSessionShell"
+import { GRAMMAR_BLANK_TOKEN } from "../../types/grammar"
 import { colors, radius, spacing } from "../../theme/tokens"
+
+function normalizePromptText(value: string): string {
+  return value.replace(GRAMMAR_BLANK_TOKEN, "_____").replace(/\s+/g, " ").trim()
+}
+
+export function resolveHomeworkInstruction(
+  questionInstruction: string | undefined,
+  questionPrompt: string | undefined,
+  exerciseType: string,
+): string {
+  const fallback = homeworkInstructionForType(exerciseType)
+  const instruction = questionInstruction?.trim()
+  if (!instruction) return fallback
+
+  const prompt = questionPrompt?.trim()
+  if (prompt && normalizePromptText(instruction) === normalizePromptText(prompt)) {
+    return fallback
+  }
+
+  return instruction
+}
 
 function useHomeworkShell() {
   const { confirmPause, pauseAvailable } = React.useContext(HomeworkSessionContext)
@@ -206,15 +228,25 @@ export function HomeworkSourceCard({
   source,
   children,
 }: {
-  source: string
+  source?: string
   children?: React.ReactNode
 }) {
+  const headerText = source?.trim()
+  const hasHeader = !!headerText
+  const hasBody = children != null
+
+  if (!hasHeader && !hasBody) return null
+
   return (
     <View style={cardStyles.wrap}>
-      <View style={cardStyles.header}>
-        <Text style={cardStyles.source}>{source}</Text>
-      </View>
-      {children != null ? <View style={cardStyles.body}>{children}</View> : null}
+      {hasHeader ? (
+        <View style={cardStyles.header}>
+          <Text style={cardStyles.source}>{headerText}</Text>
+        </View>
+      ) : null}
+      {hasBody ? (
+        <View style={[cardStyles.body, !hasHeader && cardStyles.bodyOnly]}>{children}</View>
+      ) : null}
     </View>
   )
 }
@@ -374,6 +406,9 @@ const cardStyles = StyleSheet.create({
     gap: spacing.sm,
     alignItems: "flex-start",
     alignContent: "flex-start",
+  },
+  bodyOnly: {
+    minHeight: 72,
   },
 })
 

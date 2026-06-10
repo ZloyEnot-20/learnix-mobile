@@ -2,9 +2,15 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { AppState, BackHandler, type AppStateStatus } from "react-native"
 import { homeworkApi } from "../lib/api"
 import { API_URL } from "../lib/api-client"
+import {
+  claimHomeworkIntegritySession,
+  isActiveHomeworkIntegritySession,
+} from "../lib/homework-integrity-session"
 import type { IntegrityStatus, ViolationReason } from "../types/domain"
 
 const BACKGROUND_FAIL_THRESHOLD_MS = 5000
+/** Ignore integrity triggers briefly after a homework screen becomes active (navigation transitions). */
+const MOUNT_GRACE_MS = 3000
 
 function isBackgroundState(state: AppStateStatus): boolean {
   return state === "inactive" || state === "background"
@@ -36,10 +42,28 @@ export function useHomeworkIntegrity(
   const wasOnlineRef = useRef(false)
   const appStateRef = useRef<AppStateStatus>(AppState.currentState)
   const backgroundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const monitoringReadyAtRef = useRef(0)
 
   useEffect(() => {
     setPauseUsed(initialPauseUsed)
   }, [initialPauseUsed])
+
+  useEffect(() => {
+    if (!homeworkId || !active) return
+    return claimHomeworkIntegritySession(homeworkId)
+  }, [homeworkId, active])
+
+  useEffect(() => {
+    if (active) {
+      monitoringReadyAtRef.current = Date.now() + MOUNT_GRACE_MS
+    }
+  }, [active, homeworkId])
+
+  const canMonitor = useCallback(() => {
+    if (!homeworkId || !active || failed || suspicious) return false
+    if (!isActiveHomeworkIntegritySession(homeworkId)) return false
+    return Date.now() >= monitoringReadyAtRef.current
+  }, [homeworkId, active, failed, suspicious])
 
   const pauseSession = useCallback(
     async (opts?: { fromViolation?: boolean }) => {
@@ -74,7 +98,7 @@ export function useHomeworkIntegrity(
 
   const leaveSession = useCallback(
     async (reason: ViolationReason) => {
-      if (!homeworkId || !active || failed || suspicious || processingRef.current) return
+      if (!homeworkId || !canMonitor() || processingRef.current) return
       const now = Date.now()
       if (now < cooldownUntilRef.current) return
 
@@ -102,7 +126,7 @@ export function useHomeworkIntegrity(
         processingRef.current = false
       }
     },
-    [homeworkId, active, failed, suspicious],
+    [homeworkId, canMonitor],
   )
 
   const clearBackgroundTimer = useCallback(() => {
@@ -113,17 +137,17 @@ export function useHomeworkIntegrity(
   }, [])
 
   useEffect(() => {
-    if (!homeworkId || !active || failed || suspicious) return
+    if (!canMonitor()) return
 
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       void leaveSession("navigation")
       return true
     })
     return () => sub.remove()
-  }, [homeworkId, active, failed, suspicious, leaveSession])
+  }, [canMonitor, leaveSession])
 
   useEffect(() => {
-    if (!homeworkId || !active || failed || suspicious) {
+    if (!canMonitor()) {
       clearBackgroundTimer()
       return
     }
@@ -131,6 +155,7 @@ export function useHomeworkIntegrity(
     const scheduleBackgroundCheck = () => {
       clearBackgroundTimer()
       backgroundTimerRef.current = setTimeout(() => {
+        if (!canMonitor()) return
         if (isBackgroundState(AppState.currentState)) {
           void leaveSession("app_background")
         }
@@ -140,6 +165,8 @@ export function useHomeworkIntegrity(
     const sub = AppState.addEventListener("change", (next) => {
       const prev = appStateRef.current
       appStateRef.current = next
+
+      if (!canMonitor()) return
 
       if (prev === "active" && isBackgroundState(next)) {
         scheduleBackgroundCheck()
@@ -151,23 +178,19 @@ export function useHomeworkIntegrity(
       }
     })
 
-    if (isBackgroundState(AppState.currentState)) {
-      scheduleBackgroundCheck()
-    }
-
     return () => {
       sub.remove()
       clearBackgroundTimer()
     }
-  }, [homeworkId, active, failed, suspicious, leaveSession, clearBackgroundTimer])
+  }, [canMonitor, leaveSession, clearBackgroundTimer])
 
   useEffect(() => {
-    if (!homeworkId || !active || failed || suspicious) return
+    if (!canMonitor()) return
 
     let cancelled = false
 
     async function checkNetwork() {
-      if (cancelled) return
+      if (cancelled || !canMonitor()) return
       try {
         const res = await fetch(`${API_URL}/health`)
         if (res.ok) {
@@ -188,10 +211,11 @@ export function useHomeworkIntegrity(
       cancelled = true
       clearInterval(id)
     }
-  }, [homeworkId, active, failed, suspicious, leaveSession])
+  }, [canMonitor, leaveSession])
 
   const dismissSuspicious = useCallback(() => {
     setSuspicious(false)
+    monitoringReadyAtRef.current = Date.now() + MOUNT_GRACE_MS
   }, [])
 
   return {

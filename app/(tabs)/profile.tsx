@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Alert,
   Pressable,
@@ -8,7 +8,8 @@ import {
   Text,
   View,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { useFocusEffect, useRouter } from "expo-router"
+import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { useAuth } from "../../src/context/AuthContext"
 import { ProfileSkeleton } from "../../src/components/skeletons/Layouts"
 import { studentsApi, testResultsApi } from "../../src/lib/api"
@@ -46,6 +47,12 @@ export default function ProfileScreen() {
     setLoading(true)
     load().finally(() => setLoading(false))
   }, [user])
+
+  useFocusEffect(
+    useCallback(() => {
+      requestNotificationsRefresh()
+    }, []),
+  )
 
   const onRefresh = async () => {
     setRefreshing(true)

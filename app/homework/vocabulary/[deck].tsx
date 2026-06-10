@@ -118,7 +118,7 @@ export default function HomeworkVocabularyScreen() {
 
           exercisesApi.vocabDeck(deckSlug),
 
-          isStudent ? homeworkApi.start(homeworkId).catch(() => null) : Promise.resolve(null),
+          isStudent ? homeworkApi.start(homeworkId, { force: true }).catch(() => null) : Promise.resolve(null),
 
           isStudent ? homeworkApi.get(homeworkId).catch(() => null) : Promise.resolve(null),
 
@@ -208,7 +208,7 @@ export default function HomeworkVocabularyScreen() {
 
     async function beginSession() {
 
-      const sub = await homeworkApi.start(homeworkId).catch(() => null)
+      const sub = await homeworkApi.start(homeworkId, { force: true }).catch(() => null)
 
       if (cancelled) return
 
@@ -264,7 +264,8 @@ export default function HomeworkVocabularyScreen() {
 
 
 
-  const sessionReady = !loading && deck != null && !reviewSubmission
+  const sessionReady =
+    !loading && deck != null && !reviewSubmission && quizActive && sessionStartedAt != null
 
 
 

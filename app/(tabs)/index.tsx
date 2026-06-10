@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useAuth } from "../../src/context/AuthContext"
 import { ContinueLearningBanner } from "../../src/components/ContinueLearningBanner"
+import { IeltsMockTestBanner } from "../../src/components/IeltsMockTestBanner"
 import { VocabularyReviewBanner } from "../../src/components/VocabularyReviewBanner"
 import { LevelScale } from "../../src/components/LevelScale"
 import { FadeInDown } from "../../src/components/ui/FadeInDown"
@@ -17,6 +18,7 @@ import {
   resolveContinueLearning,
   type ContinueLearningItem,
 } from "../../src/lib/continue-learning"
+import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import type { TestResult } from "../../src/types/domain"
 import { colors, radius, shadow, spacing, typography, subjectColors } from "../../src/theme/tokens"
 
@@ -55,6 +57,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      requestNotificationsRefresh()
       setLoading(true)
       load().finally(() => setLoading(false))
     }, [load]),
@@ -69,11 +72,6 @@ export default function HomeScreen() {
   if (!user) return null
 
   const showSkeleton = loading || refreshing
-
-  const avgBand =
-    results.length > 0
-      ? (results.reduce((s, r) => s + r.bandScore, 0) / results.length).toFixed(1)
-      : "—"
 
   return (
     <ScrollView
@@ -119,16 +117,7 @@ export default function HomeScreen() {
           <FadeInDown
             index={continueItem && vocabPreview ? 4 : continueItem || vocabPreview ? 3 : 2}
           >
-            <View style={styles.statsRow}>
-              <View style={styles.statCard}>
-                <Text style={styles.statValue}>{results.length}</Text>
-                <Text style={styles.statLabel}>Tests taken</Text>
-              </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statValue}>{avgBand}</Text>
-                <Text style={styles.statLabel}>Avg band</Text>
-              </View>
-            </View>
+            <IeltsMockTestBanner />
           </FadeInDown>
 
           {results.length > 0 && (
@@ -177,17 +166,6 @@ const styles = StyleSheet.create({
   subGreeting: { ...typography.bodySm, color: colors.textSecondary, marginTop: spacing.sm, marginBottom: spacing.lg },
   section: { marginBottom: spacing.lg },
   sectionTitle: { ...typography.h3, fontSize: 18, color: colors.text, marginBottom: spacing.md },
-  statsRow: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.lg },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    padding: spacing.section,
-    alignItems: "center",
-    ...shadow.card,
-  },
-  statValue: { fontSize: 28, fontWeight: "800", color: colors.primary },
-  statLabel: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm },
   resultCard: {
     flexDirection: "row",
     alignItems: "center",

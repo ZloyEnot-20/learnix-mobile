@@ -49,6 +49,10 @@ export interface HomeworkSubmission {
   id: string
   homeworkId: string
   studentId: string
+  topic?: string
+  homeworkTitle?: string
+  assignedAt?: string
+  entryCount?: number
   status: HomeworkStatus
   integrityStatus?: IntegrityStatus
   violationCount?: number

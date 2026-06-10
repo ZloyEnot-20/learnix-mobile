@@ -120,7 +120,7 @@ export default function HomeworkExerciseScreen() {
 
           homeworkApi.get(homeworkId).catch(() => null),
 
-          studentId ? homeworkApi.start(homeworkId).catch(() => null) : Promise.resolve(null),
+          studentId ? homeworkApi.start(homeworkId, { force: true }).catch(() => null) : Promise.resolve(null),
 
         ])
 

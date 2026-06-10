@@ -1,7 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { notificationsApi, type NotificationItem } from "../lib/api"
+import { cacheKey, peekStale } from "../lib/api-cache"
+import { subscribeNotificationsRefresh } from "../lib/notifications-refresh"
 import { BottomSheet } from "./ui/BottomSheet"
 import { NotificationListSkeleton } from "./skeletons/Layouts"
 import { formatRelative, groupKey } from "../lib/utils"
@@ -24,22 +26,32 @@ export function NotificationsBell() {
   const [open, setOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
 
-  const load = () => {
-    setLoaded(false)
-    notificationsApi
-      .list()
-      .then(setItems)
-      .catch(() => setItems([]))
-      .finally(() => setLoaded(true))
-  }
-
-  useEffect(() => {
-    load()
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoaded(false)
+    try {
+      const data = await notificationsApi.list(opts?.silent ? { force: true } : undefined)
+      setItems(data)
+    } catch {
+      if (!opts?.silent) setItems([])
+    } finally {
+      setLoaded(true)
+    }
   }, [])
 
   useEffect(() => {
-    if (open) load()
-  }, [open])
+    const cached = peekStale<NotificationItem[]>(cacheKey("GET", "/notifications"))
+    if (cached) {
+      setItems(cached)
+      setLoaded(true)
+    }
+    void refresh({ silent: true })
+  }, [refresh])
+
+  useEffect(() => subscribeNotificationsRefresh(() => void refresh({ silent: true })), [refresh])
+
+  useEffect(() => {
+    if (open) void refresh({ silent: loaded })
+  }, [open, loaded, refresh])
 
   const unread = items.filter((n) => !n.read).length
 

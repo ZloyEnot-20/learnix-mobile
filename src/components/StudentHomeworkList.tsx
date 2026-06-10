@@ -139,10 +139,13 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
     getHomeworkListSnapshot(studentId),
   )
   const [refreshing, setRefreshing] = useState(false)
+  const [animateItemIds, setAnimateItemIds] = useState<Set<string> | undefined>(undefined)
   const hasLoadedRef = useRef(items !== null)
+  const itemsRef = useRef(items)
+  itemsRef.current = items
 
   const load = useCallback(
-    async (opts?: { force?: boolean }) => {
+    async (opts?: { force?: boolean; background?: boolean }) => {
       try {
         const [entries, controlEntries, exList] = await Promise.all([
           homeworkApi.mine(opts),
@@ -151,6 +154,15 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
         ])
 
         const mapped = mergeHomeworkItems(entries, controlEntries, exList)
+
+        if (opts?.background && itemsRef.current) {
+          const prevIds = new Set(itemsRef.current.map((i) => i.id))
+          const newIds = mapped.filter((i) => !prevIds.has(i.id)).map((i) => i.id)
+          if (newIds.length > 0) {
+            setAnimateItemIds(new Set(newIds))
+          }
+        }
+
         setHomeworkListSnapshot(studentId, mapped)
         setItems(mapped)
         hasLoadedRef.current = true
@@ -163,13 +175,19 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
 
   useFocusEffect(
     useCallback(() => {
-      void load()
+      if (itemsRef.current !== null) {
+        setAnimateItemIds(new Set())
+        void load({ force: true, background: true })
+      } else {
+        void load()
+      }
     }, [load]),
   )
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
-    await load({ force: true })
+    setAnimateItemIds(new Set())
+    await load({ force: true, background: true })
     setRefreshing(false)
   }, [load])
 
@@ -180,7 +198,12 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
           <HomeworkListSkeleton />
         </View>
       ) : (
-        <HomeworkSection items={items} refreshing={refreshing} onRefresh={onRefresh} />
+        <HomeworkSection
+          items={items}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          animateItemIds={animateItemIds}
+        />
       )}
     </View>
   )

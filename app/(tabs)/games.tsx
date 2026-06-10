@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native"
 import { useFocusEffect, useRouter } from "expo-router"
+import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { useAuth } from "../../src/context/AuthContext"
 import { exercisesApi, studentsApi } from "../../src/lib/api"
 import { LevelScale } from "../../src/components/LevelScale"
@@ -228,6 +229,7 @@ export default function GamesScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      requestNotificationsRefresh()
       void loadProgress()
     }, [loadProgress]),
   )

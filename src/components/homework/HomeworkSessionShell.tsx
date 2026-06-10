@@ -1,5 +1,6 @@
 import React from "react"
 import { Alert, StyleSheet, View } from "react-native"
+import { usePreventScreenCapture } from "expo-screen-capture"
 import { useRouter } from "expo-router"
 import { useHomeworkIntegrity } from "../../hooks/useHomeworkIntegrity"
 import { HomeworkCheatingFailed } from "./HomeworkCheatingFailed"
@@ -29,6 +30,8 @@ export function HomeworkSessionShell({
   pauseUsed,
   children,
 }: HomeworkSessionShellProps) {
+  usePreventScreenCapture("homework-session")
+
   const router = useRouter()
 
   const handlePaused = React.useCallback(() => {

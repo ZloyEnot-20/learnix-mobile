@@ -52,14 +52,25 @@ export function HomeSkeleton() {
       <View style={styles.section}>
         <LevelScaleSkeleton />
       </View>
-      <View style={styles.statsRow}>
-        <SkeletonCard style={styles.statCard}>
-          <Skeleton width={40} height={28} style={styles.center} />
-          <Skeleton width={64} height={11} style={[styles.center, styles.gapSm]} />
-        </SkeletonCard>
-        <SkeletonCard style={styles.statCard}>
-          <Skeleton width={40} height={28} style={styles.center} />
-          <Skeleton width={64} height={11} style={[styles.center, styles.gapSm]} />
+      <View style={styles.section}>
+        <Skeleton width={140} height={18} style={styles.gapMd} />
+        <SkeletonCard style={styles.mockTestBanner}>
+          <View style={styles.mockTestRow}>
+            <Skeleton width={44} height={44} borderRadius={12} />
+            <View style={styles.mockTestText}>
+              <Skeleton width={140} height={16} />
+              <Skeleton width={200} height={12} style={styles.gapSm} />
+            </View>
+          </View>
+          <View style={styles.mockSectionsRow}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <View key={i} style={styles.mockSectionItem}>
+                <Skeleton width={40} height={40} borderRadius={12} />
+                <Skeleton width={48} height={10} />
+              </View>
+            ))}
+          </View>
+          <Skeleton width={110} height={32} borderRadius={999} />
         </SkeletonCard>
       </View>
       <View style={styles.section}>
@@ -301,6 +312,15 @@ const styles = StyleSheet.create({
   gamesRoot: { gap: 0 },
   statsRow: { flexDirection: "row", gap: 12 },
   statCard: { flex: 1, alignItems: "center", paddingVertical: 16 },
+  mockTestBanner: { padding: spacing.md, gap: spacing.md },
+  mockTestRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  mockTestText: { flex: 1, minWidth: 0 },
+  mockSectionsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  mockSectionItem: { flex: 1, alignItems: "center", gap: 6 },
   center: { alignSelf: "center" },
   hero: { alignItems: "center", marginBottom: 20 },
   infoRow: {

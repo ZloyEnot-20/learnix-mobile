@@ -92,6 +92,7 @@ export const shadow = {
 export const animation = {
   fadeInDownDuration: 500,
   fadeInDownStagger: 100,
+  tabSwitchDuration: 280,
 }
 
 export const subjectColors: Record<string, string> = {
