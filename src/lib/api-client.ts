@@ -96,6 +96,33 @@ export async function apiFetch<T = unknown>(
   return data as T
 }
 
+export async function apiUpload<T = unknown>(
+  path: string,
+  formData: FormData,
+  auth = true,
+): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (auth) {
+    const token = await getAccessToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  })
+
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+
+  if (!res.ok) {
+    const message = (data && (data.error || data.message)) || res.statusText
+    throw new ApiError(res.status, message, data?.details)
+  }
+  return data as T
+}
+
 export const api = {
   get: <T>(path: string, auth = true) => apiFetch<T>(path, { method: "GET", auth }),
   post: <T>(path: string, body?: unknown, auth = true) =>

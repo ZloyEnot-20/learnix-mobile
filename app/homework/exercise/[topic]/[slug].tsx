@@ -17,6 +17,7 @@ import { ExerciseRunner } from "../../../../src/components/exercise/ExerciseRunn
 import { HomeworkCheatingFailed } from "../../../../src/components/homework/HomeworkCheatingFailed"
 
 import { HomeworkGrammarReview } from "../../../../src/components/homework/HomeworkGrammarReview"
+import { HomeworkSpeakingReview } from "../../../../src/components/homework/HomeworkSpeakingReview"
 
 import { HomeworkSessionShell } from "../../../../src/components/homework/HomeworkSessionShell"
 
@@ -255,20 +256,25 @@ export default function HomeworkExerciseScreen() {
           </View>
 
         ) : reviewSubmission?.attempt ? (
-
-          <HomeworkGrammarReview
-
-            exercise={exercise}
-
-            attempt={reviewSubmission.attempt}
-
-            title={exercise.title}
-
-            subject={homeworkSubject}
-
-            completedAt={completedAt}
-
-          />
+          homeworkSubject === "speaking" || exercise.type === "speaking" ? (
+            <HomeworkSpeakingReview
+              exercise={exercise}
+              attempt={reviewSubmission.attempt}
+              title={exercise.title}
+              subject={homeworkSubject}
+              completedAt={completedAt}
+              teacherFeedback={reviewSubmission.feedback}
+              teacherScore={reviewSubmission.score}
+            />
+          ) : (
+            <HomeworkGrammarReview
+              exercise={exercise}
+              attempt={reviewSubmission.attempt}
+              title={exercise.title}
+              subject={homeworkSubject}
+              completedAt={completedAt}
+            />
+          )
 
         ) : sessionStartedAt == null ? (
 

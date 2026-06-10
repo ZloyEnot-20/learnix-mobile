@@ -254,7 +254,9 @@ export default function GamesScreen() {
     () =>
       topics.filter(
         (t) =>
-          (t.category === "grammar" || t.category === "vocabulary") &&
+          (t.category === "grammar" ||
+            t.category === "vocabulary" ||
+            t.category === "speaking") &&
           t.exerciseCount > 0 &&
           !t.comingSoon,
       ),

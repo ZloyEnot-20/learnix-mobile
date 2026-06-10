@@ -298,6 +298,8 @@ export function homeworkInstructionForType(type: string): string {
       return "Form the correct word."
     case "sentence-transformation":
       return "Rewrite the sentence."
+    case "speaking":
+      return "Record your spoken answer, listen back, then submit."
     default:
       return "Complete the task."
   }

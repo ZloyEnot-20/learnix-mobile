@@ -41,7 +41,10 @@ function mapHomeworkItems(
 
     let route: string | undefined
     if (!failedCheating) {
-      if (homework.subject === "grammar" && homework.exerciseSlug) {
+      if (
+        (homework.subject === "grammar" || homework.subject === "speaking") &&
+        homework.exerciseSlug
+      ) {
         const ex = exerciseBySlug.get(homework.exerciseSlug)
         if (ex) route = `/homework/exercise/${ex.topic}/${ex.slug}?hw=${homework.id}`
       } else if (homework.subject === "vocabulary") {

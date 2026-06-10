@@ -31,6 +31,7 @@ import {
   ResultsScreen,
   type ReviewItem,
 } from "./shared"
+import { SpeakingRunner } from "./SpeakingRunner"
 import { colors, radius, spacing } from "../../theme/tokens"
 
 export interface ExerciseRunnerProps {
@@ -1681,6 +1682,8 @@ export function ExerciseRunner(props: ExerciseRunnerProps & { exercise: GrammarE
       return <ErrorCorrectionRunner {...props} />
     case "word-order":
       return <WordOrderRunner {...props} />
+    case "speaking":
+      return <SpeakingRunner {...props} />
     default:
       return <FillBlankRunner {...props} />
   }

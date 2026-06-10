@@ -1,5 +1,5 @@
 export type GrammarDifficulty = "easy" | "medium" | "hard" | "mixed"
-export type GrammarCategory = "grammar" | "vocabulary"
+export type GrammarCategory = "grammar" | "vocabulary" | "speaking"
 
 export type GrammarExerciseType =
   | "fill-in-the-blank"
@@ -10,6 +10,7 @@ export type GrammarExerciseType =
   | "true-false"
   | "error-correction"
   | "word-order"
+  | "speaking"
 
 export interface GrammarQuestion {
   id: number
@@ -30,6 +31,10 @@ export interface GrammarQuestion {
   alternates?: string[][]
   explanation: string
   hint?: string
+  /** Seconds to prepare before recording (speaking). */
+  prepTimeSeconds?: number
+  /** Suggested max speaking time in seconds (speaking). */
+  speakTimeSeconds?: number
 }
 
 export interface MatchingPair {

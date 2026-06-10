@@ -1,4 +1,4 @@
-import { api } from "./api-client"
+import { api, apiUpload } from "./api-client"
 import {
   cacheKey,
   cachedFetch,
@@ -310,6 +310,18 @@ export const testResultsApi = {
       () => api.get<TestResult[]>("/test-results"),
       { staleWhileRevalidate: true, force: opts?.force },
     )
+  },
+}
+
+export const uploadsApi = {
+  speakingAudio: (uri: string) => {
+    const form = new FormData()
+    form.append("audio", {
+      uri,
+      type: "audio/m4a",
+      name: `speaking-${Date.now()}.m4a`,
+    } as unknown as Blob)
+    return apiUpload<{ url: string; key: string }>("/uploads/speaking-audio", form)
   },
 }
 
