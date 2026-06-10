@@ -35,7 +35,7 @@ export interface TopicMeta {
   topic: string
   title: string
   description: string
-  category: "grammar" | "vocabulary"
+  category: "grammar" | "vocabulary" | "speaking"
   levels: string[]
   comingSoon?: boolean
 }

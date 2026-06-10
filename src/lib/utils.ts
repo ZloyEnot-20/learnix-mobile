@@ -117,21 +117,84 @@ export function clampToFixedLevel(level: string): string {
 
 export function buildTopicSummaries(
   exercises: { topic: string; totalQuestions: number; category: string; level: string }[],
-  metas: { topic: string; title: string; description: string; category: "grammar" | "vocabulary"; levels: string[]; comingSoon?: boolean }[],
+  metas: Array<{
+    topic?: string
+    slug?: string
+    title: string
+    description?: string
+    category?: "grammar" | "vocabulary" | "speaking"
+    levels?: string | string[]
+    comingSoon?: boolean
+  }>,
 ): import("../types/vocabulary").TopicSummary[] {
-  const byTopic = new Map<string, { count: number; questions: number }>()
+  const byTopic = new Map<
+    string,
+    { count: number; questions: number; category: string; level: string }
+  >()
   for (const ex of exercises) {
-    const cur = byTopic.get(ex.topic) ?? { count: 0, questions: 0 }
+    const cur = byTopic.get(ex.topic) ?? {
+      count: 0,
+      questions: 0,
+      category: ex.category,
+      level: ex.level,
+    }
     cur.count += 1
     cur.questions += ex.totalQuestions
     byTopic.set(ex.topic, cur)
   }
-  return metas.map((m) => {
-    const stats = byTopic.get(m.topic) ?? { count: 0, questions: 0 }
+
+  const metaBySlug = new Map(
+    metas.map((m) => {
+      const key = m.topic ?? m.slug ?? ""
+      return [key, m] as const
+    }),
+  )
+
+  const real = Array.from(byTopic.entries()).map(([topic, stats]) => {
+    const meta = metaBySlug.get(topic)
+    const levelsRaw = meta?.levels
+    const levels = Array.isArray(levelsRaw)
+      ? levelsRaw
+      : typeof levelsRaw === "string" && levelsRaw
+        ? [levelsRaw]
+        : [stats.level]
     return {
-      ...m,
+      topic,
+      title: meta?.title ?? topic,
+      description: meta?.description ?? "",
+      category: (stats.category as "grammar" | "vocabulary" | "speaking") ?? "grammar",
+      levels,
       exerciseCount: stats.count,
       questionCount: stats.questions,
+      comingSoon: false,
     }
   })
+
+  const realSlugs = new Set(real.map((t) => t.topic))
+  const placeholders = metas
+    .filter((m) => {
+      const key = m.topic ?? m.slug ?? ""
+      return key && !realSlugs.has(key)
+    })
+    .map((m) => {
+      const topic = m.topic ?? m.slug ?? ""
+      const levelsRaw = m.levels
+      const levels = Array.isArray(levelsRaw)
+        ? levelsRaw
+        : typeof levelsRaw === "string" && levelsRaw
+          ? [levelsRaw]
+          : ["A1"]
+      return {
+        topic,
+        title: m.title,
+        description: m.description ?? "",
+        category: m.category ?? "grammar",
+        levels,
+        exerciseCount: 0,
+        questionCount: 0,
+        comingSoon: m.comingSoon ?? true,
+      }
+    })
+
+  return [...real, ...placeholders]
 }
