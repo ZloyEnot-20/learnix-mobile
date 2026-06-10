@@ -118,16 +118,24 @@ export const homeworkApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
-  start: async (homeworkId: string, opts?: { force?: boolean }) => {
+  recordEntry: async (homeworkId: string) => {
+    const sub = await api.post<HomeworkSubmission>("/homework/entry", { homeworkId })
+    setCached(cacheKey("POST", `/homework/start:${homeworkId}`), sub, submissionCacheTtl(sub))
+    invalidateHomeworkCaches(homeworkId)
+    return sub
+  },
+  start: async (homeworkId: string, opts?: { force?: boolean; skipEntryCount?: boolean }) => {
     const key = cacheKey("POST", `/homework/start:${homeworkId}`)
     if (!opts?.force) {
       const cached = peekCached<HomeworkSubmission>(key)
       if (cached) return cached
     }
-    const sub = await api.post<HomeworkSubmission>("/homework/start", { homeworkId })
+    const sub = await api.post<HomeworkSubmission>("/homework/start", {
+      homeworkId,
+      skipEntryCount: opts?.skipEntryCount ?? false,
+    })
     setCached(key, sub, submissionCacheTtl(sub))
-    invalidateKey(cacheKey("GET", "/homework/mine"))
-    clearHomeworkListSnapshot()
+    invalidateHomeworkCaches(homeworkId)
     return sub
   },
   pause: async (homeworkId: string) => {

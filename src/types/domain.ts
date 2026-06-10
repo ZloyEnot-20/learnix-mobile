@@ -50,12 +50,15 @@ export interface HomeworkSubmission {
   homeworkId: string
   studentId: string
   topic?: string
+  subject?: Subject
   homeworkTitle?: string
   assignedAt?: string
+  lastEntryAt?: string
   entryCount?: number
   status: HomeworkStatus
   integrityStatus?: IntegrityStatus
   violationCount?: number
+  elapsedSeconds?: number
   score?: number
   startedAt?: string
   sessionStartedAt?: string

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useCallback, useEffect, useState } from "react"
 
 import { StyleSheet, Text, View } from "react-native"
 
@@ -24,6 +24,10 @@ import { VocabScreenSkeleton } from "../../../src/components/skeletons/Layouts"
 
 import { isCompletedSubmission } from "../../../src/lib/homework-review"
 import { recordHomeworkVocabulary } from "../../../src/lib/record-activity"
+import {
+  isHomeworkEntryFailed,
+  useHomeworkEntryOnFocus,
+} from "../../../src/hooks/useHomeworkEntryOnFocus"
 
 import type { HomeworkSubmission, Subject } from "../../../src/types/domain"
 
@@ -95,7 +99,11 @@ export default function HomeworkVocabularyScreen() {
 
   const [quizActive, setQuizActive] = useState(false)
 
+  const handleEntryResult = useCallback((sub: HomeworkSubmission | null) => {
+    if (isHomeworkEntryFailed(sub)) setAlreadyFailed(true)
+  }, [])
 
+  useHomeworkEntryOnFocus(homeworkId, isStudent, handleEntryResult)
 
   useEffect(() => {
 
@@ -118,7 +126,7 @@ export default function HomeworkVocabularyScreen() {
 
           exercisesApi.vocabDeck(deckSlug),
 
-          isStudent ? homeworkApi.start(homeworkId, { force: true }).catch(() => null) : Promise.resolve(null),
+          isStudent ? homeworkApi.start(homeworkId, { force: true, skipEntryCount: true }).catch(() => null) : Promise.resolve(null),
 
           isStudent ? homeworkApi.get(homeworkId).catch(() => null) : Promise.resolve(null),
 
@@ -208,7 +216,7 @@ export default function HomeworkVocabularyScreen() {
 
     async function beginSession() {
 
-      const sub = await homeworkApi.start(homeworkId, { force: true }).catch(() => null)
+      const sub = await homeworkApi.start(homeworkId, { force: true, skipEntryCount: true }).catch(() => null)
 
       if (cancelled) return
 

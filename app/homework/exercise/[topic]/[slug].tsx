@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useCallback, useEffect, useState } from "react"
 
 import { StyleSheet, Text, View } from "react-native"
 
@@ -24,6 +24,10 @@ import { ExerciseScreenSkeleton } from "../../../../src/components/skeletons/Lay
 
 import { isCompletedSubmission } from "../../../../src/lib/homework-review"
 import { recordHomeworkExercise } from "../../../../src/lib/record-activity"
+import {
+  isHomeworkEntryFailed,
+  useHomeworkEntryOnFocus,
+} from "../../../../src/hooks/useHomeworkEntryOnFocus"
 
 import type { HomeworkSubmission, Subject } from "../../../../src/types/domain"
 
@@ -97,6 +101,12 @@ export default function HomeworkExerciseScreen() {
 
   const [alreadyFailed, setAlreadyFailed] = useState(false)
 
+  const handleEntryResult = useCallback((sub: HomeworkSubmission | null) => {
+    if (isHomeworkEntryFailed(sub)) setAlreadyFailed(true)
+  }, [])
+
+  useHomeworkEntryOnFocus(homeworkId, !!studentId, handleEntryResult)
+
   useEffect(() => {
 
     if (!slug || !homeworkId) return
@@ -120,7 +130,7 @@ export default function HomeworkExerciseScreen() {
 
           homeworkApi.get(homeworkId).catch(() => null),
 
-          studentId ? homeworkApi.start(homeworkId, { force: true }).catch(() => null) : Promise.resolve(null),
+          studentId ? homeworkApi.start(homeworkId, { force: true, skipEntryCount: true }).catch(() => null) : Promise.resolve(null),
 
         ])
 
