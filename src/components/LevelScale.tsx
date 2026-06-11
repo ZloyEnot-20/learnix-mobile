@@ -71,14 +71,27 @@ function TierModalCard({
 interface LevelScaleProps {
   studentId: string
   compact?: boolean
+  levelData?: StudentLevel | null
+  levelLoading?: boolean
 }
 
-export function LevelScale({ studentId, compact = false }: LevelScaleProps) {
-  const [data, setData] = useState<StudentLevel | null>(null)
-  const [loading, setLoading] = useState(true)
+export function LevelScale({
+  studentId,
+  compact = false,
+  levelData,
+  levelLoading,
+}: LevelScaleProps) {
+  const [data, setData] = useState<StudentLevel | null>(levelData ?? null)
+  const [loading, setLoading] = useState(levelLoading ?? levelData === undefined)
   const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
+    if (levelData !== undefined) {
+      setData(levelData)
+      setLoading(levelLoading ?? false)
+      return
+    }
+
     let cancelled = false
     setLoading(true)
     studentsApi
@@ -95,7 +108,7 @@ export function LevelScale({ studentId, compact = false }: LevelScaleProps) {
     return () => {
       cancelled = true
     }
-  }, [studentId])
+  }, [studentId, levelData, levelLoading])
 
   if (loading) {
     return <LevelScaleSkeleton compact={compact} />

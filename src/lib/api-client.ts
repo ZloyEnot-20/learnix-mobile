@@ -4,7 +4,7 @@ import Constants from "expo-constants"
 const API_URL =
   (process.env.EXPO_PUBLIC_API_URL ??
     Constants.expoConfig?.extra?.apiUrl ??
-    "http://localhost:4000/api"
+    "https://learnix-api.tw1.ru/api"
   ).replace(/\/$/, "")
 
 const ACCESS_KEY = "ielts_access_token"

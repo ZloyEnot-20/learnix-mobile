@@ -153,7 +153,8 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
         const [entries, controlEntries, exList] = await Promise.all([
           homeworkApi.mine(opts),
           controlWorkApi.mine(opts),
-          exercisesApi.list(undefined, opts),
+          // Route mapping only needs slug→topic; catalog changes rarely — skip force refresh.
+          exercisesApi.list(),
         ])
 
         const mapped = mergeHomeworkItems(entries, controlEntries, exList)
