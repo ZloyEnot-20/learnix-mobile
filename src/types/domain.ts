@@ -32,6 +32,10 @@ export interface HomeworkMistake {
   userAnswer: string
   correctAnswer: string
   explanation?: string
+  score?: number
+  feedback?: string
+  /** Auto-generated speech-to-text (Whisper). */
+  transcription?: string
 }
 
 export interface HomeworkAttempt {

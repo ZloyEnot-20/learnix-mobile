@@ -7,17 +7,27 @@ import {
   View,
 } from "react-native"
 import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio"
+import { File } from "expo-file-system"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import type { GrammarExercise, GrammarQuestion } from "../../types/grammar"
 import { useAudioRecorder } from "../../hooks/useAudioRecorder"
 import { uploadsApi } from "../../lib/api"
 import {
+  formatFileSize,
+  resolveSpeakingLimits,
+  type SpeakingLimits,
+} from "../../lib/speaking-limits"
+import {
   HomeworkExerciseLayout,
   HomeworkFooterButton,
   HomeworkResultsLayout,
 } from "../homework/HomeworkExerciseLayout"
+import { SpeakingProgressBar } from "../speaking/SpeakingProgressBar"
+import { normalizeMetering, WaveformBars } from "../speaking/WaveformBars"
 import { HintRow, ProgressBar } from "./shared"
+
+const PLAYBACK_UPDATE_INTERVAL_MS = 50
 import type { ExerciseRunnerProps } from "./ExerciseRunner"
 import { colors, radius, spacing } from "../../theme/tokens"
 import { analyticsApi, homeworkApi, controlWorkApi } from "../../lib/api"
@@ -35,6 +45,28 @@ function formatDuration(ms: number): string {
   const m = Math.floor(total / 60)
   const s = total % 60
   return `${m}:${String(s).padStart(2, "0")}`
+}
+
+const DURATION_GRACE_MS = 500
+
+function validateRecordingFile(
+  fileUri: string,
+  durationMs: number,
+  limits: SpeakingLimits,
+): string | null {
+  const maxMs = limits.maxDurationSeconds * 1000 + DURATION_GRACE_MS
+  if (durationMs > maxMs) {
+    return `Recording is too long (max ${limits.maxDurationSeconds}s)`
+  }
+
+  const file = new File(fileUri)
+  if (!file.exists) return null
+
+  if (file.size > limits.maxFileSizeBytes) {
+    return `Recording is too large (max ${formatFileSize(limits.maxFileSizeBytes)})`
+  }
+
+  return null
 }
 
 function SpeakingResults({
@@ -183,60 +215,140 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
   const [responses, setResponses] = useState<SpeakingResponse[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [limitReached, setLimitReached] = useState(false)
   const [showHint, setShowHint] = useState(false)
-  const previewPlayer = useAudioPlayer(null)
+  const previewPlayer = useAudioPlayer(null, { updateInterval: PLAYBACK_UPDATE_INTERVAL_MS })
   const previewStatus = useAudioPlayerStatus(previewPlayer)
   const playing = previewStatus.playing
+  const previewDuration = previewStatus.duration ?? 0
+  const previewCurrentTime = previewStatus.currentTime ?? 0
   const recorder = useAudioRecorder()
+  const autoStoppingRef = useRef(false)
 
   const q: GrammarQuestion | undefined = questions[index]
   const finished = index >= questions.length
 
-  const stopPlayback = useCallback(() => {
+  const limits = useMemo(
+    () => (q ? resolveSpeakingLimits(q, exercise) : null),
+    [q, exercise],
+  )
+
+  const maxDurationMs = (limits?.maxDurationSeconds ?? 60) * 1000
+  const recordedElapsedSeconds = Math.floor(recorder.durationMs / 1000)
+  const remainingSeconds = Math.max(
+    0,
+    (limits?.maxDurationSeconds ?? 60) - recordedElapsedSeconds,
+  )
+  const timeProgress = Math.min(1, recorder.durationMs / maxDurationMs)
+  const playbackProgress =
+    playing && previewDuration > 0
+      ? Math.min(1, previewCurrentTime / previewDuration)
+      : timeProgress
+  const barAnimating = playing || recorder.isRecording
+
+  const stopPlayback = useCallback(async () => {
     previewPlayer.pause()
+    await setAudioModeAsync({
+      allowsRecording: true,
+      playsInSilentMode: true,
+      interruptionMode: "doNotMix",
+    })
   }, [previewPlayer])
 
   const playLocal = useCallback(
     async (uri: string) => {
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true })
+      await setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+        interruptionMode: "doNotMix",
+      })
       previewPlayer.replace({ uri })
       previewPlayer.play()
     },
     [previewPlayer],
   )
 
+  const handleStop = useCallback(async () => {
+    await recorder.stop()
+  }, [recorder])
+
+  useEffect(() => {
+    if (!limits) return
+    if (!recorder.isRecording && !recorder.isPaused) return
+    if (recorder.durationMs < limits.maxDurationSeconds * 1000) return
+    if (autoStoppingRef.current) return
+
+    autoStoppingRef.current = true
+    setLimitReached(true)
+    void handleStop().finally(() => {
+      autoStoppingRef.current = false
+    })
+  }, [
+    recorder.durationMs,
+    recorder.isRecording,
+    recorder.isPaused,
+    limits,
+    handleStop,
+  ])
+
+  useEffect(() => {
+    if (index === 0) return
+    setLimitReached(false)
+    setUploadError(null)
+    autoStoppingRef.current = false
+    // Reset is awaited in handleSubmitAnswer before setIndex to avoid iOS race/double-reset.
+    void stopPlayback()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index])
+
   const handleRecordToggle = useCallback(async () => {
+    if (recorder.hasRecording) return
     if (recorder.isRecording) {
       await recorder.pause()
       return
     }
     if (recorder.isPaused) {
+      if (limits && recorder.durationMs >= limits.maxDurationSeconds * 1000) {
+        setLimitReached(true)
+        await handleStop()
+        return
+      }
       await recorder.resume()
       return
     }
     await stopPlayback()
+    setLimitReached(false)
+    setUploadError(null)
     await recorder.start()
-  }, [recorder, stopPlayback])
-
-  const handleStop = useCallback(async () => {
-    await recorder.stop()
-  }, [recorder])
+  }, [recorder, stopPlayback, limits, handleStop])
 
   const handleReRecord = useCallback(async () => {
     await stopPlayback()
+    setLimitReached(false)
+    setUploadError(null)
     await recorder.reset()
   }, [recorder, stopPlayback])
 
   const handleSubmitAnswer = useCallback(async () => {
-    if (!q) return
+    if (!q || !limits) return
     setUploading(true)
     setUploadError(null)
     try {
       let fileUri = recorder.uri
+      let durationMs = recorder.durationMs
       if (recorder.isRecording || recorder.isPaused) {
-        fileUri = await recorder.stop()
+        const stopped = await recorder.stop()
+        if (!stopped) return
+        fileUri = stopped.uri
+        durationMs = stopped.durationMs
       }
       if (!fileUri) return
+
+      const validationError = validateRecordingFile(fileUri, durationMs, limits)
+      if (validationError) {
+        setUploadError(validationError)
+        return
+      }
 
       const { url } = await uploadsApi.speakingAudio(fileUri)
       const entry: SpeakingResponse = {
@@ -254,7 +366,7 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
     } finally {
       setUploading(false)
     }
-  }, [q, recorder, stopPlayback])
+  }, [q, limits, recorder, stopPlayback])
 
   const recordButtonLabel = useMemo(() => {
     if (recorder.isRecording) return "Pause"
@@ -288,15 +400,17 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
 
   const progressPct = Math.round((index / questions.length) * 100)
   const canSubmit = recorder.hasRecording && !uploading
+  const meteringLevel = normalizeMetering(recorder.metering)
 
   const body = (
     <>
       <View style={styles.card}>
         <Text style={styles.qLabel}>Question {index + 1}</Text>
         <Text style={styles.questionText}>{q.text}</Text>
-        {q.prepTimeSeconds ? (
+        {limits ? (
           <Text style={styles.timeHint}>
-            Prep: {q.prepTimeSeconds}s · Speak up to {q.speakTimeSeconds ?? 60}s
+            {q.prepTimeSeconds ? `Prep: ${q.prepTimeSeconds}s · ` : ""}
+            Max {limits.maxDurationSeconds}s · up to {formatFileSize(limits.maxFileSizeBytes)}
           </Text>
         ) : null}
         <HintRow showHint={showHint} setShowHint={setShowHint} hint={q.hint} />
@@ -306,36 +420,62 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
       {uploadError ? <Text style={styles.errorText}>{uploadError}</Text> : null}
 
       <View style={styles.recorderPanel}>
+        {(recorder.isRecording || recorder.isPaused || recorder.hasRecording) && limits ? (
+          <SpeakingProgressBar
+            progress={playbackProgress}
+            playing={barAnimating}
+            onSeek={
+              playing && previewDuration > 0
+                ? (ratio) => previewPlayer.seekTo(ratio * previewDuration)
+                : undefined
+            }
+            style={styles.timeLimitBarTrack}
+            fillStyle={
+              remainingSeconds <= 10 && (recorder.isRecording || recorder.isPaused)
+                ? { backgroundColor: colors.error }
+                : undefined
+            }
+          />
+        ) : null}
+
         <Text style={styles.recorderStatusText}>
           {recorder.isRecording
-            ? "Recording…"
+            ? `Recording… ${remainingSeconds}s left`
             : recorder.isPaused
-              ? "Paused"
-              : recorder.hasRecording
-                ? `Recorded ${formatDuration(recorder.durationMs)}`
-                : "Tap the button to record your answer"}
+              ? `Paused · ${remainingSeconds}s left`
+              : limitReached
+                ? `Time limit reached (${limits?.maxDurationSeconds ?? 0}s)`
+                : recorder.hasRecording
+                  ? `Recorded ${formatDuration(recorder.durationMs)}`
+                  : "Tap the button to record your answer"}
         </Text>
 
-        <View style={styles.recordButtonWrap}>
-          <Pressable
-            onPress={handleRecordToggle}
-            disabled={uploading || recorder.hasRecording}
-            accessibilityRole="button"
-            accessibilityLabel={recordButtonLabel}
-            style={({ pressed }) => [
-              styles.recordCircleBtn,
-              (recorder.isRecording || recorder.isPaused) && styles.recordCircleBtnActive,
-              pressed && styles.btnPressed,
-              (uploading || recorder.hasRecording) && styles.btnDisabled,
-            ]}
-          >
-            <Ionicons
-              name={recordButtonIcon}
-              size={40}
-              color={recorder.isRecording || recorder.isPaused ? "#fff" : colors.primary}
-            />
-          </Pressable>
-        </View>
+        {recorder.isRecording ? (
+          <WaveformBars level={meteringLevel} active />
+        ) : null}
+
+        {!recorder.hasRecording ? (
+          <View style={styles.recordButtonWrap}>
+            <Pressable
+              onPress={handleRecordToggle}
+              disabled={uploading}
+              accessibilityRole="button"
+              accessibilityLabel={recordButtonLabel}
+              style={({ pressed }) => [
+                styles.recordCircleBtn,
+                (recorder.isRecording || recorder.isPaused) && styles.recordCircleBtnActive,
+                pressed && styles.btnPressed,
+                uploading && styles.btnDisabled,
+              ]}
+            >
+              <Ionicons
+                name={recordButtonIcon}
+                size={40}
+                color={recorder.isRecording || recorder.isPaused ? "#fff" : colors.primary}
+              />
+            </Pressable>
+          </View>
+        ) : null}
 
         {(recorder.isRecording || recorder.isPaused || recorder.hasRecording) && (
           <View style={styles.recorderActions}>
@@ -451,6 +591,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     minHeight: 300,
+  },
+  timeLimitBarTrack: {
+    width: "100%",
+    maxWidth: 280,
+    marginBottom: spacing.md,
   },
   recorderStatusText: {
     fontSize: 14,

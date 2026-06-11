@@ -1,13 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  LayoutAnimation,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  UIManager,
   View,
 } from "react-native"
 import { useFocusEffect, useRouter } from "expo-router"
@@ -41,7 +38,9 @@ import {
 import type { GrammarExercise } from "../../src/types/grammar"
 import type { TopicSummary, VocabDeck } from "../../src/types/vocabulary"
 import { Ionicons } from "@expo/vector-icons"
+import { Collapsible } from "../../src/components/ui/Collapsible"
 import { FadeInDown } from "../../src/components/ui/FadeInDown"
+import { SwipeableTabs } from "../../src/components/ui/SwipeableTabs"
 import { colors, radius, shadow, spacing, typography } from "../../src/theme/tokens"
 
 const LEVELS = [
@@ -73,14 +72,6 @@ type GameItem = {
 }
 
 type Tab = "play" | "history"
-
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true)
-}
-
-function animateExpand() {
-  LayoutAnimation.configureNext(LayoutAnimation.create(280, "easeInEaseOut", "opacity"))
-}
 
 function progressLabel(
   kind: GameItem["kind"],
@@ -296,7 +287,6 @@ export default function GamesScreen() {
   }, [vocabDecks, playableTopics])
 
   const toggleLevel = (key: string) => {
-    animateExpand()
     setSelectedLevel((prev) => (prev === key ? null : key))
   }
 
@@ -326,26 +316,18 @@ export default function GamesScreen() {
             <LevelScale studentId={user.id} compact />
           </FadeInDown>
 
-          <View style={styles.tabs}>
-            <Pressable
-              onPress={() => setTab("play")}
-              style={[styles.tab, tab === "play" && styles.tabActive]}
-            >
-              <Text style={[styles.tabText, tab === "play" && styles.tabTextActive]}>Play</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setTab("history")}
-              style={[styles.tab, tab === "history" && styles.tabActive]}
-            >
-              <Text style={[styles.tabText, tab === "history" && styles.tabTextActive]}>
-                History {history.length > 0 ? `(${history.length})` : ""}
-              </Text>
-            </Pressable>
-          </View>
-
-          {tab === "history" ? (
-            <GamesHistorySection history={history} />
-          ) : (
+          <SwipeableTabs
+            tabs={[
+              { key: "play", label: "Play" },
+              {
+                key: "history",
+                label: `History ${history.length > 0 ? `(${history.length})` : ""}`,
+              },
+            ]}
+            activeTab={tab}
+            onTabChange={setTab}
+            barStyle={styles.tabsBar}
+          >
             <>
               <Text style={styles.pickTitle}>Choose a level</Text>
               <View style={styles.levelGrid}>
@@ -359,6 +341,8 @@ export default function GamesScreen() {
                     const badge = progressLabel(game.kind, topicProgress, deckProgress, game)
                     return badge?.tone === "done"
                   }).length
+                  const completionPct =
+                    games.length > 0 ? Math.round((levelCompleted / games.length) * 100) : 0
 
                   return (
                     <View
@@ -383,11 +367,6 @@ export default function GamesScreen() {
                           <View style={styles.levelTextWrap}>
                             <Text style={styles.levelKey}>{key}</Text>
                             <Text style={styles.levelLabel}>{label}</Text>
-                            {unlocked && games.length > 0 ? (
-                              <Text style={styles.levelProgress}>
-                                {levelCompleted}/{games.length} completed
-                              </Text>
-                            ) : null}
                             {!unlocked && (
                               <View style={styles.lockRow}>
                                 <Ionicons name="lock-closed" size={12} color={colors.textMuted} />
@@ -403,6 +382,24 @@ export default function GamesScreen() {
                             />
                           ) : null}
                         </View>
+                        {unlocked && games.length > 0 ? (
+                          <View style={styles.levelStatusSection}>
+                            <View style={styles.levelStatusTrack}>
+                              <View
+                                style={[
+                                  styles.levelStatusFill,
+                                  {
+                                    width: `${completionPct > 0 ? Math.max(completionPct, 4) : 0}%`,
+                                    backgroundColor: accent,
+                                  },
+                                ]}
+                              />
+                            </View>
+                            <Text style={styles.levelProgress}>
+                              {levelCompleted}/{games.length} completed
+                            </Text>
+                          </View>
+                        ) : null}
                       </Pressable>
 
                       {expanded ? (
@@ -487,7 +484,8 @@ export default function GamesScreen() {
                 })}
               </View>
             </>
-          )}
+            <GamesHistorySection history={history} />
+          </SwipeableTabs>
         </>
       )}
     </ScrollView>
@@ -516,25 +514,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: "center",
   },
-  tabs: {
-    flexDirection: "row",
-    backgroundColor: colors.borderLight,
-    borderRadius: radius.button,
-    padding: 4,
-    marginBottom: spacing.section,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: radius.button - 2,
-    alignItems: "center",
-  },
-  tabActive: {
-    backgroundColor: colors.card,
-    ...shadow.card,
-  },
-  tabText: { fontSize: 14, fontWeight: "600", color: colors.textSecondary },
-  tabTextActive: { color: colors.text },
+  tabsBar: { marginBottom: spacing.section },
   pickTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 12 },
   levelGrid: { gap: 10 },
   levelBlock: {
@@ -555,7 +535,7 @@ const styles = StyleSheet.create({
   },
   levelHeader: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: spacing.sm,
   },
@@ -563,7 +543,18 @@ const styles = StyleSheet.create({
   levelLocked: { opacity: 0.55 },
   levelKey: { fontSize: 20, fontWeight: "800", color: colors.text },
   levelLabel: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  levelProgress: { fontSize: 11, color: colors.textMuted, marginTop: 4, fontWeight: "600" },
+  levelStatusSection: { marginTop: spacing.sm, gap: 6 },
+  levelStatusTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.borderLight,
+    overflow: "hidden",
+  },
+  levelStatusFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  levelProgress: { fontSize: 11, color: colors.textMuted, fontWeight: "600" },
   lockRow: {
     flexDirection: "row",
     alignItems: "center",

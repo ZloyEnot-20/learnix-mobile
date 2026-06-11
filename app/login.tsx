@@ -66,7 +66,7 @@ export default function LoginScreen() {
 
       <FadeInDown index={1} style={styles.formWrap}>
         <View style={[styles.form, shadow.card]}>
-          <Text style={styles.label}>Login or email</Text>
+          <Text style={styles.label}>Email</Text>
           <TextInput
             style={styles.input}
             value={loginStr}

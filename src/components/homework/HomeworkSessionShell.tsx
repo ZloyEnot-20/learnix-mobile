@@ -1,8 +1,9 @@
 import React from "react"
 import { Alert, StyleSheet, View } from "react-native"
-import { usePreventScreenCapture } from "expo-screen-capture"
+import * as ScreenCapture from "expo-screen-capture"
 import { useRouter } from "expo-router"
 import { useHomeworkIntegrity } from "../../hooks/useHomeworkIntegrity"
+import { useOrgSettings } from "../../hooks/useOrgSettings"
 import { HomeworkCheatingFailed } from "./HomeworkCheatingFailed"
 import { HomeworkSuspiciousActivity } from "./HomeworkSuspiciousActivity"
 
@@ -30,7 +31,16 @@ export function HomeworkSessionShell({
   pauseUsed,
   children,
 }: HomeworkSessionShellProps) {
-  usePreventScreenCapture("homework-session")
+  const { allowScreenshots, loaded } = useOrgSettings()
+  const blockScreenshots = !loaded || !allowScreenshots
+
+  React.useEffect(() => {
+    if (!blockScreenshots) return
+    void ScreenCapture.preventScreenCaptureAsync()
+    return () => {
+      void ScreenCapture.allowScreenCaptureAsync()
+    }
+  }, [blockScreenshots])
 
   const router = useRouter()
 

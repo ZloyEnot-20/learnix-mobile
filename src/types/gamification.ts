@@ -98,6 +98,10 @@ export function tierForLevel(level: number): TierMeta {
   return TIERS.find((t) => level >= t.minLevel && level <= t.maxLevel) ?? TIERS[0]
 }
 
+export function getTierBarColor(tierId: TierId): string {
+  return TIERS.find((t) => t.id === tierId)?.barColor ?? "#94A3B8"
+}
+
 export const CEFR_LEVEL_REQUIREMENT: Record<string, number> = {
   A1: 1,
   A2: 3,
@@ -114,6 +118,17 @@ export function isCefrUnlocked(cefr: string, level: number): boolean {
 
 export function requiredLevelFor(cefr: string): number {
   return CEFR_LEVEL_REQUIREMENT[cefr] ?? 1
+}
+
+export interface LeaderboardEntry {
+  rank: number
+  studentId: string
+  name: string
+  avatarUrl?: string | null
+  totalPoints: number
+  level: number
+  tier: TierId
+  tierLabel: string
 }
 
 export const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"]

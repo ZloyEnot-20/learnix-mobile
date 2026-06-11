@@ -40,7 +40,7 @@ export function HomeworkReviewShell({
             <Ionicons name={icon} size={14} color={accent} />
             <Text style={[styles.subjectLabel, { color: accent }]}>{subjectLabel}</Text>
           </View>
-          <Text style={styles.title} numberOfLines={2}>
+          <Text style={styles.title} numberOfLines={1}>
             {title}
           </Text>
         </View>

@@ -1,5 +1,6 @@
 import { Tabs, Redirect } from "expo-router"
 import { View, StyleSheet } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
 import { NotificationsBell } from "../../src/components/NotificationsBell"
@@ -22,8 +23,13 @@ function tabIcon(outline: TabIcon, filled: TabIcon) {
   )
 }
 
+const TAB_BAR_LIFT = 6
+
 export default function TabsLayout() {
   const { user, isLoading } = useAuth()
+  const insets = useSafeAreaInsets()
+  const tabBarPaddingBottom = Math.max(insets.bottom, 8) + TAB_BAR_LIFT
+  const tabBarHeight = 48 + tabBarPaddingBottom
 
   if (isLoading) {
     return <TabShellSkeleton />
@@ -42,9 +48,9 @@ export default function TabsLayout() {
           backgroundColor: colors.card,
           borderTopColor: colors.borderLight,
           borderTopWidth: StyleSheet.hairlineWidth,
-          paddingBottom: 6,
-          paddingTop: 6,
-          height: 60,
+          paddingBottom: tabBarPaddingBottom,
+          paddingTop: 8,
+          height: tabBarHeight,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -75,6 +81,13 @@ export default function TabsLayout() {
         options={{
           title: "Game",
           tabBarIcon: tabIcon("game-controller-outline", "game-controller"),
+        }}
+      />
+      <Tabs.Screen
+        name="leaderboard"
+        options={{
+          title: "Leaderboard",
+          tabBarIcon: tabIcon("podium-outline", "podium"),
         }}
       />
       <Tabs.Screen

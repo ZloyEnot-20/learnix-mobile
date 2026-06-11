@@ -1,38 +1,19 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useMemo, useState } from "react"
 import {
-  Animated,
-  LayoutAnimation,
-  Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
-  UIManager,
   View,
-  type LayoutChangeEvent,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { formatDue, dateGroupLabel, formatShortDate, scoreColor } from "../lib/utils"
 import type { IntegrityStatus } from "../types/domain"
-import { animation, colors, radius, shadow, spacing, typography, subjectColors } from "../theme/tokens"
-
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true)
-}
-
-function animateTabSwitch() {
-  LayoutAnimation.configureNext(
-    LayoutAnimation.create(
-      animation.tabSwitchDuration,
-      LayoutAnimation.Types.easeInEaseOut,
-      LayoutAnimation.Properties.opacity,
-    ),
-  )
-}
+import { colors, radius, shadow, spacing, typography, subjectColors } from "../theme/tokens"
 import { FadeInDown } from "./ui/FadeInDown"
 import { HighlightPulse } from "./ui/HighlightPulse"
+import { SwipeableTabs } from "./ui/SwipeableTabs"
 
 type Subject = "reading" | "listening" | "writing" | "speaking" | "grammar" | "vocabulary"
 type Status = "pending" | "in_progress" | "completed"
@@ -337,11 +318,6 @@ export function HomeworkSection({
   animateItemIds,
 }: HomeworkSectionProps) {
   const [tab, setTab] = useState<"active" | "history">("active")
-  const [tabsWidth, setTabsWidth] = useState(0)
-  const scrollRef = useRef<ScrollView>(null)
-  const tabSlide = useRef(new Animated.Value(0)).current
-
-  const tabSlotWidth = tabsWidth > 0 ? (tabsWidth - 8) / 2 : 0
 
   const active = useMemo(() => items.filter((i) => i.status !== "completed"), [items])
   const completed = useMemo(() => items.filter((i) => i.status === "completed"), [items])
@@ -362,39 +338,26 @@ export function HomeworkSection({
     return groups
   }, [completed])
 
-  const newCount = animateItemIds?.size ?? 0
+  const sectionHeader = (
+    <View style={styles.header}>
+      <View style={styles.headerText}>
+        <Text style={styles.sectionDesc}>
+          {tab === "active" ? "Tasks assigned by your tutor" : "Homework history"}
+        </Text>
+      </View>
+      <View style={styles.badgeSlot}>
+        {tab === "active" && active.length > 0 ? (
+          <View style={styles.pendingBadge}>
+            <Text style={styles.pendingText}>{active.length} pending</Text>
+          </View>
+        ) : null}
+      </View>
+    </View>
+  )
 
-  useEffect(() => {
-    Animated.spring(tabSlide, {
-      toValue: tab === "active" ? 0 : 1,
-      useNativeDriver: true,
-      tension: 90,
-      friction: 14,
-    }).start()
-  }, [tab, tabSlide])
-
-  const switchTab = useCallback((next: "active" | "history") => {
-    if (next === tab) return
-    animateTabSwitch()
-    scrollRef.current?.scrollTo({ y: 0, animated: false })
-    setTab(next)
-  }, [tab])
-
-  const onTabsLayout = useCallback((e: LayoutChangeEvent) => {
-    setTabsWidth(e.nativeEvent.layout.width)
-  }, [])
-
-  const tabIndicatorX =
-    tabSlotWidth > 0
-      ? tabSlide.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0, tabSlotWidth],
-        })
-      : 0
-
-  const listContent =
-    tab === "active" ? (
-      active.length === 0 ? (
+  const activeContent = (
+    <>
+      {active.length === 0 ? (
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
             <Ionicons name="checkmark-circle-outline" size={28} color={colors.success} />
@@ -404,147 +367,95 @@ export function HomeworkSection({
         </View>
       ) : (
         active.map((hw, i) => {
-          const animate =
-            animateItemIds === undefined ? true : animateItemIds.has(hw.id)
+          const animate = animateItemIds === undefined ? true : animateItemIds.has(hw.id)
           return (
             <HomeworkListItem key={hw.id} id={hw.id} index={i} animate={animate}>
               <HomeworkCard hw={hw} isNew={animateItemIds?.has(hw.id)} />
             </HomeworkListItem>
           )
         })
-      )
-    ) : completed.length === 0 ? (
-      <View style={styles.empty}>
-        <View style={styles.emptyIconWrap}>
-          <Ionicons name="document-text-outline" size={28} color={colors.textMuted} />
+      )}
+    </>
+  )
+
+  const historyContent = (
+    <>
+      {completed.length === 0 ? (
+        <View style={styles.empty}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="document-text-outline" size={28} color={colors.textMuted} />
+          </View>
+          <Text style={styles.emptyTitle}>No completed homework yet</Text>
+          <Text style={styles.emptyDesc}>Finished tasks will appear here.</Text>
         </View>
-        <Text style={styles.emptyTitle}>No completed homework yet</Text>
-        <Text style={styles.emptyDesc}>Finished tasks will appear here.</Text>
-      </View>
-    ) : (
-      historyGroups.map((group) => (
-        <View key={group.label}>
-          <Text style={styles.groupLabel}>{group.label}</Text>
-          {group.items.map((hw) => (
-            <HomeworkHistoryCard key={hw.id} hw={hw} />
-          ))}
-        </View>
-      ))
-    )
+      ) : (
+        historyGroups.map((group) => (
+          <View key={group.label}>
+            <Text style={styles.groupLabel}>{group.label}</Text>
+            {group.items.map((hw) => (
+              <HomeworkHistoryCard key={hw.id} hw={hw} />
+            ))}
+          </View>
+        ))
+      )}
+    </>
+  )
 
   return (
-    <View style={styles.container}>
-      <View style={styles.stickyTop}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.sectionDesc}>Tasks assigned by your tutor</Text>
-          </View>
-          {tab === "active" && active.length > 0 && (
-            <View style={styles.headerBadges}>
-              {newCount > 0 ? (
-                <HighlightPulse>
-                  <View style={styles.newHomeworkHeaderBadge}>
-                    <Text style={styles.newHomeworkHeaderText}>
-                      {newCount === 1 ? "New homework" : `${newCount} new`}
-                    </Text>
-                  </View>
-                </HighlightPulse>
-              ) : null}
-              <View style={styles.pendingBadge}>
-                <Text style={styles.pendingText}>{active.length} pending</Text>
-              </View>
-            </View>
-          )}
-        </View>
-
-        <View style={styles.tabs} onLayout={onTabsLayout}>
-          {tabSlotWidth > 0 ? (
-            <Animated.View
-              style={[
-                styles.tabIndicator,
-                { width: tabSlotWidth, transform: [{ translateX: tabIndicatorX }] },
-              ]}
-            />
-          ) : null}
-          <Pressable onPress={() => switchTab("active")} style={styles.tab}>
-            <Text style={[styles.tabText, tab === "active" && styles.tabTextActive]}>
-              Active {active.length > 0 ? `(${active.length})` : ""}
-            </Text>
-          </Pressable>
-          <Pressable onPress={() => switchTab("history")} style={styles.tab}>
-            <Text style={[styles.tabText, tab === "history" && styles.tabTextActive]}>
-              History {completed.length > 0 ? `(${completed.length})` : ""}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <ScrollView
-        ref={scrollRef}
-        style={styles.listScroll}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          onRefresh ? (
-            <RefreshControl
-              refreshing={!!refreshing}
-              onRefresh={onRefresh}
-              tintColor={colors.primary}
-            />
-          ) : undefined
-        }
-      >
-        <FadeInDown
-          key={tab}
-          index={0}
-          delay={0}
-          duration={animation.tabSwitchDuration}
-          distance={10}
-        >
-          {listContent}
-        </FadeInDown>
-      </ScrollView>
-    </View>
+    <SwipeableTabs
+      style={styles.container}
+      header={sectionHeader}
+      barStyle={styles.tabsBar}
+      contentStyle={styles.listContent}
+      tabs={[
+        {
+          key: "active",
+          label: `Active ${active.length > 0 ? `(${active.length})` : ""}`,
+        },
+        {
+          key: "history",
+          label: `History ${completed.length > 0 ? `(${completed.length})` : ""}`,
+        },
+      ]}
+      activeTab={tab}
+      onTabChange={setTab}
+      scrollable
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        ) : undefined
+      }
+    >
+      {activeContent}
+      {historyContent}
+    </SwipeableTabs>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  stickyTop: {
+  container: {
+    flex: 1,
     paddingHorizontal: spacing.screen,
-    paddingBottom: spacing.md,
-    gap: spacing.md,
     backgroundColor: colors.background,
   },
-  listScroll: { flex: 1 },
+  tabsBar: { marginBottom: spacing.md },
   listContent: {
-    paddingHorizontal: spacing.screen,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
+    paddingHorizontal: 0,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
+    minHeight: 24,
+  },
+  headerText: { flex: 1, paddingRight: spacing.sm },
+  badgeSlot: {
+    minWidth: 72,
+    minHeight: 24,
+    alignItems: "flex-end",
+    justifyContent: "center",
   },
   sectionDesc: { ...typography.bodySm, color: colors.textSecondary },
-  headerBadges: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    flexShrink: 0,
-  },
-  newHomeworkHeaderBadge: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-  },
-  newHomeworkHeaderText: {
-    ...typography.caption,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
   pendingBadge: {
     backgroundColor: colors.primaryLight,
     paddingHorizontal: 10,
@@ -552,30 +463,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   pendingText: { ...typography.caption, fontWeight: "600", color: colors.primary },
-  tabs: {
-    flexDirection: "row",
-    backgroundColor: colors.borderLight,
-    borderRadius: radius.button,
-    padding: 4,
-  },
-  tabIndicator: {
-    position: "absolute",
-    top: 4,
-    left: 4,
-    bottom: 4,
-    backgroundColor: colors.card,
-    borderRadius: radius.sm,
-    ...shadow.card,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: "center",
-    borderRadius: radius.sm,
-    zIndex: 1,
-  },
-  tabText: { ...typography.bodySm, fontWeight: "500", color: colors.textSecondary },
-  tabTextActive: { color: colors.text, fontWeight: "600" },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
@@ -700,7 +587,7 @@ const styles = StyleSheet.create({
   actionTextPrimary: { color: colors.primary },
   actionTextSuccess: { color: colors.success },
   actionTextFailed: { color: colors.error },
-  empty: { alignItems: "center", paddingVertical: 32, gap: 6 },
+  empty: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 32, gap: 6 },
   emptyIconWrap: {
     width: 52,
     height: 52,

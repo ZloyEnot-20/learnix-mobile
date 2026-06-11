@@ -23,7 +23,7 @@ import type {
   ViolationResponse,
 } from "../types/domain"
 import type { GrammarExercise } from "../types/grammar"
-import type { StudentLevel } from "../types/gamification"
+import type { StudentLevel, LeaderboardEntry } from "../types/gamification"
 import type { VocabDeck, TopicMeta } from "../types/vocabulary"
 
 export { peekCached, peekStale, clearApiCache }
@@ -37,6 +37,7 @@ const TTL = {
   vocabDeck: 600_000,
   topics: 300_000,
   studentLevel: 120_000,
+  leaderboard: 120_000,
   notifications: 30_000,
   testResults: 60_000,
   submissionActive: 30_000,
@@ -67,6 +68,7 @@ export interface AuthUser {
   name: string
   type: "admin" | "teacher" | "student" | "super_admin"
   isPremium: boolean
+  avatarUrl?: string | null
 }
 
 export interface AuthResponse {
@@ -313,6 +315,31 @@ export const testResultsApi = {
   },
 }
 
+export interface OrgSettings {
+  allowScreenshots: boolean
+}
+
+export const orgApi = {
+  settings: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/org/settings")
+    return cachedFetch(
+      key,
+      120_000,
+      () => api.get<OrgSettings>("/org/settings"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  leaderboard: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/org/leaderboard")
+    return cachedFetch(
+      key,
+      TTL.leaderboard,
+      () => api.get<LeaderboardEntry[]>("/org/leaderboard"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+}
+
 export const uploadsApi = {
   speakingAudio: (uri: string) => {
     const form = new FormData()
@@ -322,6 +349,16 @@ export const uploadsApi = {
       name: `speaking-${Date.now()}.m4a`,
     } as unknown as Blob)
     return apiUpload<{ url: string; key: string }>("/uploads/speaking-audio", form)
+  },
+  avatar: (uri: string, mimeType = "image/jpeg") => {
+    const ext = mimeType.includes("png") ? "png" : "jpg"
+    const form = new FormData()
+    form.append("photo", {
+      uri,
+      type: mimeType,
+      name: `avatar-${Date.now()}.${ext}`,
+    } as unknown as Blob)
+    return apiUpload<{ url: string; user: AuthUser }>("/uploads/avatar", form)
   },
 }
 

@@ -87,31 +87,37 @@ export function ProfileSkeleton() {
   return (
     <View>
       <View style={styles.hero}>
-        <Skeleton circle height={72} />
+        <Skeleton circle height={64} />
         <Skeleton width={140} height={20} style={styles.gapMd} />
         <Skeleton width={180} height={13} style={styles.gapSm} />
-        <Skeleton width={72} height={24} borderRadius={999} style={styles.gapSm} />
       </View>
-      <SkeletonCard style={styles.gapMd}>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <View key={i} style={styles.infoRow}>
-            <Skeleton width={56} height={13} />
-            <Skeleton width={100} height={13} />
+      <SkeletonCard style={[styles.statsBarSkeleton, styles.gapMd]}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <View key={i} style={styles.statCellSkeleton}>
+            <Skeleton width={36} height={18} style={styles.center} />
+            <Skeleton width={44} height={10} style={[styles.center, styles.gapSm]} />
           </View>
         ))}
       </SkeletonCard>
-      <View style={[styles.statsRow, styles.gapMd]}>
-        {Array.from({ length: 3 }).map((_, i) => (
-          <SkeletonCard key={i} style={styles.statCard}>
-            <Skeleton width={32} height={22} style={styles.center} />
-            <Skeleton width={48} height={10} style={[styles.center, styles.gapSm]} />
-          </SkeletonCard>
-        ))}
+      <View style={[styles.row, styles.spaceBetween, styles.gapMd]}>
+        <Skeleton width={110} height={18} />
+        <Skeleton width={72} height={12} />
       </View>
-      <Skeleton width={110} height={18} style={styles.gapMd} />
-      {Array.from({ length: 4 }).map((_, i) => (
-        <ListRowSkeleton key={i} />
-      ))}
+      <SkeletonCard style={styles.gapMd}>
+        <View style={styles.achievementsSkeletonRow}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <View key={i} style={styles.achievementSkeletonItem}>
+              <Skeleton width={48} height={48} borderRadius={8} />
+              <Skeleton width={40} height={8} style={styles.gapSm} />
+            </View>
+          ))}
+        </View>
+      </SkeletonCard>
+      <SkeletonCard>
+        {Array.from({ length: 7 }).map((_, i) => (
+          <ListRowSkeleton key={i} />
+        ))}
+      </SkeletonCard>
     </View>
   )
 }
@@ -128,6 +134,8 @@ export function GamesSkeleton() {
         <SkeletonCard key={i} style={styles.levelCard}>
           <Skeleton width={36} height={20} />
           <Skeleton width={120} height={12} style={styles.gapSm} />
+          <Skeleton height={6} borderRadius={999} style={styles.gapSm} />
+          <Skeleton width={88} height={11} />
         </SkeletonCard>
       ))}
     </View>
@@ -277,6 +285,53 @@ export function TabShellSkeleton() {
   )
 }
 
+export function LeaderboardSkeleton() {
+  return (
+    <View>
+      <View style={styles.leaderboardPodium}>
+        <View style={[styles.row, styles.podiumRow]}>
+          {[68, 84, 64].map((size, i) => (
+            <View key={i} style={styles.podiumSlot}>
+              <Skeleton width={28} height={12} style={styles.center} />
+              <View style={styles.podiumAvatarSkeleton}>
+                <Skeleton circle height={size} />
+                <Skeleton width={i === 1 ? 34 : 28} height={i === 1 ? 34 : 28} borderRadius={999} style={styles.tierBadgeSkeleton} />
+              </View>
+              <Skeleton width={72} height={13} style={styles.gapSm} />
+              <Skeleton width={40} height={12} style={styles.gapSm} />
+            </View>
+          ))}
+        </View>
+      </View>
+      <View style={styles.leaderboardListSkeleton}>
+        {Array.from({ length: 8 }).map((_, i) => (
+          <View key={i} style={styles.leaderboardRowSkeleton}>
+            <Skeleton width={24} height={24} borderRadius={12} />
+            <View style={styles.leaderboardAvatarSkeleton}>
+              <Skeleton circle height={44} />
+              <Skeleton width={24} height={24} borderRadius={12} style={styles.tierBadgeSkeleton} />
+            </View>
+            <View style={styles.flex}>
+              <Skeleton height={15} style={styles.flex} />
+              <Skeleton width={88} height={11} style={styles.gapSm} />
+            </View>
+            <Skeleton width={48} height={18} />
+          </View>
+        ))}
+      </View>
+      <SkeletonCard style={[styles.gapMd, { padding: spacing.md }]}>
+        <View style={styles.row}>
+          <Skeleton width={18} height={18} borderRadius={9} />
+          <View style={styles.flex}>
+            <Skeleton height={12} style={styles.flex} />
+            <Skeleton height={12} width="80%" style={styles.gapSm} />
+          </View>
+        </View>
+      </SkeletonCard>
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   section: { marginBottom: 12 },
   headerRow: {
@@ -307,11 +362,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.borderLight,
     borderRadius: radius.button,
     padding: 4,
+    marginBottom: spacing.md,
   },
   tabBone: { flex: 1 },
   gamesRoot: { gap: 0 },
   statsRow: { flexDirection: "row", gap: 12 },
   statCard: { flex: 1, alignItems: "center", paddingVertical: 16 },
+  statsBarSkeleton: {
+    flexDirection: "row",
+    paddingVertical: spacing.md,
+  },
+  statCellSkeleton: { flex: 1, alignItems: "center" },
+  achievementsSkeletonRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  achievementSkeletonItem: { flex: 1, alignItems: "center" },
   mockTestBanner: { padding: spacing.md, gap: spacing.md },
   mockTestRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   mockTestText: { flex: 1, minWidth: 0 },
@@ -346,4 +413,34 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   tabShell: { flex: 1, padding: spacing.screen, backgroundColor: colors.background },
+  leaderboardPodium: { paddingVertical: spacing.md, marginBottom: spacing.sm },
+  podiumRow: { alignItems: "flex-end", justifyContent: "center" },
+  podiumSlot: { flex: 1, alignItems: "center", maxWidth: 118 },
+  leaderboardListSkeleton: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  leaderboardRowSkeleton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  leaderboardAvatarSkeleton: {
+    width: 50,
+    height: 50,
+    position: "relative",
+  },
+  podiumAvatarSkeleton: {
+    position: "relative",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  tierBadgeSkeleton: {
+    position: "absolute",
+    right: -4,
+    bottom: -4,
+  },
 })
