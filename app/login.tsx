@@ -11,6 +11,7 @@ import {
 import { Redirect, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useAuth } from "../src/context/AuthContext"
+import { ApiError, getUserFacingErrorMessage } from "../src/lib/api-client"
 import { FadeInDown } from "../src/components/ui/FadeInDown"
 import { Spinner } from "../src/components/ui/Spinner"
 import { colors, radius, shadow, spacing, typography } from "../src/theme/tokens"
@@ -43,7 +44,11 @@ export default function LoginScreen() {
       await login(loginStr.trim(), password)
       router.replace("/(tabs)")
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Login failed")
+      const message =
+        e instanceof ApiError && e.status === 401
+          ? "Sign in failed. Please check your email and password."
+          : getUserFacingErrorMessage(e, "Sign in failed. Please try again.")
+      setError(message)
     } finally {
       setSubmitting(false)
     }

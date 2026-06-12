@@ -1,11 +1,23 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import Constants from "expo-constants"
 
-const API_URL =
-  (process.env.EXPO_PUBLIC_API_URL ??
+/** Backend routes are mounted under `/api` — ensure the base URL always includes it. */
+function normalizeApiBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/$/, "")
+  if (!trimmed) return "https://learnix-api.tw1.ru/api"
+  if (!/^https?:\/\//i.test(trimmed)) {
+    console.warn(`[api] Invalid EXPO_PUBLIC_API_URL "${raw}", using production default`)
+    return "https://learnix-api.tw1.ru/api"
+  }
+  if (trimmed.endsWith("/api")) return trimmed
+  return `${trimmed}/api`
+}
+
+const API_URL = normalizeApiBaseUrl(
+  process.env.EXPO_PUBLIC_API_URL ??
     Constants.expoConfig?.extra?.apiUrl ??
-    "https://learnix-api.tw1.ru/api"
-  ).replace(/\/$/, "")
+    "https://learnix-api.tw1.ru/api",
+)
 
 const ACCESS_KEY = "ielts_access_token"
 const REFRESH_KEY = "ielts_refresh_token"
@@ -27,6 +39,9 @@ export async function clearTokens(): Promise<void> {
   await AsyncStorage.multiRemove([ACCESS_KEY, REFRESH_KEY])
 }
 
+export const SERVICE_UNAVAILABLE_MESSAGE =
+  "Service is unavailable. Please try again later."
+
 export class ApiError extends Error {
   status: number
   details?: unknown
@@ -34,6 +49,27 @@ export class ApiError extends Error {
     super(message)
     this.status = status
     this.details = details
+  }
+}
+
+function userFacingApiMessage(_status: number): string {
+  return SERVICE_UNAVAILABLE_MESSAGE
+}
+
+export function getUserFacingErrorMessage(
+  error: unknown,
+  fallback = SERVICE_UNAVAILABLE_MESSAGE,
+): string {
+  if (error instanceof ApiError) return error.message
+  return fallback
+}
+
+function parseResponseBody(text: string): unknown {
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
   }
 }
 
@@ -73,11 +109,17 @@ export async function apiFetch<T = unknown>(
     if (token) headers.Authorization = `Bearer ${token}`
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch (err) {
+    console.warn("[api] network error", method, path, err)
+    throw new ApiError(0, SERVICE_UNAVAILABLE_MESSAGE)
+  }
 
   if (res.status === 401 && auth && !_retry) {
     const refreshed = await tryRefresh()
@@ -87,11 +129,16 @@ export async function apiFetch<T = unknown>(
   }
 
   const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  const data = parseResponseBody(text)
 
   if (!res.ok) {
-    const message = (data && (data.error || data.message)) || res.statusText
-    throw new ApiError(res.status, message, data?.details)
+    const technical =
+      (data && typeof data === "object" && ("error" in data || "message" in data)
+        ? (data as { error?: string; message?: string }).error ||
+          (data as { error?: string; message?: string }).message
+        : null) || res.statusText
+    console.warn("[api]", res.status, method, path, technical, data)
+    throw new ApiError(res.status, userFacingApiMessage(res.status), data)
   }
   return data as T
 }
@@ -107,18 +154,29 @@ export async function apiUpload<T = unknown>(
     if (token) headers.Authorization = `Bearer ${token}`
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
-    headers,
-    body: formData,
-  })
+  let res: Response
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers,
+      body: formData,
+    })
+  } catch (err) {
+    console.warn("[api] network error POST", path, err)
+    throw new ApiError(0, SERVICE_UNAVAILABLE_MESSAGE)
+  }
 
   const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  const data = parseResponseBody(text)
 
   if (!res.ok) {
-    const message = (data && (data.error || data.message)) || res.statusText
-    throw new ApiError(res.status, message, data?.details)
+    const technical =
+      (data && typeof data === "object" && ("error" in data || "message" in data)
+        ? (data as { error?: string; message?: string }).error ||
+          (data as { error?: string; message?: string }).message
+        : null) || res.statusText
+    console.warn("[api]", res.status, "POST", path, technical, data)
+    throw new ApiError(res.status, userFacingApiMessage(res.status), data)
   }
   return data as T
 }

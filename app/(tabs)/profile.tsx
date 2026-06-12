@@ -17,7 +17,7 @@ import { useAuth } from "../../src/context/AuthContext"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
 import { ProfileSkeleton } from "../../src/components/skeletons/Layouts"
 import { studentsApi, orgApi, testResultsApi, uploadsApi } from "../../src/lib/api"
-import { ApiError } from "../../src/lib/api-client"
+import { getUserFacingErrorMessage } from "../../src/lib/api-client"
 import {
   buildLearningProgressSummary,
   getLearningProgress,
@@ -355,11 +355,10 @@ export default function ProfileScreen() {
       const { user: updatedUser } = await uploadsApi.avatar(asset.uri, mimeType)
       setUser(updatedUser)
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : "Could not upload profile photo. Please try again."
-      Alert.alert("Upload failed", message)
+      Alert.alert(
+        "Upload failed",
+        getUserFacingErrorMessage(err, "Could not upload profile photo. Please try again."),
+      )
     } finally {
       setAvatarUploading(false)
     }

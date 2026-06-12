@@ -13,6 +13,7 @@ import { useRouter } from "expo-router"
 import type { GrammarExercise, GrammarQuestion } from "../../types/grammar"
 import { useAudioRecorder } from "../../hooks/useAudioRecorder"
 import { uploadsApi } from "../../lib/api"
+import { getUserFacingErrorMessage } from "../../lib/api-client"
 import {
   formatFileSize,
   resolveSpeakingLimits,
@@ -362,7 +363,9 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
       await recorder.reset()
       setIndex((i) => i + 1)
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed. Please try again.")
+      setUploadError(
+        getUserFacingErrorMessage(err, "Upload failed. Please try again."),
+      )
     } finally {
       setUploading(false)
     }

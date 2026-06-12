@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useAuth } from "../../src/context/AuthContext"
 import { ContinueLearningBanner } from "../../src/components/ContinueLearningBanner"
+import { NotificationBanner } from "../../src/components/NotificationBanner"
 import { IeltsMockTestBanner } from "../../src/components/IeltsMockTestBanner"
 import { VocabularyReviewBanner } from "../../src/components/VocabularyReviewBanner"
 import { LevelScale } from "../../src/components/LevelScale"
@@ -91,38 +92,42 @@ export default function HomeScreen() {
         <Text style={styles.subGreeting}>Track your progress and level</Text>
       </FadeInDown>
 
+      <FadeInDown index={1}>
+        <NotificationBanner />
+      </FadeInDown>
+
       {showSkeleton ? (
         <HomeSkeleton />
       ) : (
         <>
           {continueItem ? (
-            <FadeInDown index={1}>
+            <FadeInDown index={2}>
               <ContinueLearningBanner item={continueItem} />
             </FadeInDown>
           ) : null}
 
           {vocabPreview ? (
-            <FadeInDown index={continueItem ? 2 : 1}>
+            <FadeInDown index={continueItem ? 3 : 2}>
               <VocabularyReviewBanner preview={vocabPreview} />
             </FadeInDown>
           ) : null}
 
           <FadeInDown
-            index={continueItem && vocabPreview ? 3 : continueItem || vocabPreview ? 2 : 1}
+            index={continueItem && vocabPreview ? 4 : continueItem || vocabPreview ? 3 : 2}
             style={styles.section}
           >
             <LevelScale studentId={user.id} />
           </FadeInDown>
 
           <FadeInDown
-            index={continueItem && vocabPreview ? 4 : continueItem || vocabPreview ? 3 : 2}
+            index={continueItem && vocabPreview ? 5 : continueItem || vocabPreview ? 4 : 3}
           >
             <IeltsMockTestBanner />
           </FadeInDown>
 
           {results.length > 0 && (
             <FadeInDown
-              index={continueItem && vocabPreview ? 5 : continueItem || vocabPreview ? 4 : 3}
+              index={continueItem && vocabPreview ? 6 : continueItem || vocabPreview ? 5 : 4}
               style={styles.section}
             >
               <Text style={styles.sectionTitle}>Recent results</Text>

@@ -46,6 +46,23 @@ export function HomeworkListSkeleton({ count = 3 }: { count?: number }) {
   )
 }
 
+export function NotificationBannerSkeleton() {
+  return (
+    <View style={styles.section}>
+      <Skeleton width={130} height={18} style={styles.gapSm} />
+      <SkeletonCard style={styles.notificationBanner}>
+        <View style={styles.notificationRow}>
+          <Skeleton width={44} height={44} borderRadius={12} />
+          <View style={styles.notificationText}>
+            <Skeleton width={180} height={16} />
+            <Skeleton width="90%" height={12} style={styles.gapSm} />
+          </View>
+        </View>
+      </SkeletonCard>
+    </View>
+  )
+}
+
 export function HomeSkeleton() {
   return (
     <View>
@@ -412,6 +429,13 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 8,
   },
+  notificationBanner: { marginBottom: 0 },
+  notificationRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  notificationText: { flex: 1 },
   tabShell: { flex: 1, padding: spacing.screen, backgroundColor: colors.background },
   leaderboardPodium: { paddingVertical: spacing.md, marginBottom: spacing.sm },
   podiumRow: { alignItems: "flex-end", justifyContent: "center" },

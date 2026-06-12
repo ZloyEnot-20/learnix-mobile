@@ -23,13 +23,15 @@ npm start
 
 ## Настройка API
 
-В `.env` укажите URL backend:
+В `.env` укажите URL backend **с суффиксом `/api`**:
 
 ```
-EXPO_PUBLIC_API_URL=http://localhost:4000/api
+EXPO_PUBLIC_API_URL=http://192.168.1.100:4000/api
 ```
 
-> На физическом устройстве замените `localhost` на IP вашего компьютера в локальной сети.
+> На физическом устройстве замените `localhost` на IP вашего компьютера в локальной сети (тот же, что показывает `npx expo start` в строке `Metro waiting on exp://…`).
+>
+> Без `/api` в конце запросы попадут не на API (`/auth/login` вместо `/api/auth/login`) и авторизация вернёт `Route not found`.
 
 ## Структура
 
