@@ -5,7 +5,6 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useAuth } from "../../src/context/AuthContext"
 import { exercisesApi } from "../../src/lib/api"
 import { getLearningProgress } from "../../src/lib/learned-vocabulary"
-import { recordGameTopic } from "../../src/lib/record-activity"
 import { ExerciseListSkeleton } from "../../src/components/skeletons/Layouts"
 import { HomeworkFooterButton } from "../../src/components/homework/HomeworkExerciseLayout"
 import type { GrammarExercise } from "../../src/types/grammar"
@@ -40,17 +39,14 @@ export default function TopicExercisesScreen() {
 
   useEffect(() => {
     if (!topic) return
-    Promise.all([exercisesApi.list(topic), exercisesApi.topics()])
-      .then(([list, metas]) => {
+    exercisesApi
+      .list(topic)
+      .then((list) => {
         setExercises(list)
-        if (user?.type === "student" && user.id) {
-          const meta = metas.find((m) => m.topic === topic)
-          recordGameTopic(user.id, topic, meta?.title ?? topic, meta?.category ?? "grammar")
-        }
       })
       .catch(() => setExercises([]))
       .finally(() => setLoading(false))
-  }, [topic, user?.id, user?.type])
+  }, [topic])
 
   useEffect(() => {
     if (!loading) void loadProgress()

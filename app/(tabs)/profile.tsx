@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   Animated,
@@ -30,15 +30,20 @@ import {
 import { clearImageCache } from "../../src/lib/image-cache"
 import type { StudentLevel } from "../../src/types/gamification"
 import { colors, radius, shadow, spacing } from "../../src/theme/tokens"
+import { formatLessonSchedule, normalizeLessonSchedule, type LessonSchedule } from "../../src/lib/lesson-schedule"
+import {
+  getProfileScreenSnapshot,
+  resolveProfileBootstrap,
+  setProfileScreenSnapshot,
+  type ProfileScreenSnapshot,
+} from "../../src/lib/profile-screen-cache"
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window")
-const HERO_HEIGHT = 118
-const COLLAPSE_DISTANCE = 80
-const HERO_BLOCK_HEIGHT = HERO_HEIGHT + spacing.lg
 const HERO_AVATAR_SIZE = 64
 const HEADER_AVATAR_SIZE = 32
-const HEADER_REVEAL_START = COLLAPSE_DISTANCE * 0.5
-const HEADER_REVEAL_END = COLLAPSE_DISTANCE * 0.9
+const HEADER_REVEAL_START = 48
+const HEADER_REVEAL_END = 96
+const HERO_FADE_DISTANCE = 100
 
 type Achievement = {
   id: string
@@ -233,14 +238,22 @@ export default function ProfileScreen() {
   const router = useRouter()
   const navigation = useNavigation()
   const scrollY = useRef(new Animated.Value(0)).current
-  const [studentLevel, setStudentLevel] = useState<StudentLevel | null>(null)
-  const [groupName, setGroupName] = useState<string | null>(null)
-  const [teacherName, setTeacherName] = useState<string | null>(null)
-  const [wordsLearned, setWordsLearned] = useState(0)
-  const [rank, setRank] = useState<number | null>(null)
-  const [testsCount, setTestsCount] = useState(0)
+  const initialBootstrap = user ? resolveProfileBootstrap(user.id) : null
+  const [studentLevel, setStudentLevel] = useState<StudentLevel | null>(
+    initialBootstrap?.studentLevel ?? null,
+  )
+  const [groupName, setGroupName] = useState<string | null>(initialBootstrap?.groupName ?? null)
+  const [teacherName, setTeacherName] = useState<string | null>(
+    initialBootstrap?.teacherName ?? null,
+  )
+  const [lessonSchedule, setLessonSchedule] = useState<LessonSchedule | null>(
+    initialBootstrap?.lessonSchedule ?? null,
+  )
+  const [wordsLearned, setWordsLearned] = useState(initialBootstrap?.wordsLearned ?? 0)
+  const [rank, setRank] = useState<number | null>(initialBootstrap?.rank ?? null)
+  const [testsCount, setTestsCount] = useState(initialBootstrap?.testsCount ?? 0)
   const [cacheSizeLabel, setCacheSizeLabel] = useState("0 KB")
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialBootstrap)
   const [refreshing, setRefreshing] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
 
@@ -248,51 +261,128 @@ export default function ProfileScreen() {
     setCacheSizeLabel(formatSpeakingAudioCacheSize())
   }, [])
 
-  const load = useCallback(async () => {
-    if (!user) return
-    try {
-      const [ctx, level, leaderboard, progress, testResults] = await Promise.all([
-        studentsApi.context(user.id),
-        studentsApi.level(user.id),
-        orgApi.leaderboard(),
-        getLearningProgress(user.id),
-        testResultsApi.list(),
-      ])
-      setGroupName(ctx.groupName)
-      setTeacherName(ctx.teacherName)
-      setStudentLevel(level)
-      const me = leaderboard.find((entry) => entry.studentId === user.id)
-      setRank(me?.rank ?? null)
-      const summary = buildLearningProgressSummary(progress, new Map())
-      setWordsLearned(summary.wordsLearned)
-      setTestsCount(testResults.length)
-    } catch {
-      setGroupName(null)
-      setTeacherName(null)
-      setStudentLevel(null)
-      setRank(null)
-      setWordsLearned(0)
-      setTestsCount(0)
-    } finally {
-      refreshCacheSize()
-    }
-  }, [user, refreshCacheSize])
+  const applySnapshot = useCallback((snap: ProfileScreenSnapshot) => {
+    setStudentLevel(snap.studentLevel)
+    setGroupName(snap.groupName)
+    setTeacherName(snap.teacherName)
+    setLessonSchedule(snap.lessonSchedule)
+    setWordsLearned(snap.wordsLearned)
+    setRank(snap.rank)
+    setTestsCount(snap.testsCount)
+    setLoading(false)
+  }, [])
 
-  useEffect(() => {
-    setLoading(true)
-    load().finally(() => setLoading(false))
-  }, [load])
+  const buildSnapshot = useCallback(
+    (
+      ctxResult: PromiseSettledResult<Awaited<ReturnType<typeof studentsApi.context>>>,
+      levelResult: PromiseSettledResult<StudentLevel>,
+      leaderboardResult: PromiseSettledResult<Awaited<ReturnType<typeof orgApi.leaderboard>>>,
+      progressResult: PromiseSettledResult<Awaited<ReturnType<typeof getLearningProgress>>>,
+      testResultsResult: PromiseSettledResult<Awaited<ReturnType<typeof testResultsApi.list>>>,
+    ): ProfileScreenSnapshot => {
+      if (!user) {
+        return {
+          studentLevel: null,
+          groupName: null,
+          teacherName: null,
+          lessonSchedule: null,
+          wordsLearned: 0,
+          rank: null,
+          testsCount: 0,
+        }
+      }
+
+      let nextGroupName: string | null = null
+      let nextTeacherName: string | null = null
+      let nextLessonSchedule: LessonSchedule | null = null
+
+      if (ctxResult.status === "fulfilled") {
+        nextGroupName = ctxResult.value.groupName
+        nextTeacherName = ctxResult.value.teacherName
+        nextLessonSchedule = normalizeLessonSchedule(ctxResult.value.lessonSchedule)
+      }
+
+      let nextRank: number | null = null
+      if (leaderboardResult.status === "fulfilled") {
+        const me = leaderboardResult.value.find((entry) => entry.studentId === user.id)
+        nextRank = me?.rank ?? null
+      }
+
+      let nextWordsLearned = 0
+      if (progressResult.status === "fulfilled") {
+        nextWordsLearned = buildLearningProgressSummary(progressResult.value, new Map()).wordsLearned
+      }
+
+      return {
+        studentLevel: levelResult.status === "fulfilled" ? levelResult.value : null,
+        groupName: nextGroupName,
+        teacherName: nextTeacherName,
+        lessonSchedule: nextLessonSchedule,
+        wordsLearned: nextWordsLearned,
+        rank: nextRank,
+        testsCount:
+          testResultsResult.status === "fulfilled" ? testResultsResult.value.length : 0,
+      }
+    },
+    [user],
+  )
+
+  const load = useCallback(
+    async (opts?: { force?: boolean }) => {
+      if (!user) return
+
+      const [ctxResult, levelResult, leaderboardResult, progressResult, testResultsResult] =
+        await Promise.allSettled([
+          studentsApi.context(user.id, opts),
+          studentsApi.level(user.id, opts),
+          orgApi.leaderboard(opts),
+          getLearningProgress(user.id),
+          testResultsApi.list(opts),
+        ])
+
+      const next = buildSnapshot(
+        ctxResult,
+        levelResult,
+        leaderboardResult,
+        progressResult,
+        testResultsResult,
+      )
+      applySnapshot(next)
+      setProfileScreenSnapshot(user.id, next)
+      refreshCacheSize()
+    },
+    [user, applySnapshot, buildSnapshot, refreshCacheSize],
+  )
 
   useFocusEffect(
     useCallback(() => {
+      if (!user) return
+
       requestNotificationsRefresh()
       refreshCacheSize()
-    }, [refreshCacheSize]),
+
+      const snap = getProfileScreenSnapshot(user.id)
+      if (snap) {
+        applySnapshot(snap)
+        return
+      }
+
+      const boot = resolveProfileBootstrap(user.id)
+      if (boot) {
+        applySnapshot(boot)
+        setProfileScreenSnapshot(user.id, boot)
+        void load()
+        return
+      }
+
+      setLoading(true)
+      void load().finally(() => setLoading(false))
+    }, [user, load, applySnapshot, refreshCacheSize]),
   )
 
   const onRefresh = async () => {
     setRefreshing(true)
-    await load()
+    await load({ force: true })
     setRefreshing(false)
   }
 
@@ -402,7 +492,7 @@ export default function ProfileScreen() {
     )
   }
 
-  const showSkeleton = loading || refreshing
+  const showSkeleton = loading
 
   useLayoutEffect(() => {
     if (!user || showSkeleton) {
@@ -426,32 +516,24 @@ export default function ProfileScreen() {
   }, [navigation, user, scrollY, showSkeleton])
 
   const heroContentOpacity = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_DISTANCE * 0.75],
+    inputRange: [0, HERO_FADE_DISTANCE * 0.75],
     outputRange: [1, 0],
     extrapolate: "clamp",
   })
   const heroContentScale = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_DISTANCE],
-    outputRange: [1, 0.88],
-    extrapolate: "clamp",
-  })
-  const heroTranslateY = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_DISTANCE],
-    outputRange: [0, -16],
+    inputRange: [0, HERO_FADE_DISTANCE],
+    outputRange: [1, 0.92],
     extrapolate: "clamp",
   })
   const heroEmailOpacity = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_DISTANCE * 0.4],
+    inputRange: [0, HERO_FADE_DISTANCE * 0.45],
     outputRange: [1, 0],
-    extrapolate: "clamp",
-  })
-  const contentLift = scrollY.interpolate({
-    inputRange: [0, COLLAPSE_DISTANCE],
-    outputRange: [0, -HERO_BLOCK_HEIGHT],
     extrapolate: "clamp",
   })
 
   if (!user) return null
+
+  const scheduleLabel = formatLessonSchedule(lessonSchedule)
 
   const settingsItems: SettingsItem[] = [
     {
@@ -564,12 +646,12 @@ export default function ProfileScreen() {
         <ProfileSkeleton />
       ) : (
         <>
-          <Animated.View style={[styles.hero, { height: HERO_BLOCK_HEIGHT }]}>
+          <View style={styles.hero}>
             <Animated.View
               style={{
                 alignItems: "center",
                 opacity: heroContentOpacity,
-                transform: [{ translateY: heroTranslateY }, { scale: heroContentScale }],
+                transform: [{ scale: heroContentScale }],
               }}
             >
               <ProfileAvatar
@@ -588,10 +670,36 @@ export default function ProfileScreen() {
               <Animated.Text style={[styles.email, { opacity: heroEmailOpacity }]}>
                 {user.email}
               </Animated.Text>
+              <Animated.View style={[styles.classInfo, { opacity: heroEmailOpacity }]}>
+                {groupName ? (
+                  <>
+                    <View style={styles.classInfoRow}>
+                      <Ionicons name="people-outline" size={14} color={colors.textSecondary} />
+                      <Text style={styles.classInfoText}>{groupName}</Text>
+                    </View>
+                    {teacherName ? (
+                      <View style={styles.classInfoRow}>
+                        <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
+                        <Text style={styles.classInfoText}>{teacherName}</Text>
+                      </View>
+                    ) : null}
+                    {scheduleLabel ? (
+                      <View style={styles.classInfoRow}>
+                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                        <Text style={styles.classInfoText}>{scheduleLabel}</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.classInfoMuted}>No lesson schedule yet</Text>
+                    )}
+                  </>
+                ) : (
+                  <Text style={styles.classInfoMuted}>Not assigned to a group yet</Text>
+                )}
+              </Animated.View>
             </Animated.View>
-          </Animated.View>
+          </View>
 
-          <Animated.View style={{ transform: [{ translateY: contentLift }] }}>
+          <View style={styles.body}>
             <View style={styles.statsBar}>
               <StatCell
                 value={formatStat(studentLevel?.totalPoints ?? 0)}
@@ -617,6 +725,11 @@ export default function ProfileScreen() {
                   <AchievementBadge key={item.id} item={item} />
                 ))}
               </View>
+              <View style={styles.achievementsSoonOverlay} pointerEvents="none">
+                <View style={styles.achievementsSoonBadge}>
+                  <Text style={styles.achievementsSoonLabel}>Soon</Text>
+                </View>
+              </View>
             </View>
 
             <View style={styles.settingsCard}>
@@ -628,7 +741,7 @@ export default function ProfileScreen() {
                 />
               ))}
             </View>
-          </Animated.View>
+          </View>
         </>
       )}
     </Animated.ScrollView>
@@ -640,7 +753,11 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.screen, paddingBottom: 40 },
   hero: {
     alignItems: "center",
-    overflow: "hidden",
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  body: {
+    gap: 0,
   },
   headerIdentity: {
     flexDirection: "row",
@@ -662,6 +779,29 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 20, fontWeight: "700", color: colors.text, marginTop: 10 },
   email: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  classInfo: {
+    alignSelf: "stretch",
+    alignItems: "center",
+    marginTop: spacing.md,
+    gap: 6,
+  },
+  classInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "100%",
+  },
+  classInfoText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textAlign: "center",
+    flexShrink: 1,
+  },
+  classInfoMuted: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: "center",
+  },
   statsBar: {
     flexDirection: "row",
     backgroundColor: colors.card,
@@ -695,7 +835,28 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: spacing.md,
     marginBottom: spacing.lg,
+    overflow: "hidden",
+    position: "relative",
     ...shadow.card,
+  },
+  achievementsSoonOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  achievementsSoonBadge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  achievementsSoonLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    color: colors.primaryDark,
   },
   achievementsRow: {
     flexDirection: "row",

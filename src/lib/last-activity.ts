@@ -38,6 +38,7 @@ export async function saveLastActivity(
   }
   memory.set(userId, entry)
   await AsyncStorage.setItem(storageKey(userId), JSON.stringify(entry))
+  notifyHomeContinueChanged(userId)
 }
 
 export async function updateLastActivityProgress(
@@ -49,6 +50,13 @@ export async function updateLastActivityProgress(
   const entry = { ...current, ...patch }
   memory.set(userId, entry)
   await AsyncStorage.setItem(storageKey(userId), JSON.stringify(entry))
+  notifyHomeContinueChanged(userId)
+}
+
+function notifyHomeContinueChanged(userId: string): void {
+  void import("./home-screen-sync").then(({ syncHomeContinueFromLastActivity }) =>
+    syncHomeContinueFromLastActivity(userId),
+  )
 }
 
 export async function getLastActivity(userId: string): Promise<LastActivity | null> {

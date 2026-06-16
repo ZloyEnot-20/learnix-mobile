@@ -50,8 +50,8 @@ export function NotificationsBell() {
   useEffect(() => subscribeNotificationsRefresh(() => void refresh({ silent: true })), [refresh])
 
   useEffect(() => {
-    if (open) void refresh({ silent: loaded })
-  }, [open, loaded, refresh])
+    if (open) void refresh({ silent: true })
+  }, [open, refresh])
 
   const unread = items.filter((n) => !n.read).length
 
@@ -83,6 +83,8 @@ export function NotificationsBell() {
     }
   }
 
+  const handleClose = useCallback(() => setOpen(false), [])
+
   return (
     <>
       <Pressable onPress={() => setOpen(true)} style={styles.bellBtn} hitSlop={8}>
@@ -96,7 +98,7 @@ export function NotificationsBell() {
 
       <BottomSheet
         visible={open}
-        onClose={() => setOpen(false)}
+        onClose={handleClose}
         title="Notifications"
         headerRight={
           <View style={styles.headerActions}>
@@ -105,7 +107,7 @@ export function NotificationsBell() {
                 <Text style={styles.markAll}>Mark all read</Text>
               </Pressable>
             )}
-            <Pressable onPress={() => setOpen(false)} hitSlop={8}>
+            <Pressable onPress={handleClose} hitSlop={8}>
               <Ionicons name="close" size={22} color={colors.text} />
             </Pressable>
           </View>

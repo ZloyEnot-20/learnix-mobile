@@ -79,15 +79,15 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="games"
         options={{
-          title: "Game",
-          tabBarIcon: tabIcon("game-controller-outline", "game-controller"),
+          title: "Learn",
+          tabBarIcon: tabIcon("book-outline", "book"),
         }}
       />
       <Tabs.Screen
         name="leaderboard"
         options={{
           title: "Leaderboard",
-          tabBarIcon: tabIcon("podium-outline", "podium"),
+          tabBarIcon: tabIcon("trophy-outline", "trophy"),
         }}
       />
       <Tabs.Screen

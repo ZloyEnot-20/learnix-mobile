@@ -12,18 +12,22 @@ import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh
 import { useAuth } from "../../src/context/AuthContext"
 import { exercisesApi, studentsApi } from "../../src/lib/api"
 import { loadGamesContentCache, saveGamesContentCache } from "../../src/lib/games-content-cache"
+import { recordGameTopic, recordGameVocabulary } from "../../src/lib/record-activity"
 import { LevelScale } from "../../src/components/LevelScale"
 import { GamesHistorySection } from "../../src/components/GamesHistorySection"
+import { WordsLearnedArc } from "../../src/components/WordsLearnedArc"
 import { GamesSkeleton } from "../../src/components/skeletons/Layouts"
 import {
   buildDeckProgressMap,
   buildGameHistory,
   buildLearningProgressSummary,
   buildTopicProgressMap,
+  buildWordsLearnedByLevel,
   getLearningProgress,
   type DeckProgress,
   type GameHistoryEntry,
   type LearningProgressSummary,
+  type LevelWordStats,
   type TopicProgress,
 } from "../../src/lib/learned-vocabulary"
 import {
@@ -127,20 +131,25 @@ function progressLabel(
   return null
 }
 
-function ProgressSummary({ summary }: { summary: LearningProgressSummary }) {
+function ProgressSummary({
+  summary,
+  levelStats,
+}: {
+  summary: LearningProgressSummary
+  levelStats: LevelWordStats[]
+}) {
   return (
-    <View style={styles.summaryRow}>
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryValue}>{summary.wordsLearned}</Text>
-        <Text style={styles.summaryLabel}>Words learned</Text>
-      </View>
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryValue}>{summary.topicsCompleted}</Text>
-        <Text style={styles.summaryLabel}>Topics done</Text>
-      </View>
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryValue}>{summary.decksCompleted}</Text>
-        <Text style={styles.summaryLabel}>Decks played</Text>
+    <View style={styles.summaryBlock}>
+      <WordsLearnedArc levels={levelStats} totalLearned={summary.wordsLearned} />
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryValue}>{summary.topicsCompleted}</Text>
+          <Text style={styles.summaryLabel}>Topics done</Text>
+        </View>
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryValue}>{summary.decksCompleted}</Text>
+          <Text style={styles.summaryLabel}>Decks learned</Text>
+        </View>
       </View>
     </View>
   )
@@ -160,7 +169,7 @@ type LevelBlockProps = {
   topicProgress: Map<string, TopicProgress>
   deckProgress: Map<string, DeckProgress>
   onToggle: (key: string) => void
-  onGamePress: (route: string) => void
+  onGamePress: (game: GameItem) => void
 }
 
 const LevelBlock = React.memo(function LevelBlock({
@@ -256,7 +265,7 @@ const LevelBlock = React.memo(function LevelBlock({
         style={[styles.gamesPanel, { backgroundColor: accent + "08" }]}
       >
         {vocabularyGames.length === 0 && grammarGames.length === 0 ? (
-          <Text style={styles.empty}>No games available for this level yet.</Text>
+          <Text style={styles.empty}>Nothing to learn at this level yet.</Text>
         ) : (
           <>
             <View style={styles.categoryRow}>
@@ -287,7 +296,7 @@ const LevelBlock = React.memo(function LevelBlock({
                     Vocabulary
                   </Text>
                   <Text style={styles.categoryCount} numberOfLines={1}>
-                    {vocabularyGames.length} game{vocabularyGames.length === 1 ? "" : "s"}
+                    {vocabularyGames.length} lesson{vocabularyGames.length === 1 ? "" : "s"}
                   </Text>
                 </View>
               </Pressable>
@@ -319,7 +328,7 @@ const LevelBlock = React.memo(function LevelBlock({
                     Grammar
                   </Text>
                   <Text style={styles.categoryCount} numberOfLines={1}>
-                    {grammarGames.length} game{grammarGames.length === 1 ? "" : "s"}
+                    {grammarGames.length} lesson{grammarGames.length === 1 ? "" : "s"}
                   </Text>
                 </View>
               </Pressable>
@@ -328,7 +337,7 @@ const LevelBlock = React.memo(function LevelBlock({
             {selectedCategory ? (
               visibleGames.length === 0 ? (
                 <Text style={styles.empty}>
-                  No {selectedCategory} games for this level yet.
+                  No {selectedCategory} lessons for this level yet.
                 </Text>
               ) : (
                 visibleGames.map((game) => {
@@ -342,7 +351,7 @@ const LevelBlock = React.memo(function LevelBlock({
                         pressed && styles.gameCardPressed,
                         badge?.tone === "done" && styles.gameCardDone,
                       ]}
-                      onPress={() => onGamePress(game.route)}
+                      onPress={() => onGamePress(game)}
                     >
                       <View style={[styles.gameIconWrap, { backgroundColor: accent + "22" }]}>
                         <Ionicons
@@ -385,7 +394,7 @@ const LevelBlock = React.memo(function LevelBlock({
                 })
               )
             ) : (
-              <Text style={styles.categoryHint}>Choose vocabulary or grammar to see games</Text>
+              <Text style={styles.categoryHint}>Choose vocabulary or grammar to see lessons</Text>
             )}
           </>
         )}
@@ -417,6 +426,7 @@ export default function GamesScreen() {
   })
   const [topicProgress, setTopicProgress] = useState<Map<string, TopicProgress>>(new Map())
   const [deckProgress, setDeckProgress] = useState<Map<string, DeckProgress>>(new Map())
+  const [levelWordStats, setLevelWordStats] = useState<LevelWordStats[]>([])
 
   const loadProgress = useCallback(
     async (
@@ -431,11 +441,13 @@ export default function GamesScreen() {
         setTopicProgress(nextTopicProgress)
         setDeckProgress(nextDeckProgress)
         setSummary(buildLearningProgressSummary(progress, nextTopicProgress))
+        setLevelWordStats(buildWordsLearnedByLevel(progress, decks))
         setHistory(buildGameHistory(progress))
       } catch {
         setHistory([])
         setTopicProgress(new Map())
         setDeckProgress(new Map())
+        setLevelWordStats([])
         setSummary({
           wordsLearned: 0,
           topicsCompleted: 0,
@@ -618,10 +630,18 @@ export default function GamesScreen() {
   }, [])
 
   const handleGamePress = useCallback(
-    (route: string) => {
-      router.push(route as never)
+    (game: GameItem) => {
+      if (user?.type === "student" && user.id) {
+        if (game.kind === "vocab" && game.deckSlug) {
+          const deck = vocabDecks.find((d) => d.slug === game.deckSlug)
+          if (deck) recordGameVocabulary(user.id, deck, game.deckSlug)
+        } else if (game.kind === "topic" && game.topic) {
+          recordGameTopic(user.id, game.topic, game.title, game.category ?? "grammar")
+        }
+      }
+      router.push(game.route as never)
     },
-    [router],
+    [router, user, vocabDecks],
   )
 
   useEffect(() => {
@@ -647,7 +667,7 @@ export default function GamesScreen() {
           </FadeInDown>
 
           <FadeInDown index={1} style={styles.section}>
-            <ProgressSummary summary={summary} />
+            <ProgressSummary summary={summary} levelStats={levelWordStats} />
           </FadeInDown>
 
           <FadeInDown index={2} style={styles.section}>
@@ -661,7 +681,7 @@ export default function GamesScreen() {
 
           <SwipeableTabs
             tabs={[
-              { key: "play", label: "Play" },
+              { key: "play", label: "Learn" },
               {
                 key: "history",
                 label: `History ${history.length > 0 ? `(${history.length})` : ""}`,
@@ -712,6 +732,7 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: spacing.screen, paddingBottom: spacing.xl },
   subtitle: { ...typography.bodySm, color: colors.textSecondary, marginBottom: spacing.section },
   section: { marginBottom: 16 },
+  summaryBlock: { gap: spacing.sm },
   summaryRow: { flexDirection: "row", gap: spacing.sm },
   summaryCard: {
     flex: 1,

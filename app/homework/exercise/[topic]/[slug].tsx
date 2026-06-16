@@ -23,12 +23,13 @@ import { HomeworkSessionShell } from "../../../../src/components/homework/Homewo
 
 import { ExerciseScreenSkeleton } from "../../../../src/components/skeletons/Layouts"
 
-import { isCompletedSubmission } from "../../../../src/lib/homework-review"
+import { isCompletedSubmission, resolveHomeworkSubmission } from "../../../../src/lib/homework-review"
 import { recordHomeworkExercise } from "../../../../src/lib/record-activity"
 import {
   isHomeworkEntryFailed,
   useHomeworkEntryOnFocus,
 } from "../../../../src/hooks/useHomeworkEntryOnFocus"
+import { useRetryWhenOffline } from "../../../../src/hooks/useRetryWhenOffline"
 
 import type { HomeworkSubmission, Subject } from "../../../../src/types/domain"
 
@@ -98,6 +99,10 @@ export default function HomeworkExerciseScreen() {
 
   const [loading, setLoading] = useState(() => exercise === null && reviewSubmission === null)
 
+  const [awaitingNetwork, setAwaitingNetwork] = useState(false)
+
+  const [reloadKey, setReloadKey] = useState(0)
+
   const [error, setError] = useState(false)
 
   const [alreadyFailed, setAlreadyFailed] = useState(false)
@@ -107,6 +112,8 @@ export default function HomeworkExerciseScreen() {
   }, [])
 
   useHomeworkEntryOnFocus(homeworkId, !!studentId, handleEntryResult)
+
+  useRetryWhenOffline(awaitingNetwork, () => setReloadKey((key) => key + 1))
 
   useEffect(() => {
 
@@ -125,7 +132,7 @@ export default function HomeworkExerciseScreen() {
 
       try {
 
-        const [ex, hwData, sub] = await Promise.all([
+        const [ex, hwData, subRaw] = await Promise.all([
 
           exercisesApi.get(slug),
 
@@ -136,6 +143,8 @@ export default function HomeworkExerciseScreen() {
         ])
 
         if (cancelled) return
+
+        const sub = studentId ? resolveHomeworkSubmission(homeworkId, subRaw) : null
 
 
 
@@ -169,6 +178,8 @@ export default function HomeworkExerciseScreen() {
 
           setAlreadyFailed(true)
 
+          setAwaitingNetwork(false)
+
           return
 
         }
@@ -181,11 +192,31 @@ export default function HomeworkExerciseScreen() {
 
           setCompletedAt(sub?.submittedAt ?? undefined)
 
+          setAwaitingNetwork(false)
+
+          if (studentId) {
+            void import("../../../../src/lib/home-screen-sync").then(({ refreshHomeContinueLearning }) =>
+              refreshHomeContinueLearning(studentId),
+            )
+          }
+
           return
 
         }
 
 
+
+        if (studentId && !sub) {
+
+          setAwaitingNetwork(true)
+
+          return
+
+        }
+
+
+
+        setAwaitingNetwork(false)
 
         setElapsedSeconds(sub?.elapsedSeconds ?? 0)
 
@@ -221,7 +252,7 @@ export default function HomeworkExerciseScreen() {
 
     }
 
-  }, [slug, homeworkId, studentId])
+  }, [slug, homeworkId, studentId, reloadKey])
 
 
 
@@ -239,7 +270,7 @@ export default function HomeworkExerciseScreen() {
 
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
 
-        {loading ? (
+        {loading || awaitingNetwork ? (
 
           <ExerciseScreenSkeleton />
 

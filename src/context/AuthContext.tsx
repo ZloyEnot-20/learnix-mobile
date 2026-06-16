@@ -8,6 +8,8 @@ import React, {
 } from "react"
 import { authApi, clearApiCache, type AuthUser } from "../lib/api"
 import { clearTokens, getAccessToken, setTokens } from "../lib/api-client"
+import { clearHomeScreenSnapshot } from "../lib/home-screen-cache"
+import { clearProfileScreenSnapshot } from "../lib/profile-screen-cache"
 import { clearHomeworkListSnapshot } from "../lib/homework-list-cache"
 import { clearLastActivity } from "../lib/last-activity"
 
@@ -48,6 +50,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (loginStr: string, password: string) => {
     clearApiCache()
     clearHomeworkListSnapshot()
+    clearHomeScreenSnapshot()
+    clearProfileScreenSnapshot()
     await clearLastActivity()
     const res = await authApi.login(loginStr, password)
     await setTokens(res.accessToken, res.refreshToken)
@@ -59,6 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await clearTokens()
     clearApiCache()
     clearHomeworkListSnapshot()
+    clearHomeScreenSnapshot()
+    clearProfileScreenSnapshot()
     await clearLastActivity(userId)
     setUser(null)
   }, [user?.id])

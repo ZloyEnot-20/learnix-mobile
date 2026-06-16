@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Pressable,
   ScrollView,
@@ -8,6 +8,8 @@ import {
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { FlashcardSwipe } from "./FlashcardSwipe"
 import { ResultStatusIcon, resultVariant } from "./exercise/shared"
 import { BackButton } from "./ui/BackButton"
 import {
@@ -17,7 +19,11 @@ import {
   HomeworkSourceCard,
 } from "./homework/HomeworkExerciseLayout"
 import { controlWorkApi, homeworkApi } from "../lib/api"
-import { recordVocabDeckCompletion } from "../lib/learned-vocabulary"
+import {
+  getWantToLearn,
+  recordVocabDeckCompletion,
+  toggleWantToLearn,
+} from "../lib/learned-vocabulary"
 import { shuffle } from "../lib/utils"
 import {
   wordTranslation,
@@ -26,6 +32,7 @@ import {
   type VocabWord,
 } from "../types/vocabulary"
 import { colors } from "../theme/colors"
+import { radius, shadow, spacing } from "../theme/tokens"
 
 type Mode = "menu" | "flashcards" | "quiz" | "results"
 
@@ -139,6 +146,7 @@ export function VocabularyScreen({
       <Flashcards
         deck={deck}
         lang={lang}
+        studentId={studentId}
         onExit={() => setMode("menu")}
         onQuiz={() => setMode("quiz")}
       />
@@ -197,27 +205,53 @@ export function VocabularyScreen({
 function Flashcards({
   deck,
   lang,
+  studentId,
   onExit,
   onQuiz,
 }: {
   deck: VocabDeck
   lang: TranslationLang
+  studentId?: string
   onExit: () => void
   onQuiz: () => void
 }) {
   const [index, setIndex] = useState(0)
-  const [flipped, setFlipped] = useState(false)
+  const [wantToLearn, setWantToLearn] = useState(false)
+  const [wantLoading, setWantLoading] = useState(false)
+  const insets = useSafeAreaInsets()
   const words = deck.words
   const word = words[index]
 
+  const loadWantState = useCallback(async () => {
+    if (!studentId || !word) {
+      setWantToLearn(false)
+      return
+    }
+    const state = await getWantToLearn(studentId, word.term, deck.slug)
+    setWantToLearn(state)
+  }, [studentId, word, deck.slug])
+
+  useEffect(() => {
+    void loadWantState()
+  }, [loadWantState])
+
   const next = () => {
-    setFlipped(false)
     setIndex((i) => (i + 1 >= words.length ? 0 : i + 1))
   }
 
   const prev = () => {
-    setFlipped(false)
     setIndex((i) => (i - 1 < 0 ? words.length - 1 : i - 1))
+  }
+
+  const handleToggleWant = async () => {
+    if (!studentId || !word || wantLoading) return
+    setWantLoading(true)
+    try {
+      const nextState = await toggleWantToLearn(studentId, word, deck)
+      setWantToLearn(nextState)
+    } finally {
+      setWantLoading(false)
+    }
   }
 
   if (!word) return null
@@ -227,27 +261,75 @@ function Flashcards({
       <View style={styles.fcHeader}>
         <BackButton onPress={onExit} />
         <Text style={styles.fcCounter}>
-          {index + 1}/{words.length}
+          {index + 1} / {words.length}
         </Text>
+        <View style={styles.fcHeaderSpacer} />
       </View>
-      <Pressable style={styles.flashcard} onPress={() => setFlipped(!flipped)}>
-        <Text style={styles.fcPos}>{word.partOfSpeech}</Text>
-        <Text style={styles.fcTerm}>{flipped ? wordTranslation(word, lang) : word.term}</Text>
-        {!flipped && <Text style={styles.fcDef}>{word.definition}</Text>}
-        {flipped && <Text style={styles.fcExample}>{word.example}</Text>}
-        <Text style={styles.fcHint}>Tap to flip</Text>
-      </Pressable>
-      <View style={styles.fcNav}>
-        <Pressable style={styles.navBtn} onPress={prev}>
-          <Text style={styles.navBtnText}>← Prev</Text>
-        </Pressable>
-        <Pressable style={styles.navBtn} onPress={next}>
-          <Text style={styles.navBtnText}>Next →</Text>
+
+      <View style={styles.fcBody}>
+        <FlashcardSwipe
+          cardKey={`${deck.slug}-${word.id}-${index}`}
+          onSwipeLeft={next}
+          onSwipeRight={prev}
+          front={
+            <>
+              <Text style={styles.fcPos}>{word.partOfSpeech}</Text>
+              <Text style={styles.fcTerm} numberOfLines={3} adjustsFontSizeToFit>
+                {word.term}
+              </Text>
+              <Text style={styles.fcHint}>Tap to see translation</Text>
+            </>
+          }
+          back={
+            <>
+              <Text style={styles.fcPos}>{word.partOfSpeech}</Text>
+              <Text style={styles.fcTerm} numberOfLines={2} adjustsFontSizeToFit>
+                {wordTranslation(word, lang)}
+              </Text>
+              <Text style={styles.fcDef} numberOfLines={3}>
+                {word.definition}
+              </Text>
+              <Text style={styles.fcExample} numberOfLines={2}>
+                “{word.example}”
+              </Text>
+            </>
+          }
+        />
+      </View>
+
+      <View style={[styles.fcFooter, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+        {studentId ? (
+          <Pressable
+            style={[styles.wantBtn, wantToLearn && styles.wantBtnActive]}
+            onPress={() => void handleToggleWant()}
+            disabled={wantLoading}
+          >
+            <Ionicons
+              name={wantToLearn ? "bookmark" : "bookmark-outline"}
+              size={18}
+              color={wantToLearn ? "#6D28D9" : colors.textSecondary}
+            />
+            <Text style={[styles.wantBtnText, wantToLearn && styles.wantBtnTextActive]}>
+              {wantToLearn ? "Learning — appears in review" : "I want to learn this word"}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        <View style={styles.fcNav}>
+          <Pressable style={styles.navBtn} onPress={prev}>
+            <Ionicons name="chevron-back" size={18} color={colors.text} />
+            <Text style={styles.navBtnText}>Prev</Text>
+          </Pressable>
+          <Pressable style={styles.navBtn} onPress={next}>
+            <Text style={styles.navBtnText}>Next</Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.text} />
+          </Pressable>
+        </View>
+        <Pressable style={styles.quizLink} onPress={onQuiz}>
+          <Text style={styles.quizLinkText}>Start quiz</Text>
+          <Ionicons name="arrow-forward" size={16} color={colors.primary} />
         </Pressable>
       </View>
-      <Pressable style={styles.quizLink} onPress={onQuiz}>
-        <Text style={styles.quizLinkText}>Start quiz →</Text>
-      </Pressable>
     </View>
   )
 }
@@ -433,41 +515,106 @@ const styles = StyleSheet.create({
   modeDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
   fcHeader: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    padding: 16,
+    paddingHorizontal: spacing.screen,
+    paddingVertical: spacing.sm,
   },
-  fcCounter: { fontSize: 14, color: colors.textSecondary, fontWeight: "600" },
-  flashcard: {
-    margin: 16,
-    backgroundColor: "#EDE9FE",
-    borderRadius: 20,
-    padding: 32,
-    minHeight: 280,
+  fcHeaderSpacer: { width: 44 },
+  fcCounter: { fontSize: 15, color: colors.textSecondary, fontWeight: "600" },
+  fcBody: { flex: 1, minHeight: 0 },
+  fcFooter: {
+    paddingHorizontal: spacing.screen,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
+  },
+  wantBtn: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.section,
+    borderRadius: radius.button,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  wantBtnActive: {
+    borderColor: "#C4B5FD",
+    backgroundColor: "#F5F3FF",
+  },
+  wantBtnText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textSecondary,
+    flexShrink: 1,
+  },
+  wantBtnTextActive: {
+    color: "#6D28D9",
   },
   fcPos: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
     color: "#6D28D9",
     textTransform: "uppercase",
-    marginBottom: 12,
+    letterSpacing: 0.8,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: "#EDE9FE",
+    overflow: "hidden",
   },
-  fcTerm: { fontSize: 28, fontWeight: "700", color: colors.text, textAlign: "center" },
-  fcDef: { fontSize: 15, color: colors.textSecondary, marginTop: 12, textAlign: "center" },
-  fcExample: { fontSize: 14, color: colors.textSecondary, marginTop: 12, fontStyle: "italic", textAlign: "center" },
-  fcHint: { fontSize: 12, color: colors.textMuted, marginTop: 20 },
-  fcNav: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16 },
+  fcTerm: {
+    fontSize: 28,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+    width: "100%",
+  },
+  fcHint: {
+    fontSize: 13,
+    color: colors.textMuted,
+    textAlign: "center",
+    marginTop: spacing.sm,
+  },
+  fcDef: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
+    width: "100%",
+  },
+  fcExample: {
+    fontSize: 14,
+    color: colors.textMuted,
+    fontStyle: "italic",
+    textAlign: "center",
+    lineHeight: 20,
+    width: "100%",
+  },
+  fcNav: { flexDirection: "row", gap: spacing.md },
   navBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    borderRadius: radius.button,
+    paddingVertical: spacing.md,
+    ...shadow.card,
   },
   navBtnText: { fontSize: 15, fontWeight: "600", color: colors.text },
-  quizLink: { alignItems: "center", marginTop: 20 },
+  quizLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: spacing.sm,
+  },
   quizLinkText: { fontSize: 15, fontWeight: "600", color: colors.primary },
   quizProgressRow: {
     flexDirection: "row",

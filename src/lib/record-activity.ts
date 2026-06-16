@@ -1,4 +1,5 @@
 import { saveLastActivity, subjectLabel } from "./last-activity"
+import { humanizeSlug } from "./topic-meta"
 import type { Subject } from "../types/domain"
 import type { GrammarExercise } from "../types/grammar"
 import type { VocabDeck } from "../types/vocabulary"
@@ -44,13 +45,15 @@ export function recordGameExercise(
   ex: GrammarExercise,
   topic: string,
   slug: string,
+  topicTitle?: string,
 ): void {
   const subject = grammarSubject(ex)
+  const resolvedTopicTitle = topicTitle ?? humanizeSlug(topic)
   void saveLastActivity(userId, {
     kind: "game",
     route: `/exercise/${topic}/${slug}`,
     title: ex.title,
-    categoryLabel: `${subjectLabel(subject)}: ${ex.subtopic || topic}`,
+    categoryLabel: `${subjectLabel(subject)}: ${ex.subtopic || resolvedTopicTitle}`,
     subject,
   })
 }

@@ -32,7 +32,9 @@ export function parseVocabHomeworkSlug(slug: string | undefined): string | null 
 }
 
 export interface TopicMeta {
-  topic: string
+  /** Topic slug — API may return this as `slug` instead. */
+  topic?: string
+  slug?: string
   title: string
   description: string
   category: "grammar" | "vocabulary" | "speaking"

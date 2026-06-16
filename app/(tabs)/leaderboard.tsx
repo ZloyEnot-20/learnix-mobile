@@ -208,7 +208,7 @@ export default function LeaderboardScreen() {
         <LeaderboardSkeleton />
       ) : entries.length === 0 ? (
         <View style={styles.empty}>
-          <Ionicons name="podium-outline" size={48} color={colors.textMuted} />
+          <Ionicons name="trophy-outline" size={48} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No rankings yet</Text>
           <Text style={styles.emptyText}>
             Complete homework and exercises to earn XP and climb the leaderboard.

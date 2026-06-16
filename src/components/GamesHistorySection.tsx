@@ -1,13 +1,11 @@
 import React, { useMemo } from "react"
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import { StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import { useRouter } from "expo-router"
 import type { GameHistoryEntry } from "../lib/learned-vocabulary"
 import { dateGroupLabel, formatShortDate, scoreColor } from "../lib/utils"
 import { colors, radius, shadow, spacing } from "../theme/tokens"
 
 function HistoryCard({ item }: { item: GameHistoryEntry }) {
-  const router = useRouter()
   const pct =
     item.totalQuestions > 0
       ? Math.round((item.correctCount / item.totalQuestions) * 100)
@@ -16,10 +14,7 @@ function HistoryCard({ item }: { item: GameHistoryEntry }) {
   const icon = item.kind === "vocab" ? "library-outline" : "school-outline"
 
   return (
-    <Pressable
-      onPress={() => router.push(item.route as never)}
-      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-    >
+    <View style={styles.card}>
       <View style={[styles.iconWrap, { backgroundColor: accent + "22" }]}>
         <Ionicons name={icon} size={20} color={accent} />
       </View>
@@ -48,7 +43,7 @@ function HistoryCard({ item }: { item: GameHistoryEntry }) {
           {item.correctCount}/{item.totalQuestions}
         </Text>
       </View>
-    </Pressable>
+    </View>
   )
 }
 
@@ -75,9 +70,9 @@ export function GamesHistorySection({ history }: GamesHistorySectionProps) {
     return (
       <View style={styles.empty}>
         <View style={styles.emptyIconWrap}>
-          <Ionicons name="game-controller-outline" size={28} color={colors.textMuted} />
+          <Ionicons name="book-outline" size={28} color={colors.textMuted} />
         </View>
-        <Text style={styles.emptyTitle}>No game history yet</Text>
+        <Text style={styles.emptyTitle}>No learning history yet</Text>
         <Text style={styles.emptyDesc}>
           Completed vocabulary quizzes and grammar rounds will appear here.
         </Text>
@@ -120,7 +115,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     ...shadow.card,
   },
-  cardPressed: { opacity: 0.94 },
   iconWrap: {
     width: 40,
     height: 40,

@@ -24,6 +24,7 @@ import type {
 } from "../types/domain"
 import type { GrammarExercise } from "../types/grammar"
 import type { StudentLevel, LeaderboardEntry } from "../types/gamification"
+import type { StudentContextResponse } from "./lesson-schedule"
 import type { VocabDeck, TopicMeta } from "../types/vocabulary"
 
 export { peekCached, peekStale, clearApiCache }
@@ -37,6 +38,7 @@ const TTL = {
   vocabDeck: 600_000,
   topics: 300_000,
   studentLevel: 120_000,
+  studentContext: 120_000,
   leaderboard: 120_000,
   notifications: 30_000,
   testResults: 60_000,
@@ -95,10 +97,15 @@ export const studentsApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
-  context: (id: string) =>
-    api.get<{ groupName: string | null; teacherName: string | null }>(
-      `/students/${id}/context`,
-    ),
+  context: (id: string, opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", `/students/${id}/context`)
+    return cachedFetch(
+      key,
+      TTL.studentContext,
+      () => api.get<StudentContextResponse>(`/students/${id}/context`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
 }
 
 export const homeworkApi = {

@@ -11,7 +11,19 @@ interface VocabularyReviewBannerProps {
 
 export function VocabularyReviewBanner({ preview }: VocabularyReviewBannerProps) {
   const router = useRouter()
-  const reviewCount = Math.min(5, preview.totalCount)
+  const isReady = preview.status === "ready"
+
+  const headline = isReady
+    ? `${preview.totalCount} word${preview.totalCount === 1 ? "" : "s"} to review`
+    : preview.status === "done_today"
+      ? "Review done for today"
+      : "All words mastered"
+
+  const subline = isReady
+    ? "Daily review · 5 correct to master"
+    : preview.status === "done_today"
+      ? "Come back tomorrow to review, or study and add new words in Learn."
+      : "Great work! Study new vocabulary in Learn to add more words."
 
   return (
     <View style={styles.section}>
@@ -19,32 +31,50 @@ export function VocabularyReviewBanner({ preview }: VocabularyReviewBannerProps)
       <View style={styles.card}>
         <View style={styles.headerRow}>
           <View style={styles.iconWrap}>
-            <Ionicons name="layers-outline" size={22} color="#C4B5FD" />
+            <Ionicons
+              name={isReady ? "layers-outline" : "moon-outline"}
+              size={22}
+              color="#C4B5FD"
+            />
           </View>
           <View style={styles.headerText}>
-            <Text style={styles.headline}>
-              {reviewCount} word{reviewCount === 1 ? "" : "s"} to review
-            </Text>
-            <Text style={styles.subline}>Spaced repetition · keeps memory fresh</Text>
+            <Text style={styles.headline}>{headline}</Text>
+            <Text style={styles.subline}>{subline}</Text>
           </View>
         </View>
 
-        <View style={styles.chips}>
-          {preview.previewWords.map((word) => (
-            <View key={`${word.deckSlug ?? "word"}-${word.term}`} style={styles.chip}>
-              <Text style={styles.chipText} numberOfLines={1}>
-                {word.term}
-              </Text>
-            </View>
-          ))}
-        </View>
+        {isReady && preview.previewWords.length > 0 ? (
+          <View style={styles.chips}>
+            {preview.previewWords.map((word) => (
+              <View key={`${word.deckSlug ?? "word"}-${word.term}`} style={styles.chip}>
+                <Text style={styles.chipText} numberOfLines={1}>
+                  {word.term}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <Pressable
-          style={({ pressed }) => [styles.startBtn, pressed && styles.startBtnPressed]}
-          onPress={() => router.push("/vocabulary/review" as never)}
+          style={({ pressed }) => [
+            styles.startBtn,
+            !isReady && styles.secondaryBtn,
+            pressed && styles.startBtnPressed,
+          ]}
+          onPress={() =>
+            isReady
+              ? router.push("/vocabulary/review" as never)
+              : router.push("/(tabs)/games" as never)
+          }
         >
-          <Ionicons name="play" size={14} color={colors.text} />
-          <Text style={styles.startBtnText}>Start review</Text>
+          <Ionicons
+            name={isReady ? "play" : "book-outline"}
+            size={14}
+            color={isReady ? colors.text : "#E2E8F0"}
+          />
+          <Text style={[styles.startBtnText, !isReady && styles.secondaryBtnText]}>
+            {isReady ? "Start review" : "Study new words"}
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -90,6 +120,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     color: "rgba(226, 232, 240, 0.72)",
+    lineHeight: 17,
   },
   chips: {
     flexDirection: "row",
@@ -120,10 +151,18 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: spacing.lg,
   },
+  secondaryBtn: {
+    backgroundColor: "rgba(15, 23, 42, 0.35)",
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.28)",
+  },
   startBtnPressed: { opacity: 0.92 },
   startBtnText: {
     fontSize: 15,
     fontWeight: "700",
     color: colors.text,
+  },
+  secondaryBtnText: {
+    color: "#E2E8F0",
   },
 })

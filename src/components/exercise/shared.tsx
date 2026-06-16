@@ -293,6 +293,11 @@ export function ResultsScreen({
           explanation: m.explanation,
         })),
       })
+      .then(() => {
+        void import("../../lib/home-screen-sync").then(({ refreshHomeContinueLearning }) =>
+          refreshHomeContinueLearning(studentId),
+        )
+      })
       .catch(() => {})
   }, [])
 

@@ -1,8 +1,8 @@
 import React, { useState } from "react"
 import {
-  KeyboardAvoidingView,
-  Platform,
+  Keyboard,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -14,12 +14,14 @@ import { useAuth } from "../src/context/AuthContext"
 import { ApiError, getUserFacingErrorMessage } from "../src/lib/api-client"
 import { FadeInDown } from "../src/components/ui/FadeInDown"
 import { Spinner } from "../src/components/ui/Spinner"
+import { useKeyboardHeight } from "../src/hooks/useKeyboardHeight"
 import { colors, radius, shadow, spacing, typography } from "../src/theme/tokens"
 
 export default function LoginScreen() {
   const { user, isLoading, login } = useAuth()
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const keyboardHeight = useKeyboardHeight()
   const [loginStr, setLoginStr] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -54,65 +56,94 @@ export default function LoginScreen() {
     }
   }
 
+  const footerPaddingBottom =
+    keyboardHeight > 0 ? keyboardHeight + spacing.sm : Math.max(insets.bottom, spacing.md)
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <FadeInDown index={0}>
-        <View style={[styles.hero, { paddingTop: insets.top + spacing.xl }]}>
-          <View style={styles.heroGradient} />
-          <View style={styles.heroBlobPrimary} />
-          <View style={styles.heroBlobBrand} />
-          <Text style={styles.logo}>Learnix</Text>
-          <Text style={styles.subtitle}>Student App</Text>
-        </View>
-      </FadeInDown>
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        onScrollBeginDrag={Keyboard.dismiss}
+        showsVerticalScrollIndicator={false}
+      >
+        <Pressable onPress={Keyboard.dismiss} style={styles.dismissArea}>
+          <FadeInDown index={0}>
+            <View style={[styles.hero, { paddingTop: insets.top + spacing.xl }]}>
+              <View style={styles.heroGradient} />
+              <View style={styles.heroBlobPrimary} />
+              <View style={styles.heroBlobBrand} />
+              <Text style={styles.logo}>Learnix</Text>
+              <Text style={styles.subtitle}>Student App</Text>
+            </View>
+          </FadeInDown>
 
-      <FadeInDown index={1} style={styles.formWrap}>
-        <View style={[styles.form, shadow.card]}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            value={loginStr}
-            onChangeText={setLoginStr}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="your@email.com"
-            placeholderTextColor={colors.textMuted}
-          />
+          <FadeInDown index={1} style={styles.formWrap}>
+            <View style={[styles.form, shadow.card]}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                value={loginStr}
+                onChangeText={setLoginStr}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+                textContentType="username"
+                placeholder="your@email.com"
+                placeholderTextColor={colors.textMuted}
+              />
 
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="••••••••"
-            placeholderTextColor={colors.textMuted}
-          />
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                textContentType="password"
+                placeholder="••••••••"
+                placeholderTextColor={colors.textMuted}
+              />
 
-          {error ? <Text style={styles.error}>{error}</Text> : null}
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+            </View>
+          </FadeInDown>
+        </Pressable>
+      </ScrollView>
 
-          <Pressable
-            style={[styles.btn, submitting && styles.btnDisabled]}
-            onPress={handleLogin}
-            disabled={submitting || !loginStr || !password}
-          >
-            {submitting ? (
-              <Spinner size={22} />
-            ) : (
-              <Text style={styles.btnText}>Sign in</Text>
-            )}
-          </Pressable>
-        </View>
-      </FadeInDown>
-    </KeyboardAvoidingView>
+      <View style={[styles.footer, { paddingBottom: footerPaddingBottom }]}>
+        <Pressable
+          style={[styles.btn, submitting && styles.btnDisabled]}
+          onPress={handleLogin}
+          disabled={submitting || !loginStr || !password}
+        >
+          {submitting ? (
+            <Spinner size={22} />
+          ) : (
+            <Text style={styles.btnText}>Sign in</Text>
+          )}
+        </Pressable>
+      </View>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: spacing.md,
+  },
+  dismissArea: { flexGrow: 1 },
+  footer: {
+    paddingHorizontal: spacing.screen,
+    paddingTop: spacing.sm,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderLight,
+  },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   hero: {
     alignItems: "center",
@@ -149,7 +180,7 @@ const styles = StyleSheet.create({
   },
   logo: { ...typography.h1, color: colors.primary, zIndex: 1 },
   subtitle: { ...typography.body, color: colors.textSecondary, marginTop: spacing.sm, zIndex: 1 },
-  formWrap: { paddingHorizontal: spacing.screen, paddingBottom: spacing.xl },
+  formWrap: { paddingHorizontal: spacing.screen },
   form: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
@@ -173,7 +204,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.button,
     paddingVertical: 16,
     alignItems: "center",
-    marginTop: spacing.md,
     minHeight: 52,
     justifyContent: "center",
   },

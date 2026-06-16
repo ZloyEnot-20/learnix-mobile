@@ -1,8 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import type { VocabDeck, VocabWord } from "../types/vocabulary"
+import type { VocabDeck, VocabWord, TranslationLang } from "../types/vocabulary"
+import { wordTranslation } from "../types/vocabulary"
+import { clampToFixedLevel, primaryLevel } from "./utils"
 import { analyticsApi } from "./api"
 
 const KEY_PREFIX = "learnix_learning_progress:"
+export const CORRECT_TO_MASTER = 5
+export const CORRECT_FOR_TYPED_REVIEW = 3
 
 export interface LearnedWord {
   term: string
@@ -14,6 +18,16 @@ export interface LearnedWord {
   deckSlug?: string
   deckTitle?: string
   learnedAt: string
+}
+
+export interface StudyWord extends LearnedWord {
+  level: string
+  wantToLearn: boolean
+  correctCount: number
+  addedAt: string
+  masteredAt?: string
+  /** Last time this word was shown in vocabulary review (ISO). */
+  lastReviewedAt?: string
 }
 
 export interface VocabQuizResult {
@@ -87,8 +101,21 @@ export interface LearningProgressSummary {
   totalGameSessions: number
 }
 
+export interface LevelWordStats {
+  level: string
+  learned: number
+  total: number
+}
+
+export interface ReviewAnswerResult {
+  correctCount: number
+  newlyMastered: boolean
+  word: StudyWord
+}
+
 interface LearningProgress {
   words: LearnedWord[]
+  studyWords: StudyWord[]
   vocabResults: VocabQuizResult[]
   gameResults: GameExerciseResult[]
 }
@@ -100,11 +127,60 @@ function storageKey(userId: string): string {
 }
 
 function emptyProgress(): LearningProgress {
-  return { words: [], vocabResults: [], gameResults: [] }
+  return { words: [], studyWords: [], vocabResults: [], gameResults: [] }
 }
 
-function wordKey(word: Pick<LearnedWord, "term" | "deckSlug">): string {
+function wordKey(word: Pick<StudyWord, "term" | "deckSlug">): string {
   return `${word.deckSlug ?? "general"}::${word.term.toLowerCase()}`
+}
+
+export function studyWordKey(word: Pick<StudyWord, "term" | "deckSlug">): string {
+  return wordKey(word)
+}
+
+function localDateKey(iso: string | Date): string {
+  const d = iso instanceof Date ? iso : new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+export function wasReviewedToday(word: Pick<StudyWord, "lastReviewedAt">): boolean {
+  if (!word.lastReviewedAt) return false
+  return localDateKey(word.lastReviewedAt) === localDateKey(new Date())
+}
+
+export function isEligibleForReview(word: StudyWord): boolean {
+  if (!word.wantToLearn || isWordMastered(word)) return false
+  return !wasReviewedToday(word)
+}
+
+export function needsTypedReview(correctCount: number): boolean {
+  return correctCount >= CORRECT_FOR_TYPED_REVIEW
+}
+
+export function matchesTypedTerm(input: string, term: string): boolean {
+  return input.trim().toLowerCase() === term.trim().toLowerCase()
+}
+
+export function isWordMastered(word: Pick<StudyWord, "correctCount">): boolean {
+  return word.correctCount >= CORRECT_TO_MASTER
+}
+
+function migrateLegacyWords(progress: LearningProgress): LearningProgress {
+  if (progress.studyWords.length > 0) return progress
+
+  const studyWords: StudyWord[] = (progress.words ?? []).map((w) => ({
+    ...w,
+    level: "A1",
+    wantToLearn: false,
+    correctCount: CORRECT_TO_MASTER,
+    addedAt: w.learnedAt,
+    masteredAt: w.learnedAt,
+  }))
+
+  return { ...progress, studyWords }
 }
 
 async function loadProgress(userId: string): Promise<LearningProgress> {
@@ -119,11 +195,12 @@ async function loadProgress(userId: string): Promise<LearningProgress> {
       return empty
     }
     const parsed = JSON.parse(raw) as LearningProgress
-    const progress: LearningProgress = {
+    const progress = migrateLegacyWords({
       words: parsed.words ?? [],
+      studyWords: parsed.studyWords ?? [],
       vocabResults: parsed.vocabResults ?? [],
       gameResults: parsed.gameResults ?? [],
-    }
+    })
     memory.set(userId, progress)
     return progress
   } catch {
@@ -138,6 +215,214 @@ async function saveProgress(userId: string, progress: LearningProgress): Promise
   await AsyncStorage.setItem(storageKey(userId), JSON.stringify(progress))
 }
 
+function upsertWordForReview(
+  progress: LearningProgress,
+  word: VocabWord,
+  deck: VocabDeck,
+  now: string,
+): void {
+  const key = wordKey({ term: word.term, deckSlug: deck.slug })
+  const idx = progress.studyWords.findIndex((w) => wordKey(w) === key)
+
+  if (idx >= 0) {
+    const existing = progress.studyWords[idx]
+    if (isWordMastered(existing)) return
+    progress.studyWords[idx] = { ...existing, wantToLearn: true }
+    return
+  }
+
+  progress.studyWords.push(toStudyWord(word, deck, now))
+}
+
+function addDeckWordsToReview(progress: LearningProgress, deck: VocabDeck): void {
+  const now = new Date().toISOString()
+  for (const word of deck.words) {
+    upsertWordForReview(progress, word, deck, now)
+  }
+}
+
+function studyWordFromDeckWord(word: VocabWord, deck: VocabDeck): StudyWord {
+  const now = new Date().toISOString()
+  return {
+    term: word.term,
+    partOfSpeech: word.partOfSpeech,
+    definition: word.definition,
+    example: word.example,
+    translation: word.translation,
+    translationUz: word.translationUz,
+    deckSlug: deck.slug,
+    deckTitle: deck.title,
+    level: clampToFixedLevel(primaryLevel([deck.level])),
+    wantToLearn: false,
+    correctCount: 0,
+    addedAt: now,
+    learnedAt: now,
+  }
+}
+
+/** Pool for multiple-choice distractors (review words + all vocab deck words). */
+export function buildDistractorPool(
+  progress: LearningProgress,
+  decks: VocabDeck[] = [],
+): StudyWord[] {
+  const seen = new Set<string>()
+  const pool: StudyWord[] = []
+
+  const add = (word: StudyWord) => {
+    const key = wordKey(word)
+    if (seen.has(key)) return
+    seen.add(key)
+    pool.push(word)
+  }
+
+  for (const word of progress.studyWords) add(word)
+
+  for (const deck of decks) {
+    for (const word of deck.words) {
+      add(studyWordFromDeckWord(word, deck))
+    }
+  }
+
+  return pool
+}
+
+function studyWordToVocab(word: StudyWord): VocabWord {
+  return {
+    id: word.term,
+    term: word.term,
+    partOfSpeech: word.partOfSpeech as VocabWord["partOfSpeech"],
+    definition: word.definition,
+    example: word.example,
+    translation: word.translation,
+    translationUz: word.translationUz,
+  }
+}
+
+export function buildReviewOptionWords(
+  word: StudyWord,
+  pool: StudyWord[],
+): StudyWord[] {
+  const targetKey = wordKey(word)
+  const chosen: StudyWord[] = [word]
+  const usedKeys = new Set<string>([targetKey])
+
+  const sameDeck = pool.filter(
+    (candidate) => candidate.deckSlug === word.deckSlug && wordKey(candidate) !== targetKey,
+  )
+  const otherDeck = pool.filter(
+    (candidate) => candidate.deckSlug !== word.deckSlug && wordKey(candidate) !== targetKey,
+  )
+  const candidates = shuffleStudyWords([...sameDeck, ...otherDeck])
+
+  for (const candidate of candidates) {
+    if (chosen.length >= 4) break
+    const key = wordKey(candidate)
+    if (usedKeys.has(key)) continue
+    usedKeys.add(key)
+    chosen.push(candidate)
+  }
+
+  return shuffleStudyWords(chosen)
+}
+
+export function buildReviewOptions(
+  word: StudyWord,
+  pool: StudyWord[],
+  lang: TranslationLang,
+): string[] {
+  return buildReviewOptionWords(word, pool).map((option) =>
+    wordTranslation(studyWordToVocab(option), lang),
+  )
+}
+
+function toStudyWord(word: VocabWord, deck: VocabDeck, now: string): StudyWord {
+  return {
+    term: word.term,
+    partOfSpeech: word.partOfSpeech,
+    definition: word.definition,
+    example: word.example,
+    translation: word.translation,
+    translationUz: word.translationUz,
+    deckSlug: deck.slug,
+    deckTitle: deck.title,
+    level: clampToFixedLevel(primaryLevel([deck.level])),
+    wantToLearn: true,
+    correctCount: 0,
+    addedAt: now,
+    learnedAt: now,
+  }
+}
+
+export async function toggleWantToLearn(
+  userId: string,
+  word: VocabWord,
+  deck: VocabDeck,
+): Promise<boolean> {
+  const progress = await loadProgress(userId)
+  const now = new Date().toISOString()
+  const key = wordKey({ term: word.term, deckSlug: deck.slug })
+  const idx = progress.studyWords.findIndex((w) => wordKey(w) === key)
+
+  if (idx >= 0) {
+    const next = !progress.studyWords[idx].wantToLearn
+    progress.studyWords[idx] = { ...progress.studyWords[idx], wantToLearn: next }
+    await saveProgress(userId, progress)
+    notifyHomeVocabPreviewChanged(userId)
+    return next
+  }
+
+  progress.studyWords.push(toStudyWord(word, deck, now))
+  await saveProgress(userId, progress)
+  notifyHomeVocabPreviewChanged(userId)
+  return true
+}
+
+export async function getWantToLearn(
+  userId: string,
+  term: string,
+  deckSlug: string,
+): Promise<boolean> {
+  const progress = await loadProgress(userId)
+  const key = wordKey({ term, deckSlug })
+  const record = progress.studyWords.find((w) => wordKey(w) === key)
+  return record?.wantToLearn ?? false
+}
+
+export async function recordReviewAnswer(
+  userId: string,
+  term: string,
+  deckSlug: string | undefined,
+  correct: boolean,
+): Promise<ReviewAnswerResult | null> {
+  const progress = await loadProgress(userId)
+  const key = wordKey({ term, deckSlug })
+  const idx = progress.studyWords.findIndex((w) => wordKey(w) === key)
+  if (idx < 0) return null
+
+  const record = progress.studyWords[idx]
+  const wasMastered = isWordMastered(record)
+  const nextCount = correct ? record.correctCount + 1 : record.correctCount
+  const now = new Date().toISOString()
+  const newlyMastered = !wasMastered && nextCount >= CORRECT_TO_MASTER
+
+  progress.studyWords[idx] = {
+    ...record,
+    correctCount: nextCount,
+    masteredAt: newlyMastered ? now : record.masteredAt,
+    learnedAt: newlyMastered ? now : record.learnedAt,
+    lastReviewedAt: now,
+  }
+
+  await saveProgress(userId, progress)
+  notifyHomeVocabPreviewChanged(userId)
+
+  return {
+    correctCount: nextCount,
+    newlyMastered,
+    word: progress.studyWords[idx],
+  }
+}
+
 export async function recordVocabDeckCompletion(
   userId: string,
   deck: VocabDeck,
@@ -147,15 +432,8 @@ export async function recordVocabDeckCompletion(
 ): Promise<void> {
   const progress = await loadProgress(userId)
   const now = new Date().toISOString()
-  const existing = new Set(progress.words.map((w) => wordKey(w)))
 
-  for (const word of deck.words) {
-    const entry = toLearnedWord(word, deck, now)
-    const key = wordKey(entry)
-    if (existing.has(key)) continue
-    existing.add(key)
-    progress.words.push(entry)
-  }
+  addDeckWordsToReview(progress, deck)
 
   progress.vocabResults.unshift({
     deckSlug: deck.slug,
@@ -168,6 +446,7 @@ export async function recordVocabDeckCompletion(
   progress.vocabResults = progress.vocabResults.slice(0, 100)
 
   await saveProgress(userId, progress)
+  notifyHomeVocabPreviewChanged(userId)
 
   void analyticsApi
     .recordVocab({
@@ -269,6 +548,10 @@ export function buildTopicProgressMap(
   return map
 }
 
+function masteredWords(progress: LearningProgress): StudyWord[] {
+  return progress.studyWords.filter(isWordMastered)
+}
+
 export function buildDeckProgressMap(
   progress: LearningProgress,
   decks: { slug: string; words: unknown[] }[],
@@ -276,7 +559,9 @@ export function buildDeckProgressMap(
   const map = new Map<string, DeckProgress>()
 
   for (const deck of decks) {
-    const wordsLearned = progress.words.filter((w) => w.deckSlug === deck.slug).length
+    const wordsLearned = progress.studyWords.filter(
+      (w) => w.deckSlug === deck.slug && isWordMastered(w),
+    ).length
     const attempts = progress.vocabResults.filter(
       (r) => r.deckSlug === deck.slug && r.source === "game",
     )
@@ -310,7 +595,7 @@ export function buildLearningProgressSummary(
   )
 
   return {
-    wordsLearned: progress.words.length,
+    wordsLearned: masteredWords(progress).length,
     topicsCompleted,
     topicsInProgress,
     decksCompleted: deckSlugs.size,
@@ -318,6 +603,37 @@ export function buildLearningProgressSummary(
       progress.gameResults.length +
       progress.vocabResults.filter((r) => r.source === "game").length,
   }
+}
+
+export function buildWordsLearnedByLevel(
+  progress: LearningProgress,
+  decks: { slug: string; level: string; words: unknown[] }[],
+): LevelWordStats[] {
+  const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
+  const totals = new Map<string, number>()
+  const learned = new Map<string, number>()
+
+  for (const level of CEFR_LEVELS) {
+    totals.set(level, 0)
+    learned.set(level, 0)
+  }
+
+  for (const deck of decks) {
+    const level = clampToFixedLevel(primaryLevel([deck.level]))
+    totals.set(level, (totals.get(level) ?? 0) + deck.words.length)
+  }
+
+  for (const word of progress.studyWords) {
+    if (!isWordMastered(word)) continue
+    const level = clampToFixedLevel(primaryLevel([word.level]))
+    learned.set(level, (learned.get(level) ?? 0) + 1)
+  }
+
+  return CEFR_LEVELS.map((level) => ({
+    level,
+    learned: learned.get(level) ?? 0,
+    total: totals.get(level) ?? 0,
+  }))
 }
 
 export function buildGameHistory(progress: LearningProgress): GameHistoryEntry[] {
@@ -359,43 +675,113 @@ export function buildGameHistory(progress: LearningProgress): GameHistoryEntry[]
   )
 }
 
-function toLearnedWord(word: VocabWord, deck: VocabDeck, learnedAt: string): LearnedWord {
-  return {
-    term: word.term,
-    partOfSpeech: word.partOfSpeech,
-    definition: word.definition,
-    example: word.example,
-    translation: word.translation,
-    translationUz: word.translationUz,
-    deckSlug: deck.slug,
-    deckTitle: deck.title,
-    learnedAt,
-  }
-}
-
 export async function getLearnedWordCount(userId: string): Promise<number> {
   const progress = await loadProgress(userId)
-  return progress.words.length
+  return masteredWords(progress).length
 }
 
-export async function pickRandomLearnedWords(
-  userId: string,
-  count: number,
-): Promise<LearnedWord[]> {
-  const progress = await loadProgress(userId)
-  if (progress.words.length === 0) return []
+export function peekWordsLearned(userId: string): number | null {
+  const progress = memory.get(userId)
+  if (!progress) return null
+  return buildLearningProgressSummary(progress, new Map()).wordsLearned
+}
 
-  const pool = [...progress.words]
+function shuffleStudyWords<T>(items: T[]): T[] {
+  const pool = [...items]
   for (let i = pool.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1))
     ;[pool[i], pool[j]] = [pool[j], pool[i]]
   }
-  return pool.slice(0, Math.min(count, pool.length))
+  return pool
 }
 
+function pendingReviewWords(progress: LearningProgress): StudyWord[] {
+  return progress.studyWords.filter((w) => w.wantToLearn && !isWordMastered(w))
+}
+
+function dueReviewWords(progress: LearningProgress): StudyWord[] {
+  return pendingReviewWords(progress).filter(isEligibleForReview)
+}
+
+export async function pickReviewWords(
+  userId: string,
+  maxCount?: number,
+): Promise<StudyWord[]> {
+  const progress = await loadProgress(userId)
+  const due = dueReviewWords(progress)
+  if (due.length === 0) return []
+  const shuffled = shuffleStudyWords(due)
+  if (maxCount == null) return shuffled
+  return shuffled.slice(0, Math.min(maxCount, due.length))
+}
+
+export interface ReviewAvailability {
+  dueWords: StudyWord[]
+  reviewedTodayCount: number
+}
+
+export async function getReviewAvailability(userId: string): Promise<ReviewAvailability> {
+  const progress = await loadProgress(userId)
+  const pending = pendingReviewWords(progress)
+  const dueWords = shuffleStudyWords(dueReviewWords(progress))
+  return {
+    dueWords,
+    reviewedTodayCount: pending.length - dueWords.length,
+  }
+}
+
+/** @deprecated Use pickReviewWords */
+export async function pickRandomLearnedWords(
+  userId: string,
+  count: number,
+): Promise<StudyWord[]> {
+  return pickReviewWords(userId, count)
+}
+
+export type VocabularyReviewStatus = "ready" | "done_today" | "all_complete"
+
 export interface VocabularyReviewPreview {
+  status: VocabularyReviewStatus
   totalCount: number
-  previewWords: LearnedWord[]
+  previewWords: StudyWord[]
+}
+
+function hasReviewHistory(progress: LearningProgress): boolean {
+  return progress.studyWords.some(
+    (w) => w.wantToLearn || w.correctCount > 0 || w.lastReviewedAt != null,
+  )
+}
+
+export function buildVocabularyReviewPreview(
+  progress: LearningProgress,
+  previewCount = 5,
+): VocabularyReviewPreview | null {
+  if (!hasReviewHistory(progress)) return null
+
+  const pending = pendingReviewWords(progress)
+  const due = dueReviewWords(progress)
+
+  if (due.length > 0) {
+    return {
+      status: "ready",
+      totalCount: due.length,
+      previewWords: shuffleStudyWords(due).slice(0, previewCount),
+    }
+  }
+
+  if (pending.length > 0) {
+    return {
+      status: "done_today",
+      totalCount: pending.length,
+      previewWords: [],
+    }
+  }
+
+  return {
+    status: "all_complete",
+    totalCount: 0,
+    previewWords: [],
+  }
 }
 
 export async function getVocabularyReviewPreview(
@@ -403,11 +789,9 @@ export async function getVocabularyReviewPreview(
   previewCount = 5,
 ): Promise<VocabularyReviewPreview | null> {
   const progress = await loadProgress(userId)
-  if (progress.words.length === 0) return null
+  return buildVocabularyReviewPreview(progress, previewCount)
+}
 
-  const previewWords = await pickRandomLearnedWords(userId, previewCount)
-  return {
-    totalCount: progress.words.length,
-    previewWords,
-  }
+function notifyHomeVocabPreviewChanged(userId: string): void {
+  void import("./home-screen-sync").then(({ syncHomeVocabPreview }) => syncHomeVocabPreview(userId))
 }

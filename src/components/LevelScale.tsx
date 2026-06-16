@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react"
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { studentsApi } from "../lib/api"
 import { TierBadge } from "./TierBadge"
 import { LevelScaleSkeleton } from "./skeletons/Layouts"
+import { BottomSheet } from "./ui/BottomSheet"
 import {
   CEFR_LEVEL_REQUIREMENT,
   CEFR_ORDER,
@@ -187,43 +188,44 @@ export function LevelScale({
         )}
       </View>
 
-      <Modal visible={showAll} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>All levels</Text>
-            <Pressable
-              onPress={() => setShowAll(false)}
-              hitSlop={8}
-              style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
-            >
-              <Ionicons name="close" size={18} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-          <ScrollView
-            style={styles.modalScroll}
-            contentContainerStyle={styles.modalContent}
-            showsVerticalScrollIndicator={false}
+      <BottomSheet
+        visible={showAll}
+        onClose={() => setShowAll(false)}
+        title="All levels"
+        headerRight={
+          <Pressable
+            onPress={() => setShowAll(false)}
+            hitSlop={8}
+            style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
           >
-            {TIERS.map((t) => {
-              const isCurrent = t.id === tier.id
-              const isPassed = data.level > t.maxLevel
-              const range =
-                t.maxLevel === Number.POSITIVE_INFINITY
-                  ? `Lvl ${t.minLevel}+`
-                  : `Lvl ${t.minLevel}–${t.maxLevel}`
-              return (
-                <TierModalCard
-                  key={t.id}
-                  tier={t}
-                  isCurrent={isCurrent}
-                  isPassed={isPassed}
-                  range={range}
-                />
-              )
-            })}
-          </ScrollView>
-        </View>
-      </Modal>
+            <Ionicons name="close" size={18} color={colors.textSecondary} />
+          </Pressable>
+        }
+        contentStyle={styles.modalSheetContent}
+      >
+        <ScrollView
+          contentContainerStyle={styles.modalContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {TIERS.map((t) => {
+            const isCurrent = t.id === tier.id
+            const isPassed = data.level > t.maxLevel
+            const range =
+              t.maxLevel === Number.POSITIVE_INFINITY
+                ? `Lvl ${t.minLevel}+`
+                : `Lvl ${t.minLevel}–${t.maxLevel}`
+            return (
+              <TierModalCard
+                key={t.id}
+                tier={t}
+                isCurrent={isCurrent}
+                isPassed={isPassed}
+                range={range}
+              />
+            )
+          })}
+        </ScrollView>
+      </BottomSheet>
     </>
   )
 }
@@ -342,19 +344,10 @@ const styles = StyleSheet.create({
   cefrText: { fontSize: 11, fontWeight: "600" },
   cefrTextUnlocked: { color: "#047857" },
   cefrTextLocked: { color: colors.textMuted },
-  modal: { flex: 1, backgroundColor: colors.background },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 8,
-    minHeight: 40,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+  modalSheetContent: {
+    maxHeight: 520,
   },
-  modalTitle: { fontSize: 15, fontWeight: "700", color: colors.text, lineHeight: 20 },
+  modalContent: { paddingHorizontal: spacing.screen, paddingBottom: spacing.lg, gap: 10 },
   closeBtn: {
     width: 28,
     height: 28,
@@ -364,8 +357,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.borderLight,
   },
   closeBtnPressed: { opacity: 0.7 },
-  modalScroll: { flex: 1 },
-  modalContent: { padding: 16, paddingBottom: 24, gap: 10 },
   tierCard: {
     flexDirection: "row",
     gap: 12,

@@ -22,12 +22,13 @@ import { HomeworkVocabReview } from "../../../src/components/homework/HomeworkVo
 
 import { VocabScreenSkeleton } from "../../../src/components/skeletons/Layouts"
 
-import { isCompletedSubmission } from "../../../src/lib/homework-review"
+import { isCompletedSubmission, resolveHomeworkSubmission } from "../../../src/lib/homework-review"
 import { recordHomeworkVocabulary } from "../../../src/lib/record-activity"
 import {
   isHomeworkEntryFailed,
   useHomeworkEntryOnFocus,
 } from "../../../src/hooks/useHomeworkEntryOnFocus"
+import { useRetryWhenOffline } from "../../../src/hooks/useRetryWhenOffline"
 
 import type { HomeworkSubmission, Subject } from "../../../src/types/domain"
 
@@ -97,6 +98,10 @@ export default function HomeworkVocabularyScreen() {
 
   const [alreadyFailed, setAlreadyFailed] = useState(false)
 
+  const [awaitingNetwork, setAwaitingNetwork] = useState(false)
+
+  const [reloadKey, setReloadKey] = useState(0)
+
   const [quizActive, setQuizActive] = useState(false)
 
   const handleEntryResult = useCallback((sub: HomeworkSubmission | null) => {
@@ -104,6 +109,8 @@ export default function HomeworkVocabularyScreen() {
   }, [])
 
   useHomeworkEntryOnFocus(homeworkId, isStudent, handleEntryResult)
+
+  useRetryWhenOffline(awaitingNetwork, () => setReloadKey((key) => key + 1))
 
   useEffect(() => {
 
@@ -122,7 +129,7 @@ export default function HomeworkVocabularyScreen() {
 
       try {
 
-        const [d, sub, hwData] = await Promise.all([
+        const [d, subRaw, hwData] = await Promise.all([
 
           exercisesApi.vocabDeck(deckSlug),
 
@@ -133,6 +140,8 @@ export default function HomeworkVocabularyScreen() {
         ])
 
         if (cancelled) return
+
+        const sub = isStudent ? resolveHomeworkSubmission(homeworkId, subRaw) : null
 
 
 
@@ -146,6 +155,8 @@ export default function HomeworkVocabularyScreen() {
 
           setAlreadyFailed(true)
 
+          setAwaitingNetwork(false)
+
           return
 
         }
@@ -158,7 +169,21 @@ export default function HomeworkVocabularyScreen() {
 
           setCompletedAt(sub?.submittedAt ?? undefined)
 
+          setAwaitingNetwork(false)
+
+          if (user?.id) {
+            void import("../../../src/lib/home-screen-sync").then(({ refreshHomeContinueLearning }) =>
+              refreshHomeContinueLearning(user.id),
+            )
+          }
+
+        } else if (isStudent && !sub) {
+
+          setAwaitingNetwork(true)
+
         } else if (d && isStudent && user?.id) {
+
+          setAwaitingNetwork(false)
 
           recordHomeworkVocabulary(user.id, d, deckSlug, homeworkId)
 
@@ -186,7 +211,7 @@ export default function HomeworkVocabularyScreen() {
 
     }
 
-  }, [deckSlug, homeworkId, isStudent])
+  }, [deckSlug, homeworkId, isStudent, reloadKey])
 
 
 
@@ -216,7 +241,9 @@ export default function HomeworkVocabularyScreen() {
 
     async function beginSession() {
 
-      const sub = await homeworkApi.start(homeworkId, { force: true, skipEntryCount: true }).catch(() => null)
+      const subRaw = await homeworkApi.start(homeworkId, { force: true, skipEntryCount: true }).catch(() => null)
+
+      const sub = resolveHomeworkSubmission(homeworkId, subRaw)
 
       if (cancelled) return
 
@@ -242,11 +269,23 @@ export default function HomeworkVocabularyScreen() {
 
 
 
-      setPauseUsed(sub?.pauseUsed ?? false)
+      if (!sub) {
+
+        setAwaitingNetwork(true)
+
+        return
+
+      }
+
+
+
+      setAwaitingNetwork(false)
+
+      setPauseUsed(sub.pauseUsed ?? false)
 
       setSessionStartedAt(
 
-        sub?.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
+        sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
 
       )
 
@@ -268,7 +307,7 @@ export default function HomeworkVocabularyScreen() {
 
     }
 
-  }, [quizActive, isStudent, homeworkId, sessionStartedAt, reviewSubmission])
+  }, [quizActive, isStudent, homeworkId, sessionStartedAt, reviewSubmission, deck, deckSlug, user?.id])
 
 
 
@@ -285,7 +324,7 @@ export default function HomeworkVocabularyScreen() {
 
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
 
-        {loading ? (
+        {loading || (awaitingNetwork && !reviewSubmission) ? (
 
           <VocabScreenSkeleton />
 

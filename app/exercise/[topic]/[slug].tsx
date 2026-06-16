@@ -8,6 +8,7 @@ import { exercisesApi, homeworkApi } from "../../../src/lib/api"
 import { ExerciseRunner } from "../../../src/components/exercise/ExerciseRunner"
 import { ExerciseScreenSkeleton } from "../../../src/components/skeletons/Layouts"
 import { recordGameExercise } from "../../../src/lib/record-activity"
+import { topicDisplayTitle } from "../../../src/lib/topic-meta"
 import type { GrammarExercise } from "../../../src/types/grammar"
 import { colors } from "../../../src/theme/colors"
 
@@ -34,7 +35,10 @@ export default function ExerciseScreen() {
 
     async function load() {
       try {
-        const ex = await exercisesApi.get(slug)
+        const [ex, metas] = await Promise.all([
+          exercisesApi.get(slug),
+          topic ? exercisesApi.topics().catch(() => []) : Promise.resolve([]),
+        ])
         if (cancelled) return
         if (!ex) {
           setError(true)
@@ -57,7 +61,8 @@ export default function ExerciseScreen() {
         } else {
           setSessionStartedAt(Date.now())
           if (studentId && topic) {
-            recordGameExercise(studentId, ex, topic, slug)
+            const topicTitle = topicDisplayTitle(metas, topic)
+            recordGameExercise(studentId, ex, topic, slug, topicTitle)
           }
         }
       } catch {

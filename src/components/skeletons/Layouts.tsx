@@ -47,18 +47,33 @@ export function HomeworkListSkeleton({ count = 3 }: { count?: number }) {
 }
 
 export function NotificationBannerSkeleton() {
+  const stackHeight = 80 + 2 * 7
+  const sectionHeight = 26 + stackHeight
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, styles.notificationSection, { height: sectionHeight }]}>
       <Skeleton width={130} height={18} style={styles.gapSm} />
-      <SkeletonCard style={styles.notificationBanner}>
-        <View style={styles.notificationRow}>
-          <Skeleton width={44} height={44} borderRadius={12} />
-          <View style={styles.notificationText}>
-            <Skeleton width={180} height={16} />
-            <Skeleton width="90%" height={12} style={styles.gapSm} />
-          </View>
-        </View>
-      </SkeletonCard>
+      <View style={[styles.notificationStack, { height: stackHeight }]}>
+        {[2, 1, 0].map((layer) => (
+          <SkeletonCard
+            key={layer}
+            style={[
+              styles.notificationBanner,
+              styles.notificationStackLayer,
+              layer === 2 && styles.notificationStackBack2,
+              layer === 1 && styles.notificationStackBack1,
+            ]}
+          >
+            <View style={styles.notificationRow}>
+              <Skeleton width={44} height={44} borderRadius={12} />
+              <View style={styles.notificationText}>
+                <Skeleton width={layer === 0 ? 180 : 160} height={16} />
+                <Skeleton width={layer === 0 ? "90%" : "80%"} height={12} style={styles.gapSm} />
+                {layer === 0 ? <Skeleton width={56} height={10} style={styles.gapSm} /> : null}
+              </View>
+            </View>
+          </SkeletonCard>
+        ))}
+      </View>
     </View>
   )
 }
@@ -107,6 +122,8 @@ export function ProfileSkeleton() {
         <Skeleton circle height={64} />
         <Skeleton width={140} height={20} style={styles.gapMd} />
         <Skeleton width={180} height={13} style={styles.gapSm} />
+        <Skeleton width={160} height={13} style={styles.gapSm} />
+        <Skeleton width={140} height={13} style={styles.gapSm} />
       </View>
       <SkeletonCard style={[styles.statsBarSkeleton, styles.gapMd]}>
         {Array.from({ length: 4 }).map((_, i) => (
@@ -131,7 +148,7 @@ export function ProfileSkeleton() {
         </View>
       </SkeletonCard>
       <SkeletonCard>
-        {Array.from({ length: 7 }).map((_, i) => (
+        {Array.from({ length: 6 }).map((_, i) => (
           <ListRowSkeleton key={i} />
         ))}
       </SkeletonCard>
@@ -429,7 +446,36 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 8,
   },
-  notificationBanner: { marginBottom: 0 },
+  notificationBanner: {
+    marginBottom: 0,
+    height: 80,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(107, 114, 128, 0.38)",
+  },
+  notificationSection: { marginBottom: spacing.sm },
+  notificationStack: {
+    position: "relative",
+    marginBottom: 0,
+  },
+  notificationStackLayer: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+  },
+  notificationStackBack1: {
+    transform: [{ translateY: 7 }, { scale: 0.97 }],
+    opacity: 0.96,
+  },
+  notificationStackBack2: {
+    transform: [{ translateY: 14 }, { scale: 0.94 }],
+    opacity: 0.92,
+  },
+  notificationStackBack3: {
+    transform: [{ translateY: 21 }, { scale: 0.91 }],
+    opacity: 0.88,
+  },
   notificationRow: {
     flexDirection: "row",
     alignItems: "flex-start",

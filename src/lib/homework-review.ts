@@ -1,4 +1,5 @@
-import type { HomeworkAttempt } from "../types/domain"
+import { cacheKey, peekStale } from "./api-cache"
+import type { HomeworkAttempt, HomeworkSubmission, StudentHomeworkEntry } from "../types/domain"
 import type { GrammarExercise, GrammarQuestion } from "../types/grammar"
 
 export type QuestionReviewStatus = "correct" | "incorrect" | "skipped"
@@ -103,4 +104,20 @@ export function isCompletedSubmission(
   return (
     (status === "submitted" || status === "graded") && attempt != null
   )
+}
+
+/** Prefer live API data; fall back to start/mine caches when the network request fails. */
+export function resolveHomeworkSubmission(
+  homeworkId: string,
+  apiSub: HomeworkSubmission | null | undefined,
+): HomeworkSubmission | null {
+  if (apiSub) return apiSub
+
+  const fromStart = peekStale<HomeworkSubmission>(
+    cacheKey("POST", `/homework/start:${homeworkId}`),
+  )
+  if (fromStart) return fromStart
+
+  const entries = peekStale<StudentHomeworkEntry[]>(cacheKey("GET", "/homework/mine"))
+  return entries?.find((e) => e.homework.id === homeworkId)?.submission ?? null
 }

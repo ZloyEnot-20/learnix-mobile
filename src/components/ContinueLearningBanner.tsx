@@ -74,7 +74,7 @@ export function ContinueLearningBanner({ item }: ContinueLearningBannerProps) {
 }
 
 const styles = StyleSheet.create({
-  section: { marginBottom: spacing.lg },
+  section: { marginTop: spacing.lg, marginBottom: spacing.lg },
   sectionTitle: {
     ...typography.h3,
     fontSize: 18,
