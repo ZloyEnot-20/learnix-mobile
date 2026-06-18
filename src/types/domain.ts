@@ -38,6 +38,29 @@ export interface HomeworkMistake {
   transcription?: string
 }
 
+export interface PodcastListeningSeek {
+  fromSeconds: number
+  toSeconds: number
+  atMs: number
+}
+
+export interface PodcastListenedSegment {
+  startSeconds: number
+  endSeconds: number
+}
+
+export interface PodcastListeningStats {
+  totalListenSeconds: number
+  seekCount: number
+  rewindCount: number
+  forwardCount: number
+  seeks: PodcastListeningSeek[]
+  listenedSegments?: PodcastListenedSegment[]
+  podcastDurationSeconds: number
+  completedListening: boolean
+  wordsReviewed: number
+}
+
 export interface HomeworkAttempt {
   totalQuestions: number
   correctCount: number
@@ -47,6 +70,7 @@ export interface HomeworkAttempt {
   answeredCount?: number
   failedDueToCheating?: boolean
   cheatingReason?: string
+  listeningStats?: PodcastListeningStats
 }
 
 export interface HomeworkSubmission {

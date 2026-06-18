@@ -312,6 +312,7 @@ export default function HomeScreen() {
       <FadeInDown index={2} style={styles.notificationBannerWrap}>
         <NotificationBanner
           isFocused={isHomeFocused}
+          loading={loading}
           onScrollLockChange={setNotificationScrollLocked}
         />
       </FadeInDown>
@@ -451,8 +452,8 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   notificationBannerWrap: {
-    overflow: "visible",
-    zIndex: 2,
+    marginBottom: spacing.sm,
+    overflow: "hidden",
   },
   section: { marginBottom: spacing.lg },
   sectionTitle: { ...typography.h3, fontSize: 18, color: colors.text, marginBottom: spacing.md },

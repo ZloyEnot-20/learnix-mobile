@@ -1,16 +1,18 @@
 import React from "react"
 import { StyleSheet } from "react-native"
-import { useRouter } from "expo-router"
 import { HomeworkStatusScreen } from "./HomeworkStatusScreen"
 
-export function HomeworkSuspiciousActivity({ onDismiss }: { onDismiss?: () => void }) {
-  const router = useRouter()
+interface HomeworkSuspiciousActivityProps {
+  onContinue: () => void
+  onPause: () => void
+  pauseAvailable?: boolean
+}
 
-  const handlePress = () => {
-    if (onDismiss) onDismiss()
-    else router.back()
-  }
-
+export function HomeworkSuspiciousActivity({
+  onContinue,
+  onPause,
+  pauseAvailable = true,
+}: HomeworkSuspiciousActivityProps) {
   return (
     <HomeworkStatusScreen
       style={styles.fill}
@@ -18,10 +20,12 @@ export function HomeworkSuspiciousActivity({ onDismiss }: { onDismiss?: () => vo
       icon="warning-outline"
       iconColor="#B45309"
       iconBg="#FEF3C7"
-      title="Suspicious activity"
-      description="You left the app during protected homework. Your work has been paused. If you leave again, this homework will fail."
+      title="Leave homework?"
+      description="You left the app during an assignment. Would you like to continue now or pause and finish later? If you leave again, this homework will fail."
       buttonLabel="Continue assignment"
-      onButtonPress={handlePress}
+      onButtonPress={onContinue}
+      secondaryButtonLabel={pauseAvailable ? "Pause" : undefined}
+      onSecondaryButtonPress={pauseAvailable ? onPause : undefined}
     />
   )
 }

@@ -21,6 +21,8 @@ interface HomeworkStatusScreenProps {
   description: string
   buttonLabel: string
   onButtonPress: () => void
+  secondaryButtonLabel?: string
+  onSecondaryButtonPress?: () => void
   style?: StyleProp<ViewStyle>
 }
 
@@ -33,6 +35,8 @@ export function HomeworkStatusScreen({
   description,
   buttonLabel,
   onButtonPress,
+  secondaryButtonLabel,
+  onSecondaryButtonPress,
   style,
 }: HomeworkStatusScreenProps) {
   const insets = useSafeAreaInsets()
@@ -68,6 +72,15 @@ export function HomeworkStatusScreen({
           >
             <Text style={styles.btnText}>{buttonLabel}</Text>
           </Pressable>
+
+          {secondaryButtonLabel && onSecondaryButtonPress ? (
+            <Pressable
+              style={({ pressed }) => [styles.btnSecondary, pressed && styles.btnSecondaryPressed]}
+              onPress={onSecondaryButtonPress}
+            >
+              <Text style={styles.btnSecondaryText}>{secondaryButtonLabel}</Text>
+            </Pressable>
+          ) : null}
         </View>
       </ScrollView>
     </View>
@@ -89,14 +102,9 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 360,
     alignSelf: "center",
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
     overflow: "hidden",
-    ...shadow.card,
   },
   decorWrap: {
     ...StyleSheet.absoluteFillObject,
@@ -151,6 +159,28 @@ const styles = StyleSheet.create({
   },
   btnText: {
     color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  btnSecondary: {
+    alignSelf: "stretch",
+    backgroundColor: colors.background,
+    borderRadius: radius.button,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: spacing.sm,
+    minHeight: 48,
+  },
+  btnSecondaryPressed: {
+    backgroundColor: colors.borderLight,
+    opacity: 0.95,
+  },
+  btnSecondaryText: {
+    color: colors.text,
     fontSize: 15,
     fontWeight: "600",
   },

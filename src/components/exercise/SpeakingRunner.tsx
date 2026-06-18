@@ -549,6 +549,7 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
         progress={progressPct}
         footer={footer}
         keyboardOffset={0}
+        scrollable={false}
       >
         <ProgressBar index={index} total={questions.length} correctCount={responses.length} />
         {body}

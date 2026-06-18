@@ -12,16 +12,45 @@ export interface StudentContextResponse {
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const
 
+export { WEEKDAY_LABELS }
+
+/** Colors for weekday display badges (0 = Sun … 6 = Sat). */
+export const WEEKDAY_BADGE_STYLES: Record<
+  number,
+  { backgroundColor: string; color: string; borderColor: string }
+> = {
+  0: { backgroundColor: "#ffe4e6", color: "#9f1239", borderColor: "#fecdd3" },
+  1: { backgroundColor: "#dbeafe", color: "#1e40af", borderColor: "#bfdbfe" },
+  2: { backgroundColor: "#d1fae5", color: "#065f46", borderColor: "#a7f3d0" },
+  3: { backgroundColor: "#fef3c7", color: "#92400e", borderColor: "#fde68a" },
+  4: { backgroundColor: "#ede9fe", color: "#5b21b6", borderColor: "#ddd6fe" },
+  5: { backgroundColor: "#e0f2fe", color: "#075985", borderColor: "#bae6fd" },
+  6: { backgroundColor: "#ffedd5", color: "#9a3412", borderColor: "#fed7aa" },
+}
+
+export function sortWeekdays(days: number[]): number[] {
+  return [...days].sort((a, b) => {
+    const order = (d: number) => (d === 0 ? 7 : d)
+    return order(a) - order(b)
+  })
+}
+
+export function hasValidLessonSchedule(schedule: LessonSchedule | null | undefined): boolean {
+  return Boolean(schedule?.weekdays?.length && schedule.startTime && schedule.endTime)
+}
+
+export function formatLessonScheduleTime(schedule: LessonSchedule | null | undefined): string | null {
+  if (!hasValidLessonSchedule(schedule)) return null
+  return `${schedule!.startTime}–${schedule!.endTime}`
+}
+
 export function formatLessonSchedule(schedule: LessonSchedule | null | undefined): string | null {
-  if (!schedule?.weekdays?.length || !schedule.startTime || !schedule.endTime) return null
-  const days = [...schedule.weekdays]
-    .sort((a, b) => {
-      const order = (d: number) => (d === 0 ? 7 : d)
-      return order(a) - order(b)
-    })
+  const time = formatLessonScheduleTime(schedule)
+  if (!time || !schedule?.weekdays?.length) return null
+  const days = sortWeekdays(schedule.weekdays)
     .map((d) => WEEKDAY_LABELS[d])
     .join(", ")
-  return `${days} · ${schedule.startTime}–${schedule.endTime}`
+  return `${days} · ${time}`
 }
 
 function normalizeTimeHHmm(time: string): string {

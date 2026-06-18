@@ -1,12 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   Animated,
-  Dimensions,
   Easing,
   PanResponder,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
+  type LayoutChangeEvent,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { notificationsApi, type NotificationItem } from "../lib/api"
@@ -15,18 +16,28 @@ import { getNotificationBannerColor } from "../lib/notification-colors"
 import { requestNotificationsRefresh, subscribeNotificationsRefresh } from "../lib/notifications-refresh"
 import { formatRelative } from "../lib/utils"
 import { NotificationBannerSkeleton } from "./skeletons/Layouts"
+import {
+  getNotificationBannerReservedHeight,
+  NOTIFICATION_BANNER_BOTTOM_GAP,
+  NOTIFICATION_BELL_WRAP_SIZE,
+  NOTIFICATION_CARD_HEIGHT,
+  NOTIFICATION_SECTION_EXTRA_GAP,
+  NOTIFICATION_STACK_MIN_HEIGHT,
+  NOTIFICATION_STACK_OFFSET,
+  NOTIFICATION_STACK_PEEK_LAYERS,
+} from "./notification-banner-layout"
 import { colors, radius, spacing, typography } from "../theme/tokens"
 
-const STACK_PEEK_LAYERS = 2
+const STACK_PEEK_LAYERS = NOTIFICATION_STACK_PEEK_LAYERS
 const MAX_VISIBLE = STACK_PEEK_LAYERS + 1
-const STACK_OFFSET = 7
+const STACK_OFFSET = NOTIFICATION_STACK_OFFSET
 const STACK_SCALE_STEP = 0.03
 const DISMISS_OFFSCREEN_RATIO = 0.35
-const CARD_HEIGHT = 80
-const TITLE_BLOCK_HEIGHT = 26
-const MAX_STACK_HEIGHT = CARD_HEIGHT + STACK_PEEK_LAYERS * STACK_OFFSET
-const BANNER_SECTION_HEIGHT = TITLE_BLOCK_HEIGHT + MAX_STACK_HEIGHT
-const BANNER_BOTTOM_GAP = spacing.sm
+const CARD_HEIGHT = NOTIFICATION_CARD_HEIGHT
+const BELL_ICON_SIZE = 22
+const BELL_WRAP_SIZE = NOTIFICATION_BELL_WRAP_SIZE
+const MAX_STACK_HEIGHT = NOTIFICATION_STACK_MIN_HEIGHT
+const FALLBACK_SECTION_HEIGHT = getNotificationBannerReservedHeight()
 const COLLAPSE_DURATION = 300
 const BELL_SHAKE_DURATION = 3000
 const BELL_SHAKE_CYCLE_MS = 140
@@ -35,25 +46,29 @@ const BELL_BG_HIDE_MS = 140
 const BELL_BG_RESTORE_MS = 220
 const BELL_SHAKE_SCALE = 1.28
 const BANNER_REVEAL_DELAY_MS = 320
-const BELL_ICON_SIZE = 22
-const BELL_WRAP_SIZE = 44
 const BELL_FLY_TOTAL_MS =
   BELL_BG_HIDE_MS + BELL_FLY_MS * 2 + BELL_SHAKE_DURATION + BELL_BG_RESTORE_MS
-const SCREEN_WIDTH = Dimensions.get("window").width
-const CARD_WIDTH = SCREEN_WIDTH - spacing.screen * 2
-/** Card travels through horizontal screen padding and fully off-screen. */
-const DISMISS_DISTANCE = SCREEN_WIDTH + spacing.screen * 2
 
-function visibleCardWidth(translateX: number): number {
+function cardWidthForScreen(screenWidth: number): number {
+  return screenWidth - spacing.screen * 2
+}
+
+function dismissDistanceForScreen(screenWidth: number): number {
+  return screenWidth + spacing.screen * 2
+}
+
+function visibleCardWidth(translateX: number, screenWidth: number): number {
+  const cardWidth = cardWidthForScreen(screenWidth)
   const cardLeft = spacing.screen + translateX
-  const cardRight = cardLeft + CARD_WIDTH
+  const cardRight = cardLeft + cardWidth
   const visibleLeft = Math.max(0, cardLeft)
-  const visibleRight = Math.min(SCREEN_WIDTH, cardRight)
+  const visibleRight = Math.min(screenWidth, cardRight)
   return Math.max(0, visibleRight - visibleLeft)
 }
 
-function shouldDismissCard(translateX: number): boolean {
-  return visibleCardWidth(translateX) < CARD_WIDTH * (1 - DISMISS_OFFSCREEN_RATIO)
+function shouldDismissCard(translateX: number, screenWidth: number): boolean {
+  const cardWidth = cardWidthForScreen(screenWidth)
+  return visibleCardWidth(translateX, screenWidth) < cardWidth * (1 - DISMISS_OFFSCREEN_RATIO)
 }
 
 function translateYForDepth(depth: number): number {
@@ -61,7 +76,7 @@ function translateYForDepth(depth: number): number {
 }
 
 export function getNotificationBannerLayoutHeight(): number {
-  return BANNER_SECTION_HEIGHT
+  return FALLBACK_SECTION_HEIGHT + NOTIFICATION_BANNER_BOTTOM_GAP
 }
 
 type BellPoint = { x: number; y: number }
@@ -314,6 +329,7 @@ function SwipeableStackCard({
   isTop,
   hideBell,
   bellRef,
+  screenWidth,
   onDismiss,
   onInteractionChange,
 }: {
@@ -322,6 +338,7 @@ function SwipeableStackCard({
   isTop: boolean
   hideBell?: boolean
   bellRef?: React.RefObject<View | null>
+  screenWidth: number
   onDismiss: () => void
   onInteractionChange?: (active: boolean) => void
 }) {
@@ -330,6 +347,7 @@ function SwipeableStackCard({
   const translateYTarget = translateYForDepth(depth)
   const translateYAnim = useRef(new Animated.Value(translateYTarget)).current
   const dismissing = useRef(false)
+  const dismissDistance = dismissDistanceForScreen(screenWidth)
 
   useEffect(() => {
     Animated.spring(depthAnim, {
@@ -373,11 +391,11 @@ function SwipeableStackCard({
         onPanResponderRelease: (_, g) => {
           if (!isTop) return
           const finish = () => onInteractionChange?.(false)
-          const shouldDismiss = shouldDismissCard(g.dx)
+          const shouldDismiss = shouldDismissCard(g.dx, screenWidth)
           if (shouldDismiss) {
             const direction = g.dx >= 0 ? 1 : -1
             Animated.timing(translateX, {
-              toValue: direction * DISMISS_DISTANCE,
+              toValue: direction * dismissDistance,
               duration: 220,
               useNativeDriver: true,
             }).start(() => {
@@ -403,7 +421,7 @@ function SwipeableStackCard({
           }).start()
         },
       }),
-    [dismiss, isTop, onInteractionChange, translateX],
+    [dismiss, dismissDistance, isTop, onInteractionChange, screenWidth, translateX],
   )
 
   const scaleX = depthAnim.interpolate({
@@ -419,7 +437,7 @@ function SwipeableStackCard({
   })
 
   const topOpacity = translateX.interpolate({
-    inputRange: [-DISMISS_DISTANCE * 0.85, 0, DISMISS_DISTANCE * 0.85],
+    inputRange: [-dismissDistance * 0.85, 0, dismissDistance * 0.85],
     outputRange: [0, 1, 0],
     extrapolate: "clamp",
   })
@@ -450,15 +468,17 @@ function SwipeableStackCard({
 
 export function NotificationBanner({
   isFocused = true,
+  loading = false,
   onScrollLockChange,
 }: {
   isFocused?: boolean
+  loading?: boolean
   onScrollLockChange?: (locked: boolean) => void
 } = {}) {
+  const { width: screenWidth } = useWindowDimensions()
   const [items, setItems] = useState<NotificationItem[]>([])
   const [loaded, setLoaded] = useState(false)
   const [rendered, setRendered] = useState(false)
-  const [collapsing, setCollapsing] = useState(false)
   const [shakeTopBell, setShakeTopBell] = useState(false)
   const [bellFlyPoints, setBellFlyPoints] = useState<{
     origin: BellPoint
@@ -470,7 +490,8 @@ export function NotificationBanner({
   const titleBellTargetRef = useRef<View>(null)
   const sectionHeight = useRef(new Animated.Value(0)).current
   const sectionOpacity = useRef(new Animated.Value(1)).current
-  const sectionMargin = useRef(new Animated.Value(BANNER_BOTTOM_GAP)).current
+  const sectionMargin = useRef(new Animated.Value(NOTIFICATION_BANNER_BOTTOM_GAP)).current
+  const measuredHeightRef = useRef(FALLBACK_SECTION_HEIGHT)
   const isCollapsing = useRef(false)
   const wasVisibleRef = useRef(false)
   const unreadInitializedRef = useRef(false)
@@ -673,17 +694,29 @@ export function NotificationBanner({
   const resetSectionAnimation = useCallback(() => {
     isCollapsing.current = false
     sectionOpacity.setValue(1)
-    sectionMargin.setValue(BANNER_BOTTOM_GAP)
-    sectionHeight.setValue(BANNER_SECTION_HEIGHT)
+    sectionMargin.setValue(NOTIFICATION_BANNER_BOTTOM_GAP)
+    sectionHeight.setValue(measuredHeightRef.current || FALLBACK_SECTION_HEIGHT)
   }, [sectionHeight, sectionMargin, sectionOpacity])
+
+  const handleSectionLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const nextHeight = Math.ceil(event.nativeEvent.layout.height)
+      if (nextHeight <= 0) return
+
+      measuredHeightRef.current = nextHeight
+      if (!isCollapsing.current) {
+        sectionHeight.setValue(nextHeight)
+      }
+    },
+    [sectionHeight],
+  )
 
   const collapseSection = useCallback(
     (item: NotificationItem) => {
       isCollapsing.current = true
-      setCollapsing(true)
       onScrollLockChange?.(false)
 
-      const startHeight = BANNER_SECTION_HEIGHT
+      const startHeight = measuredHeightRef.current || FALLBACK_SECTION_HEIGHT
       sectionHeight.setValue(startHeight)
 
       Animated.parallel([
@@ -705,7 +738,6 @@ export function NotificationBanner({
       ]).start(() => {
         void markRead(item).finally(() => {
           isCollapsing.current = false
-          setCollapsing(false)
           setRendered(false)
         })
       })
@@ -731,7 +763,7 @@ export function NotificationBanner({
     [onScrollLockChange],
   )
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (visible.length > 0) {
       setRendered(true)
       if (!wasVisibleRef.current && !isCollapsing.current) {
@@ -743,7 +775,7 @@ export function NotificationBanner({
     wasVisibleRef.current = false
   }, [visible.length, resetSectionAnimation])
 
-  if (!loaded) {
+  if (loading || !loaded) {
     return <NotificationBannerSkeleton />
   }
 
@@ -756,12 +788,16 @@ export function NotificationBanner({
       style={{
         height: visible.length > 0 || isCollapsing.current ? sectionHeight : 0,
         marginBottom: sectionMargin,
-        overflow: collapsing ? "hidden" : "visible",
-        zIndex: 2,
+        overflow: "visible",
       }}
     >
-      <Animated.View style={{ opacity: sectionOpacity, flex: 1, overflow: "visible" }}>
-        <View ref={sectionInnerRef} style={styles.sectionInner} collapsable={false}>
+      <Animated.View style={{ opacity: sectionOpacity }}>
+        <View
+          ref={sectionInnerRef}
+          style={[styles.sectionInner, styles.sectionInnerMeasure]}
+          collapsable={false}
+          onLayout={handleSectionLayout}
+        >
           <View style={styles.sectionTitleRow}>
             <Text style={styles.sectionTitle}>Notifications</Text>
             <View ref={titleBellTargetRef} collapsable={false} style={styles.titleBellTarget} />
@@ -784,6 +820,7 @@ export function NotificationBanner({
                     isTop={depth === 0}
                     hideBell={shakeTopBell}
                     bellRef={cardBellRef}
+                    screenWidth={screenWidth}
                     onDismiss={() => handleCardDismiss(item)}
                     onInteractionChange={depth === 0 ? handleInteractionChange : undefined}
                   />
@@ -800,9 +837,15 @@ export function NotificationBanner({
 const styles = StyleSheet.create({
   sectionInner: {
     width: "100%",
-    height: BANNER_SECTION_HEIGHT,
-    overflow: "visible",
+    paddingBottom: NOTIFICATION_SECTION_EXTRA_GAP,
+    overflow: "hidden",
     position: "relative",
+  },
+  sectionInnerMeasure: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
   },
   sectionTitleRow: {
     flexDirection: "row",
@@ -825,12 +868,12 @@ const styles = StyleSheet.create({
   },
   swipeStage: {
     marginHorizontal: -spacing.screen,
-    overflow: "visible",
+    overflow: "hidden",
   },
   stack: {
     position: "relative",
     marginHorizontal: spacing.screen,
-    overflow: "visible",
+    overflow: "hidden",
   },
   card: {
     borderRadius: radius.card,

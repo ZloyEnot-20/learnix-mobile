@@ -1,6 +1,11 @@
 import React from "react"
 import { StyleSheet, View } from "react-native"
 import { Skeleton, SkeletonCard } from "../ui/Skeleton"
+import {
+  getNotificationBannerReservedHeight,
+  NOTIFICATION_BANNER_BOTTOM_GAP,
+  NOTIFICATION_STACK_MIN_HEIGHT,
+} from "../notification-banner-layout"
 import { colors, radius, spacing } from "../../theme/tokens"
 
 function HomeworkCardSkeleton() {
@@ -47,10 +52,16 @@ export function HomeworkListSkeleton({ count = 3 }: { count?: number }) {
 }
 
 export function NotificationBannerSkeleton() {
-  const stackHeight = 80 + 2 * 7
-  const sectionHeight = 26 + stackHeight
+  const stackHeight = NOTIFICATION_STACK_MIN_HEIGHT
+  const sectionHeight = getNotificationBannerReservedHeight()
   return (
-    <View style={[styles.section, styles.notificationSection, { height: sectionHeight }]}>
+    <View
+      style={[
+        styles.section,
+        styles.notificationSection,
+        { minHeight: sectionHeight, marginBottom: NOTIFICATION_BANNER_BOTTOM_GAP },
+      ]}
+    >
       <Skeleton width={130} height={18} style={styles.gapSm} />
       <View style={[styles.notificationStack, { height: stackHeight }]}>
         {[2, 1, 0].map((layer) => (
@@ -279,6 +290,25 @@ export function VocabScreenSkeleton() {
   )
 }
 
+export function PodcastScreenSkeleton() {
+  return (
+    <View style={styles.exerciseScreen}>
+      <Skeleton width="55%" height={22} />
+      <Skeleton width="35%" height={12} style={styles.gapSm} />
+      <SkeletonCard style={[styles.gapLg, { alignItems: "center", paddingVertical: 24 }]}>
+        <Skeleton width={56} height={56} borderRadius={28} />
+        <Skeleton width="80%" height={20} style={styles.gapMd} />
+        <Skeleton width="60%" height={14} style={styles.gapSm} />
+      </SkeletonCard>
+      <View style={[styles.gapLg, { alignItems: "center", paddingVertical: 32 }]}>
+        <Skeleton width="100%" height={6} borderRadius={3} />
+        <Skeleton width={72} height={72} borderRadius={36} style={styles.gapMd} />
+        <Skeleton width="70%" height={14} />
+      </View>
+    </View>
+  )
+}
+
 export function NotificationListSkeleton({ count = 5 }: { count?: number }) {
   return (
     <View style={styles.list}>
@@ -453,7 +483,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(107, 114, 128, 0.38)",
   },
-  notificationSection: { marginBottom: spacing.sm },
+  notificationSection: {},
   notificationStack: {
     position: "relative",
     marginBottom: 0,

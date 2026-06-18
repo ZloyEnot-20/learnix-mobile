@@ -26,6 +26,7 @@ import type { GrammarExercise } from "../types/grammar"
 import type { StudentLevel, LeaderboardEntry } from "../types/gamification"
 import type { StudentContextResponse } from "./lesson-schedule"
 import type { VocabDeck, TopicMeta } from "../types/vocabulary"
+import type { PodcastEpisode } from "../types/podcast"
 
 export { peekCached, peekStale, clearApiCache }
 
@@ -36,6 +37,7 @@ const TTL = {
   exercise: 600_000,
   vocab: 600_000,
   vocabDeck: 600_000,
+  podcast: 600_000,
   topics: 300_000,
   studentLevel: 120_000,
   studentContext: 120_000,
@@ -305,6 +307,15 @@ export const exercisesApi = {
       key,
       TTL.vocabDeck,
       () => api.get<VocabDeck>(`/exercises/vocab/${slug}`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  podcast: (slug: string, opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", `/exercises/podcasts/${slug}`)
+    return cachedFetch(
+      key,
+      TTL.podcast,
+      () => api.get<PodcastEpisode>(`/exercises/podcasts/${slug}`),
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },

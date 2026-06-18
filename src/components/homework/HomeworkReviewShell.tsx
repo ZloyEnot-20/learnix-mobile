@@ -18,16 +18,18 @@ const SUBJECT_ICONS: Record<Subject, keyof typeof Ionicons.glyphMap> = {
 interface HomeworkReviewShellProps {
   title: string
   subject?: Subject
+  accentColor?: string
   children: React.ReactNode
 }
 
 export function HomeworkReviewShell({
   title,
   subject = "grammar",
+  accentColor,
   children,
 }: HomeworkReviewShellProps) {
   const router = useRouter()
-  const accent = subjectColors[subject] ?? colors.primary
+  const accent = accentColor ?? subjectColors[subject] ?? colors.primary
   const icon = SUBJECT_ICONS[subject]
   const subjectLabel = subject.charAt(0).toUpperCase() + subject.slice(1)
 

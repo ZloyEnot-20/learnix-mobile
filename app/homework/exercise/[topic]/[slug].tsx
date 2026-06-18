@@ -23,7 +23,11 @@ import { HomeworkSessionShell } from "../../../../src/components/homework/Homewo
 
 import { ExerciseScreenSkeleton } from "../../../../src/components/skeletons/Layouts"
 
-import { isCompletedSubmission, resolveHomeworkSubmission } from "../../../../src/lib/homework-review"
+import { isCompletedSubmission } from "../../../../src/lib/homework-review"
+import {
+  resolveHomeworkSessionStart,
+  resumeHomeworkSession,
+} from "../../../../src/lib/homework-session-start"
 import { recordHomeworkExercise } from "../../../../src/lib/record-activity"
 import {
   isHomeworkEntryFailed,
@@ -107,11 +111,28 @@ export default function HomeworkExerciseScreen() {
 
   const [alreadyFailed, setAlreadyFailed] = useState(false)
 
+  const [pendingSuspicious, setPendingSuspicious] = useState(false)
+
   const handleEntryResult = useCallback((sub: HomeworkSubmission | null) => {
     if (isHomeworkEntryFailed(sub)) setAlreadyFailed(true)
   }, [])
 
   useHomeworkEntryOnFocus(homeworkId, !!studentId, handleEntryResult)
+
+  const handleSuspiciousDismissed = useCallback(async () => {
+    if (!homeworkId || !studentId) return
+
+    setPendingSuspicious(false)
+
+    const sub = await resumeHomeworkSession(homeworkId)
+    if (!sub) return
+
+    setElapsedSeconds(sub.elapsedSeconds ?? 0)
+    setPauseUsed(sub.pauseUsed ?? false)
+    setSessionStartedAt(
+      sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
+    )
+  }, [homeworkId, studentId])
 
   useRetryWhenOffline(awaitingNetwork, () => setReloadKey((key) => key + 1))
 
@@ -132,19 +153,21 @@ export default function HomeworkExerciseScreen() {
 
       try {
 
-        const [ex, hwData, subRaw] = await Promise.all([
+        const [ex, hwData, sessionStart] = await Promise.all([
 
           exercisesApi.get(slug),
 
           homeworkApi.get(homeworkId).catch(() => null),
 
-          studentId ? homeworkApi.start(homeworkId, { force: true, skipEntryCount: true }).catch(() => null) : Promise.resolve(null),
+          studentId ? resolveHomeworkSessionStart(homeworkId) : Promise.resolve(null),
 
         ])
 
         if (cancelled) return
 
-        const sub = studentId ? resolveHomeworkSubmission(homeworkId, subRaw) : null
+        const sub = studentId ? sessionStart?.sub ?? null : null
+
+        const needsSuspiciousAck = sessionStart?.needsSuspiciousAck ?? false
 
 
 
@@ -217,6 +240,8 @@ export default function HomeworkExerciseScreen() {
 
 
         setAwaitingNetwork(false)
+
+        setPendingSuspicious(needsSuspiciousAck)
 
         setElapsedSeconds(sub?.elapsedSeconds ?? 0)
 
@@ -320,6 +345,10 @@ export default function HomeworkExerciseScreen() {
             active={sessionReady && !alreadyFailed}
 
             pauseUsed={pauseUsed}
+
+            initialSuspicious={pendingSuspicious}
+
+            onSuspiciousDismissed={handleSuspiciousDismissed}
 
             title={exercise.title}
 

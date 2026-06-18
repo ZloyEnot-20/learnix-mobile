@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AppState, BackHandler, type AppStateStatus } from "react-native"
+import { useNavigation } from "expo-router"
 import { homeworkApi } from "../lib/api"
 import { API_URL } from "../lib/api-client"
 import {
@@ -31,9 +32,11 @@ export function useHomeworkIntegrity(
   active: boolean,
   initialPauseUsed: boolean,
   onPaused: () => void,
+  initialSuspicious = false,
 ): HomeworkIntegrityState {
+  const navigation = useNavigation()
   const [failed, setFailed] = useState(false)
-  const [suspicious, setSuspicious] = useState(false)
+  const [suspicious, setSuspicious] = useState(initialSuspicious)
   const [pauseUsed, setPauseUsed] = useState(initialPauseUsed)
   const [integrityStatus, setIntegrityStatus] = useState<IntegrityStatus | null>(null)
 
@@ -42,11 +45,25 @@ export function useHomeworkIntegrity(
   const wasOnlineRef = useRef(false)
   const appStateRef = useRef<AppStateStatus>(AppState.currentState)
   const backgroundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const backgroundStartedAtRef = useRef<number | null>(null)
   const monitoringReadyAtRef = useRef(0)
+  const allowLeaveRef = useRef(false)
+  const leaveSessionRef = useRef<(reason: ViolationReason) => Promise<void>>(async () => {})
+
+  const shouldMonitorRef = useRef<() => boolean>(() => false)
+  shouldMonitorRef.current = () => {
+    if (!homeworkId || !active || failed || suspicious) return false
+    if (!isActiveHomeworkIntegritySession(homeworkId)) return false
+    return Date.now() >= monitoringReadyAtRef.current
+  }
 
   useEffect(() => {
     setPauseUsed(initialPauseUsed)
   }, [initialPauseUsed])
+
+  useEffect(() => {
+    if (initialSuspicious) setSuspicious(true)
+  }, [initialSuspicious])
 
   useEffect(() => {
     if (!homeworkId || !active) return
@@ -81,12 +98,14 @@ export function useHomeworkIntegrity(
           setIntegrityStatus("cheating_suspicion")
           setSuspicious(true)
         } else {
+          allowLeaveRef.current = true
           onPaused()
         }
       } catch {
         if (opts?.fromViolation) {
           setSuspicious(true)
         } else {
+          allowLeaveRef.current = true
           onPaused()
         }
       } finally {
@@ -110,9 +129,16 @@ export function useHomeworkIntegrity(
         if (res.integrityStatus) setIntegrityStatus(res.integrityStatus)
         if (res.pauseUsed) setPauseUsed(true)
 
+        if (res.action === "warn") {
+          setIntegrityStatus("cheating_suspicion")
+          setSuspicious(true)
+          return
+        }
+
         if (res.action === "pause" || res.action === "paused") {
           setIntegrityStatus("cheating_suspicion")
           setSuspicious(true)
+          if (res.pauseUsed) setPauseUsed(true)
           return
         }
 
@@ -121,13 +147,18 @@ export function useHomeworkIntegrity(
           setIntegrityStatus(res.integrityStatus ?? "cheating_detected")
         }
       } catch {
-        // Keep monitoring active if the violation could not be recorded.
+        if (reason === "app_background" || reason === "navigation") {
+          setIntegrityStatus("cheating_suspicion")
+          setSuspicious(true)
+        }
       } finally {
         processingRef.current = false
       }
     },
     [homeworkId, canMonitor],
   )
+
+  leaveSessionRef.current = leaveSession
 
   const clearBackgroundTimer = useCallback(() => {
     if (backgroundTimerRef.current != null) {
@@ -147,34 +178,75 @@ export function useHomeworkIntegrity(
   }, [canMonitor, leaveSession])
 
   useEffect(() => {
-    if (!canMonitor()) {
+    if (!homeworkId || !active || failed || suspicious) return
+
+    const unsubscribe = navigation.addListener("beforeRemove", (e) => {
+      if (allowLeaveRef.current) return
+      if (!isActiveHomeworkIntegritySession(homeworkId)) return
+      if (Date.now() < monitoringReadyAtRef.current) return
+
+      e.preventDefault()
+      void leaveSession("navigation")
+    })
+
+    return unsubscribe
+  }, [navigation, homeworkId, active, failed, suspicious, leaveSession])
+
+  useEffect(() => {
+    if (!homeworkId || !active || failed || suspicious) {
       clearBackgroundTimer()
+      backgroundStartedAtRef.current = null
       return
+    }
+
+    const maybeRecordBackgroundStart = () => {
+      if (backgroundStartedAtRef.current != null) return
+      if (!shouldMonitorRef.current()) return
+      backgroundStartedAtRef.current = Date.now()
+    }
+
+    const maybeHandleBackgroundReturn = () => {
+      clearBackgroundTimer()
+      const startedAt = backgroundStartedAtRef.current
+      backgroundStartedAtRef.current = null
+      if (startedAt == null) return
+      if (Date.now() - startedAt < BACKGROUND_FAIL_THRESHOLD_MS) return
+      if (!shouldMonitorRef.current()) return
+      void leaveSessionRef.current("app_background")
     }
 
     const scheduleBackgroundCheck = () => {
       clearBackgroundTimer()
       backgroundTimerRef.current = setTimeout(() => {
-        if (!canMonitor()) return
-        if (isBackgroundState(AppState.currentState)) {
-          void leaveSession("app_background")
-        }
+        if (backgroundStartedAtRef.current == null) return
+        if (Date.now() - backgroundStartedAtRef.current < BACKGROUND_FAIL_THRESHOLD_MS) return
+        if (!isBackgroundState(AppState.currentState)) return
+        if (!shouldMonitorRef.current()) return
+        backgroundStartedAtRef.current = null
+        void leaveSessionRef.current("app_background")
       }, BACKGROUND_FAIL_THRESHOLD_MS)
+    }
+
+    appStateRef.current = AppState.currentState
+
+    // If the app was already backgrounded when monitoring started, begin tracking immediately.
+    if (isBackgroundState(AppState.currentState)) {
+      maybeRecordBackgroundStart()
+      scheduleBackgroundCheck()
     }
 
     const sub = AppState.addEventListener("change", (next) => {
       const prev = appStateRef.current
       appStateRef.current = next
 
-      if (!canMonitor()) return
-
-      if (prev === "active" && isBackgroundState(next)) {
-        scheduleBackgroundCheck()
+      if (next === "active" && isBackgroundState(prev)) {
+        maybeHandleBackgroundReturn()
         return
       }
 
-      if (next === "active") {
-        clearBackgroundTimer()
+      if (isBackgroundState(next) && prev === "active") {
+        maybeRecordBackgroundStart()
+        scheduleBackgroundCheck()
       }
     })
 
@@ -182,7 +254,7 @@ export function useHomeworkIntegrity(
       sub.remove()
       clearBackgroundTimer()
     }
-  }, [canMonitor, leaveSession, clearBackgroundTimer])
+  }, [homeworkId, active, failed, suspicious, clearBackgroundTimer])
 
   useEffect(() => {
     if (!canMonitor()) return

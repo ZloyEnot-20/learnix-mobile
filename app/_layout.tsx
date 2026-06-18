@@ -20,7 +20,6 @@ export default function RootLayout() {
         <Stack.Screen name="exercise/[topic]/[slug]" />
         <Stack.Screen name="vocabulary/[deck]" />
         <Stack.Screen name="vocabulary/review" />
-        <Stack.Screen name="games/[level]" />
         <Stack.Screen name="exercises/[topic]" />
       </Stack>
     </AuthProvider>

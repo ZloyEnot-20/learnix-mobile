@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import {
-  formatLessonSchedule,
-  getNextLessonStart,
-  isDuringLesson,
-  splitCountdown,
-  type LessonSchedule,
-} from "../lib/lesson-schedule"
+import { formatLessonScheduleTime, getNextLessonStart, hasValidLessonSchedule, isDuringLesson, splitCountdown, type LessonSchedule } from "../lib/lesson-schedule"
 
 export function useLessonCountdown(schedule: LessonSchedule | null) {
   const [now, setNow] = useState(() => new Date())
@@ -16,7 +10,7 @@ export function useLessonCountdown(schedule: LessonSchedule | null) {
     return () => clearInterval(timer)
   }, [schedule])
 
-  const scheduleLabel = useMemo(() => formatLessonSchedule(schedule), [schedule])
+  const scheduleTime = useMemo(() => formatLessonScheduleTime(schedule), [schedule])
   const duringLesson = useMemo(
     () => (schedule ? isDuringLesson(schedule, now) : false),
     [schedule, now],
@@ -27,13 +21,13 @@ export function useLessonCountdown(schedule: LessonSchedule | null) {
   )
   const countdownMs = nextStart ? Math.max(0, nextStart.getTime() - now.getTime()) : 0
   const countdown = splitCountdown(countdownMs)
-  const hasSchedule = Boolean(schedule && scheduleLabel)
+  const hasSchedule = hasValidLessonSchedule(schedule)
 
   return {
     duringLesson,
     countdown,
     countdownMs,
-    scheduleLabel,
+    scheduleTime,
     hasSchedule,
   }
 }

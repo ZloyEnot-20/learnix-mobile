@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { pickRandomLessonPhrase, type LessonSchedule } from "../lib/lesson-schedule"
 import { useLessonCountdown } from "../hooks/useLessonCountdown"
 import { LessonCountdownText } from "./LessonCountdownText"
+import { LessonScheduleDisplay } from "./LessonScheduleDisplay"
 import { colors, radius, shadow, spacing, typography } from "../theme/tokens"
 import { Skeleton } from "./ui/Skeleton"
 
@@ -18,7 +19,7 @@ interface NextLessonBannerProps {
 export function NextLessonBanner({ schedule, loading, onLayout }: NextLessonBannerProps) {
   const [activePhrase, setActivePhrase] = useState(() => pickRandomLessonPhrase())
   const wasDuringLesson = useRef(false)
-  const { duringLesson, countdownMs, scheduleLabel, hasSchedule } = useLessonCountdown(schedule)
+  const { duringLesson, countdownMs, hasSchedule } = useLessonCountdown(schedule)
 
   useEffect(() => {
     if (duringLesson && !wasDuringLesson.current) {
@@ -71,7 +72,7 @@ export function NextLessonBanner({ schedule, loading, onLayout }: NextLessonBann
             prefix="Next lesson in "
             primaryStyle={styles.title}
           />
-          <Text style={styles.subtitle}>{scheduleLabel}</Text>
+          <LessonScheduleDisplay schedule={schedule} size="xs" style={styles.subtitleSchedule} />
         </View>
       </View>
     </View>
@@ -109,6 +110,9 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  subtitleSchedule: {
+    marginTop: 4,
   },
   gapSm: { marginTop: spacing.sm },
 })

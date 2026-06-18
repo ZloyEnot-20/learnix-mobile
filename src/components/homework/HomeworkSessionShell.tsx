@@ -11,6 +11,8 @@ interface HomeworkSessionShellProps {
   homeworkId: string
   active: boolean
   pauseUsed: boolean
+  initialSuspicious?: boolean
+  onSuspiciousDismissed?: () => void | Promise<void>
   title?: string
   children: React.ReactNode
 }
@@ -29,6 +31,8 @@ export function HomeworkSessionShell({
   homeworkId,
   active,
   pauseUsed,
+  initialSuspicious = false,
+  onSuspiciousDismissed,
   children,
 }: HomeworkSessionShellProps) {
   const { allowScreenshots, loaded } = useOrgSettings()
@@ -48,7 +52,18 @@ export function HomeworkSessionShell({
     router.back()
   }, [router])
 
-  const integrity = useHomeworkIntegrity(homeworkId, active, pauseUsed, handlePaused)
+  const integrity = useHomeworkIntegrity(
+    homeworkId,
+    active,
+    pauseUsed,
+    handlePaused,
+    initialSuspicious,
+  )
+
+  const handleDismissSuspicious = React.useCallback(() => {
+    integrity.dismissSuspicious()
+    void onSuspiciousDismissed?.()
+  }, [integrity.dismissSuspicious, onSuspiciousDismissed])
 
   const confirmPause = React.useCallback(() => {
     Alert.alert(
@@ -66,7 +81,13 @@ export function HomeworkSessionShell({
   }
 
   if (integrity.suspicious) {
-    return <HomeworkSuspiciousActivity onDismiss={integrity.dismissSuspicious} />
+    return (
+      <HomeworkSuspiciousActivity
+        onContinue={handleDismissSuspicious}
+        onPause={() => void integrity.pauseSession()}
+        pauseAvailable={!integrity.pauseUsed}
+      />
+    )
   }
 
   return (

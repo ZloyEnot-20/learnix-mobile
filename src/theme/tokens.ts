@@ -99,7 +99,7 @@ export const subjectColors: Record<string, string> = {
   reading: "#93C5FD",
   listening: "#FCD34D",
   writing: "#86EFAC",
-  speaking: "#7DD3FC",
+  speaking: "#01AEF9",
   grammar: "#FDBA74",
   vocabulary: "#C4B5FD",
 }

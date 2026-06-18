@@ -9,7 +9,7 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { formatDue, dateGroupLabel, formatShortDate, scoreColor } from "../lib/utils"
-import type { IntegrityStatus } from "../types/domain"
+import type { IntegrityStatus, PodcastListeningStats } from "../types/domain"
 import { colors, radius, shadow, spacing, typography, subjectColors } from "../theme/tokens"
 import { FadeInDown } from "./ui/FadeInDown"
 import { HighlightPulse } from "./ui/HighlightPulse"
@@ -35,8 +35,10 @@ export interface HomeworkItem {
   route?: string
   correctCount?: number
   totalQuestions?: number
+  listeningStats?: PodcastListeningStats
+  reviewedWords?: string[]
   /** Multi-section unit test (control work). */
-  kind?: "homework" | "control_work"
+  kind?: "homework" | "control_work" | "podcast"
   sectionDone?: number
   sectionTotal?: number
 }
@@ -62,11 +64,29 @@ function statusFor(hw: HomeworkItem) {
   return STATUS_META[hw.status]
 }
 
-function subjectName(subject: Subject): string {
-  return subject.charAt(0).toUpperCase() + subject.slice(1)
+function isPodcastItem(hw: HomeworkItem): boolean {
+  return hw.kind === "podcast" || hw.subject === "listening" || !!hw.listeningStats
+}
+
+function subjectName(hw: HomeworkItem): string {
+  if (isPodcastItem(hw)) return "Podcast"
+  return hw.subject.charAt(0).toUpperCase() + hw.subject.slice(1)
+}
+
+function homeworkIcon(hw: HomeworkItem): keyof typeof Ionicons.glyphMap {
+  if (isPodcastItem(hw)) return "headset-outline"
+  return SUBJECT_ICONS[hw.subject]
+}
+
+function homeworkAccent(hw: HomeworkItem): string {
+  if (isPodcastItem(hw)) return colors.success
+  return subjectColors[hw.subject] ?? colors.textSecondary
 }
 
 function homeworkScore(hw: HomeworkItem): { percent: number; correct: number; total: number } | null {
+  if (hw.subject === "listening" && hw.listeningStats) {
+    return null
+  }
   if (hw.correctCount != null && hw.totalQuestions != null && hw.totalQuestions > 0) {
     return {
       percent: Math.round((hw.correctCount / hw.totalQuestions) * 100),
@@ -90,10 +110,12 @@ function isInteractive(hw: HomeworkItem): boolean {
 
 function HomeworkHistoryCard({ hw }: { hw: HomeworkItem }) {
   const router = useRouter()
-  const icon = SUBJECT_ICONS[hw.subject]
-  const accent = subjectColors[hw.subject] ?? colors.textSecondary
+  const icon = homeworkIcon(hw)
+  const accent = homeworkAccent(hw)
   const score = homeworkScore(hw)
   const dateLabel = hw.completedAt ? formatShortDate(hw.completedAt) : null
+  const podcast = isPodcastItem(hw) && !hw.failedCheating
+  const reviewedWords = hw.reviewedWords ?? []
 
   const interactive = isInteractive(hw)
   const label = actionLabel(hw, true)
@@ -122,7 +144,7 @@ function HomeworkHistoryCard({ hw }: { hw: HomeworkItem }) {
             {hw.title}
           </Text>
           <View style={styles.historyMeta}>
-            <Text style={[styles.historySubject, { color: accent }]}>{subjectName(hw.subject)}</Text>
+            <Text style={[styles.historySubject, { color: accent }]}>{subjectName(hw)}</Text>
             <Text style={styles.historyDot}>·</Text>
             <Ionicons name="checkmark" size={12} color={colors.success} />
             {dateLabel ? <Text style={styles.historyDate}>{dateLabel}</Text> : null}
@@ -132,6 +154,8 @@ function HomeworkHistoryCard({ hw }: { hw: HomeworkItem }) {
         <View style={styles.historyScoreCol}>
           {hw.failedCheating ? (
             <Text style={[styles.historyPercent, { color: colors.error }]}>Failed</Text>
+          ) : podcast ? (
+            <Text style={[styles.historyComplete, { color: colors.success }]}>Complete</Text>
           ) : score ? (
             <>
               <Text style={[styles.historyPercent, { color: scoreColor(score.percent) }]}>
@@ -144,6 +168,18 @@ function HomeworkHistoryCard({ hw }: { hw: HomeworkItem }) {
           ) : null}
         </View>
       </View>
+
+      {podcast && reviewedWords.length > 0 ? (
+        <View style={styles.reviewedWords}>
+          {reviewedWords.map((word, i) => (
+            <View key={`${word}-${i}`} style={styles.reviewedWordChip}>
+              <Text style={styles.reviewedWordText} numberOfLines={1}>
+                {word}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       {label ? (
         <View style={styles.cardAction}>
@@ -171,8 +207,8 @@ function HomeworkCard({ hw, isNew }: { hw: HomeworkItem; isNew?: boolean }) {
   const due = formatDue(hw.dueAt, hw.status)
   const status = statusFor(hw)
   const isCompleted = hw.status === "completed" || !!hw.failedCheating
-  const icon = SUBJECT_ICONS[hw.subject]
-  const accent = subjectColors[hw.subject] ?? colors.textSecondary
+  const icon = homeworkIcon(hw)
+  const accent = homeworkAccent(hw)
 
   const completedLabel =
     isCompleted && hw.completedAt
@@ -665,6 +701,30 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     lineHeight: 22,
+  },
+  historyComplete: {
+    fontSize: 13,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  reviewedWords: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    paddingTop: 2,
+  },
+  reviewedWordChip: {
+    backgroundColor: colors.successBg,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    maxWidth: "100%",
+  },
+  reviewedWordText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: colors.success,
   },
   historyFraction: {
     fontSize: 11,

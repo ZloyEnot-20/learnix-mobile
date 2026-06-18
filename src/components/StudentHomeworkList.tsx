@@ -9,6 +9,7 @@ import {
 import { HomeworkSection, type HomeworkItem } from "./HomeworkSection"
 import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
+import { parsePodcastHomeworkSlug, podcastWordLabel, type PodcastEpisode } from "../types/podcast"
 import type { GrammarExercise } from "../types/grammar"
 import type { StudentHomeworkEntry, StudentControlWorkEntry } from "../types/domain"
 import { colors, spacing } from "../theme/tokens"
@@ -21,9 +22,24 @@ const STATUS_ORDER: Record<Status, number> = {
   completed: 2,
 }
 
+async function fetchPodcastsBySlug(slugs: string[]): Promise<Map<string, PodcastEpisode>> {
+  const map = new Map<string, PodcastEpisode>()
+  if (slugs.length === 0) return map
+
+  await Promise.all(
+    slugs.map(async (slug) => {
+      const episode = await exercisesApi.podcast(slug).catch(() => null)
+      if (episode) map.set(slug, episode)
+    }),
+  )
+
+  return map
+}
+
 function mapHomeworkItems(
   entries: StudentHomeworkEntry[],
   exList: GrammarExercise[],
+  podcastsBySlug: Map<string, PodcastEpisode>,
 ): HomeworkItem[] {
   const exerciseBySlug = new Map(exList.map((e) => [e.slug, e]))
 
@@ -40,6 +56,7 @@ function mapHomeworkItems(
           : "pending"
 
     let route: string | undefined
+    let kind: HomeworkItem["kind"] = "homework"
     if (!failedCheating) {
       if (
         (homework.subject === "grammar" || homework.subject === "speaking") &&
@@ -50,6 +67,25 @@ function mapHomeworkItems(
       } else if (homework.subject === "vocabulary") {
         const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
         if (deckSlug) route = `/homework/vocabulary/${deckSlug}?hw=${homework.id}`
+      } else if (homework.subject === "listening") {
+        const podcastSlug = parsePodcastHomeworkSlug(homework.exerciseSlug)
+        if (podcastSlug) {
+          route = `/homework/podcast/${podcastSlug}?hw=${homework.id}`
+        }
+        kind = "podcast"
+      }
+    }
+
+    const podcastSlug = parsePodcastHomeworkSlug(homework.exerciseSlug)
+    const wordsReviewed = submission.attempt?.listeningStats?.wordsReviewed ?? 0
+    let reviewedWords: string[] | undefined
+    if (podcastSlug && wordsReviewed > 0) {
+      const episode = podcastsBySlug.get(podcastSlug)
+      if (episode) {
+        reviewedWords = episode.words
+          .slice(0, wordsReviewed)
+          .map(podcastWordLabel)
+          .filter(Boolean)
       }
     }
 
@@ -68,8 +104,11 @@ function mapHomeworkItems(
       paused: submission.status === "paused",
       pauseUsed: submission.pauseUsed,
       route,
+      kind: kind === "podcast" ? "podcast" : undefined,
       correctCount: submission.attempt?.correctCount,
       totalQuestions: submission.attempt?.totalQuestions,
+      listeningStats: submission.attempt?.listeningStats,
+      reviewedWords,
     }
   })
 
@@ -122,9 +161,10 @@ function mergeHomeworkItems(
   homeworkEntries: StudentHomeworkEntry[],
   controlEntries: StudentControlWorkEntry[],
   exList: GrammarExercise[],
+  podcastsBySlug: Map<string, PodcastEpisode>,
 ): HomeworkItem[] {
   const mapped = [
-    ...mapHomeworkItems(homeworkEntries, exList),
+    ...mapHomeworkItems(homeworkEntries, exList, podcastsBySlug),
     ...mapControlWorkItems(controlEntries),
   ]
   mapped.sort((a, b) => {
@@ -157,7 +197,16 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
           exercisesApi.list(),
         ])
 
-        const mapped = mergeHomeworkItems(entries, controlEntries, exList)
+        const podcastSlugs = [
+          ...new Set(
+            entries
+              .map((entry) => parsePodcastHomeworkSlug(entry.homework.exerciseSlug))
+              .filter((slug): slug is string => !!slug),
+          ),
+        ]
+        const podcastsBySlug = await fetchPodcastsBySlug(podcastSlugs)
+
+        const mapped = mergeHomeworkItems(entries, controlEntries, exList, podcastsBySlug)
 
         if (opts?.background && itemsRef.current) {
           const prevIds = new Set(itemsRef.current.map((i) => i.id))

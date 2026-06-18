@@ -173,49 +173,94 @@ export function HomeworkMistakeCard({
   )
 }
 
-interface HomeworkExerciseLayoutProps {
-  index: number
-  total: number
-  instruction: string
+interface HomeworkExerciseLayoutBaseProps {
   footer: React.ReactNode
   children: React.ReactNode
   style?: StyleProp<ViewStyle>
+  scrollable?: boolean
+  keyboardOffset?: number
 }
 
-export function HomeworkExerciseLayout({
-  index,
-  total,
-  instruction,
-  footer,
-  children,
-  style,
-}: HomeworkExerciseLayoutProps) {
+interface HomeworkExerciseLayoutIndexedProps extends HomeworkExerciseLayoutBaseProps {
+  index: number
+  total: number
+  instruction: string
+  progress?: never
+}
+
+interface HomeworkExerciseLayoutProgressProps extends HomeworkExerciseLayoutBaseProps {
+  progress: number
+  instruction?: string
+  index?: never
+  total?: never
+}
+
+export type HomeworkExerciseLayoutProps =
+  | HomeworkExerciseLayoutIndexedProps
+  | HomeworkExerciseLayoutProgressProps
+
+function resolveHomeworkProgress(props: HomeworkExerciseLayoutProps): number {
+  if ("progress" in props && typeof props.progress === "number") {
+    return Math.min(100, Math.round(props.progress))
+  }
+
+  const { index, total } = props as HomeworkExerciseLayoutIndexedProps
+  if (total > 0) {
+    return Math.min(100, Math.round((index / total) * 100))
+  }
+  return 0
+}
+
+export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
+  const {
+    footer,
+    children,
+    style,
+    scrollable = true,
+    keyboardOffset = 0,
+  } = props
+
   const insets = useSafeAreaInsets()
   const keyboardHeight = useKeyboardHeight()
-  const progress = total > 0 ? Math.min(100, Math.round((index / total) * 100)) : 0
+  const progress = resolveHomeworkProgress(props)
+  const instruction = "instruction" in props ? props.instruction : undefined
   const footerPaddingBottom =
-    keyboardHeight > 0 ? keyboardHeight + spacing.sm : Math.max(insets.bottom, spacing.md)
+    keyboardHeight > 0
+      ? keyboardHeight + spacing.sm + keyboardOffset
+      : Math.max(insets.bottom, spacing.md) + keyboardOffset
+
+  const body = (
+    <Pressable onPress={Keyboard.dismiss} style={scrollable ? undefined : styles.bodyFill}>
+      {children}
+    </Pressable>
+  )
 
   return (
     <View style={[styles.root, style]}>
       <HomeworkTopBar progress={progress} />
 
-      <Pressable onPress={Keyboard.dismiss} style={styles.instructionRow}>
-        <View style={styles.instructionIcon}>
-          <Text style={styles.instructionMark}>?</Text>
-        </View>
-        <Text style={styles.instructionText}>{instruction}</Text>
-      </Pressable>
+      {instruction ? (
+        <Pressable onPress={Keyboard.dismiss} style={styles.instructionRow}>
+          <View style={styles.instructionIcon}>
+            <Text style={styles.instructionMark}>?</Text>
+          </View>
+          <Text style={styles.instructionText}>{instruction}</Text>
+        </Pressable>
+      ) : null}
 
-      <ScrollView
-        style={styles.body}
-        contentContainerStyle={styles.bodyContent}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        onScrollBeginDrag={Keyboard.dismiss}
-      >
-        <Pressable onPress={Keyboard.dismiss}>{children}</Pressable>
-      </ScrollView>
+      {scrollable ? (
+        <ScrollView
+          style={styles.body}
+          contentContainerStyle={styles.bodyContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          onScrollBeginDrag={Keyboard.dismiss}
+        >
+          {body}
+        </ScrollView>
+      ) : (
+        <View style={[styles.body, styles.bodyContent, styles.bodyFill]}>{body}</View>
+      )}
 
       <View style={[styles.footer, { paddingBottom: footerPaddingBottom }]}>
         {footer}
@@ -370,6 +415,9 @@ const styles = StyleSheet.create({
   },
   bodyContent: {
     flexGrow: 1,
+  },
+  bodyFill: {
+    flex: 1,
   },
   footer: {
     paddingHorizontal: spacing.screen,

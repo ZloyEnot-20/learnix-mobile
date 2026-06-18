@@ -30,7 +30,11 @@ import {
 import { clearImageCache } from "../../src/lib/image-cache"
 import type { StudentLevel } from "../../src/types/gamification"
 import { colors, radius, shadow, spacing } from "../../src/theme/tokens"
-import { formatLessonSchedule, normalizeLessonSchedule, type LessonSchedule } from "../../src/lib/lesson-schedule"
+import {
+  formatLessonSchedule,
+  normalizeLessonSchedule,
+  type LessonSchedule,
+} from "../../src/lib/lesson-schedule"
 import {
   getProfileScreenSnapshot,
   resolveProfileBootstrap,
@@ -208,6 +212,14 @@ function ProfileHeaderIdentity({
         {name}
       </Text>
     </Animated.View>
+  )
+}
+
+function ClassInfoIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
+  return (
+    <View style={styles.classInfoIconSlot}>
+      <Ionicons name={name} size={14} color={colors.textSecondary} />
+    </View>
   )
 }
 
@@ -533,8 +545,6 @@ export default function ProfileScreen() {
 
   if (!user) return null
 
-  const scheduleLabel = formatLessonSchedule(lessonSchedule)
-
   const settingsItems: SettingsItem[] = [
     {
       id: "notifications",
@@ -674,19 +684,21 @@ export default function ProfileScreen() {
                 {groupName ? (
                   <>
                     <View style={styles.classInfoRow}>
-                      <Ionicons name="people-outline" size={14} color={colors.textSecondary} />
+                      <ClassInfoIcon name="people-outline" />
                       <Text style={styles.classInfoText}>{groupName}</Text>
                     </View>
                     {teacherName ? (
                       <View style={styles.classInfoRow}>
-                        <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
+                        <ClassInfoIcon name="person-outline" />
                         <Text style={styles.classInfoText}>{teacherName}</Text>
                       </View>
                     ) : null}
-                    {scheduleLabel ? (
+                    {lessonSchedule ? (
                       <View style={styles.classInfoRow}>
-                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                        <Text style={styles.classInfoText}>{scheduleLabel}</Text>
+                        <ClassInfoIcon name="time-outline" />
+                        <Text style={styles.classInfoText}>
+                          {formatLessonSchedule(lessonSchedule)}
+                        </Text>
                       </View>
                     ) : (
                       <Text style={styles.classInfoMuted}>No lesson schedule yet</Text>
@@ -780,22 +792,32 @@ const styles = StyleSheet.create({
   name: { fontSize: 20, fontWeight: "700", color: colors.text, marginTop: 10 },
   email: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   classInfo: {
-    alignSelf: "stretch",
+    alignSelf: "center",
     alignItems: "center",
+    maxWidth: "100%",
     marginTop: spacing.md,
     gap: 6,
   },
   classInfoRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
+    alignSelf: "center",
+    gap: 8,
     maxWidth: "100%",
   },
+  classInfoIconSlot: {
+    width: 16,
+    height: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   classInfoText: {
+    flexShrink: 1,
     fontSize: 13,
+    lineHeight: 18,
     color: colors.textSecondary,
     textAlign: "center",
-    flexShrink: 1,
   },
   classInfoMuted: {
     fontSize: 13,
