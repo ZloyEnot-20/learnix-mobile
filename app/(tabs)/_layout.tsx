@@ -1,5 +1,5 @@
 import { Tabs, Redirect } from "expo-router"
-import { View, StyleSheet } from "react-native"
+import { View, StyleSheet, Text, useWindowDimensions } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
@@ -21,6 +21,20 @@ type TabIcon = keyof typeof Ionicons.glyphMap
 function tabIcon(outline: TabIcon, filled: TabIcon) {
   return ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
     <Ionicons name={focused ? filled : outline} size={size} color={color} />
+  )
+}
+
+const TAB_COUNT = 5
+
+function LeaderboardTabLabel({ color }: { color: string }) {
+  const { width } = useWindowDimensions()
+  const tabWidth = width / TAB_COUNT
+  const marginHorizontal = Math.min(0, (tabWidth - 78) / 2)
+
+  return (
+    <View style={[styles.leaderboardTabLabelWrap, { marginHorizontal }]}>
+      <Text style={[styles.leaderboardTabLabel, { color }]}>Leaderboard</Text>
+    </View>
   )
 }
 
@@ -53,14 +67,15 @@ export default function TabsLayout() {
           paddingBottom: tabBarPaddingBottom,
           paddingTop: 8,
           height: tabBarHeight,
+          overflow: "visible",
         },
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: "600",
-          letterSpacing: -0.2,
         },
         tabBarItemStyle: {
           paddingHorizontal: 0,
+          overflow: "visible",
         },
         headerStyle: { backgroundColor: colors.background },
         headerTitle: () => null,
@@ -94,6 +109,7 @@ export default function TabsLayout() {
         options={{
           title: "Leaderboard",
           tabBarIcon: tabIcon("trophy-outline", "trophy"),
+          tabBarLabel: ({ color }) => <LeaderboardTabLabel color={color} />,
         }}
       />
       <Tabs.Screen
@@ -109,4 +125,15 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   headerRight: { marginRight: spacing.screen },
+  leaderboardTabLabelWrap: {
+    overflow: "visible",
+    alignItems: "center",
+    zIndex: 1,
+  },
+  leaderboardTabLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+    letterSpacing: -0.3,
+  },
 })
