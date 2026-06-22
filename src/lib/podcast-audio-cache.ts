@@ -165,6 +165,11 @@ class PodcastAudioDownloadManager {
     this.active = false
   }
 
+  cancel(): void {
+    this.cancelDownload()
+    this.active = false
+  }
+
   private snapshot(): PodcastDownloadSnapshot {
     const audioFile = cachedAudioFile(this.url)
     const fullyCached =
@@ -441,6 +446,31 @@ export function releasePodcastAudioDownloadManager(url: string): void {
   if (!manager) return
   manager.dispose()
   managers.delete(url)
+}
+
+export function getPodcastAudioCacheSizeBytes(): number {
+  const dir = new Directory(Paths.cache, CACHE_DIR_NAME)
+  if (!dir.exists) return 0
+  return dir.size ?? 0
+}
+
+export function clearPodcastAudioCache(): void {
+  for (const manager of managers.values()) {
+    manager.cancel()
+    manager.dispose()
+  }
+  managers.clear()
+
+  const dir = new Directory(Paths.cache, CACHE_DIR_NAME)
+  if (dir.exists) dir.delete()
+}
+
+export function prefetchPodcastAudio(urls: string[]): void {
+  const remote = urls.filter((url) => /^https?:\/\//i.test(url))
+  for (const url of remote) {
+    const manager = getPodcastAudioDownloadManager(url)
+    manager.start()
+  }
 }
 
 export function isSecondsBuffered(

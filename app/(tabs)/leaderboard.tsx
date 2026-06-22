@@ -9,12 +9,14 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect } from "expo-router"
 import { useAuth } from "../../src/context/AuthContext"
+import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
+import { isGuestUser } from "../../src/lib/guest"
 import { LeaderboardPodium } from "../../src/components/LeaderboardPodium"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
 import { TierBadge } from "../../src/components/TierBadge"
 import { LeaderboardSkeleton } from "../../src/components/skeletons/Layouts"
 import { orgApi, studentsApi } from "../../src/lib/api"
-import { prefetchRemoteImages } from "../../src/lib/image-cache"
+import { prefetchAppMediaAssets } from "../../src/lib/app-cache"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import type { LeaderboardEntry, StudentLevel } from "../../src/types/gamification"
 import { getTierBarColor } from "../../src/types/gamification"
@@ -127,13 +129,14 @@ function LeaderboardFooter() {
 
 export default function LeaderboardScreen() {
   const { user } = useAuth()
+  const guest = isGuestUser(user)
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [myLevel, setMyLevel] = useState<StudentLevel | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const load = useCallback(async (force = false) => {
-    if (!user) return
+    if (!user || isGuestUser(user)) return
     try {
       const data = await orgApi.leaderboard({ force })
       setEntries(data)
@@ -153,13 +156,17 @@ export default function LeaderboardScreen() {
 
   useEffect(() => {
     if (entries.length === 0) return
-    void prefetchRemoteImages(entries.map((entry) => entry.avatarUrl))
+    void prefetchAppMediaAssets({ imageUrls: entries.map((entry) => entry.avatarUrl) })
   }, [entries])
 
   useEffect(() => {
+    if (guest) {
+      setLoading(false)
+      return
+    }
     setLoading(true)
     load().finally(() => setLoading(false))
-  }, [load])
+  }, [load, guest])
 
   useFocusEffect(
     useCallback(() => {
@@ -183,7 +190,7 @@ export default function LeaderboardScreen() {
   const listEntries = useMemo(() => entries.slice(3), [entries])
 
   const myFallbackEntry = useMemo<LeaderboardEntry | null>(() => {
-    if (!user || meInList || !myLevel) return null
+    if (!user || guest || meInList || !myLevel) return null
     return {
       rank: 0,
       studentId: user.id,
@@ -194,7 +201,19 @@ export default function LeaderboardScreen() {
       tier: myLevel.tier,
       tierLabel: myLevel.tierLabel,
     }
-  }, [user, meInList, myLevel])
+  }, [user, guest, meInList, myLevel])
+
+  if (guest) {
+    return (
+      <View style={styles.container}>
+        <GuestAuthBanner
+          variant="screen"
+          title="Leaderboard is for students"
+          message="Sign in and join your learning center to earn XP, compete with classmates, and climb the rankings."
+        />
+      </View>
+    )
+  }
 
   return (
     <ScrollView

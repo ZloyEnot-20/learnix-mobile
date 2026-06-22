@@ -26,6 +26,9 @@ export function wordTranslation(word: VocabWord, lang: TranslationLang): string 
 
 export const VOCAB_SLUG_PREFIX = "vocab:"
 
+/** Accent for vocabulary icons on Learn. */
+export const VOCAB_SUBJECT_COLOR = "#8B5CF6"
+
 export function parseVocabHomeworkSlug(slug: string | undefined): string | null {
   if (!slug) return null
   return slug.startsWith(VOCAB_SLUG_PREFIX) ? slug.slice(VOCAB_SLUG_PREFIX.length) : null

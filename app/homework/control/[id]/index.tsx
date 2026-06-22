@@ -139,7 +139,7 @@ export default function ControlWorkScreen() {
           >
             <View style={styles.summary}>
               <Text style={styles.summaryText}>
-                {doneCount}/{totalSteps} sections · Due {formatDue(cw.dueAt).label}
+                {doneCount}/{totalSteps} sections · Due {formatDue(cw.dueAt, sub?.status ?? "assigned").label}
               </Text>
               {cw.timeLimitMinutes ? (
                 <Text style={styles.summaryText}>{cw.timeLimitMinutes} min limit</Text>

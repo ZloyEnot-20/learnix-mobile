@@ -101,16 +101,11 @@ export function NotificationsBell() {
         onClose={handleClose}
         title="Notifications"
         headerRight={
-          <View style={styles.headerActions}>
-            {unread > 0 && (
-              <Pressable onPress={markAllRead}>
-                <Text style={styles.markAll}>Mark all read</Text>
-              </Pressable>
-            )}
-            <Pressable onPress={handleClose} hitSlop={8}>
-              <Ionicons name="close" size={22} color={colors.text} />
+          unread > 0 ? (
+            <Pressable onPress={markAllRead}>
+              <Text style={styles.markAll}>Mark all read</Text>
             </Pressable>
-          </View>
+          ) : undefined
         }
       >
         {!loaded ? (

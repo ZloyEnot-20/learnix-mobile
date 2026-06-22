@@ -1,13 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import Constants from "expo-constants"
+import { PRODUCTION_API_URL } from "./config"
 
 /** Backend routes are mounted under `/api` — ensure the base URL always includes it. */
 function normalizeApiBaseUrl(raw: string): string {
   const trimmed = raw.trim().replace(/\/$/, "")
-  if (!trimmed) return "https://learnix-api.tw1.ru/api"
+  if (!trimmed) return PRODUCTION_API_URL
   if (!/^https?:\/\//i.test(trimmed)) {
-    console.warn(`[api] Invalid EXPO_PUBLIC_API_URL "${raw}", using production default`)
-    return "https://learnix-api.tw1.ru/api"
+    if (__DEV__) {
+      console.warn(`[api] Invalid EXPO_PUBLIC_API_URL "${raw}", using production default`)
+    }
+    return PRODUCTION_API_URL
   }
   if (trimmed.endsWith("/api")) return trimmed
   return `${trimmed}/api`
@@ -16,11 +19,12 @@ function normalizeApiBaseUrl(raw: string): string {
 const API_URL = normalizeApiBaseUrl(
   process.env.EXPO_PUBLIC_API_URL ??
     Constants.expoConfig?.extra?.apiUrl ??
-    "https://learnix-api.tw1.ru/api",
+    PRODUCTION_API_URL,
 )
 
 const ACCESS_KEY = "ielts_access_token"
 const REFRESH_KEY = "ielts_refresh_token"
+const GUEST_MODE_KEY = "ielts_guest_mode"
 
 export async function getAccessToken(): Promise<string | null> {
   return AsyncStorage.getItem(ACCESS_KEY)
@@ -30,13 +34,25 @@ export async function getRefreshToken(): Promise<string | null> {
   return AsyncStorage.getItem(REFRESH_KEY)
 }
 
+export async function isGuestMode(): Promise<boolean> {
+  return (await AsyncStorage.getItem(GUEST_MODE_KEY)) === "1"
+}
+
+export async function setGuestMode(enabled: boolean): Promise<void> {
+  if (enabled) {
+    await AsyncStorage.setItem(GUEST_MODE_KEY, "1")
+  } else {
+    await AsyncStorage.removeItem(GUEST_MODE_KEY)
+  }
+}
+
 export async function setTokens(access: string, refresh?: string): Promise<void> {
   await AsyncStorage.setItem(ACCESS_KEY, access)
   if (refresh) await AsyncStorage.setItem(REFRESH_KEY, refresh)
 }
 
 export async function clearTokens(): Promise<void> {
-  await AsyncStorage.multiRemove([ACCESS_KEY, REFRESH_KEY])
+  await AsyncStorage.multiRemove([ACCESS_KEY, REFRESH_KEY, GUEST_MODE_KEY])
 }
 
 export const SERVICE_UNAVAILABLE_MESSAGE =
@@ -117,7 +133,7 @@ export async function apiFetch<T = unknown>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch (err) {
-    console.warn("[api] network error", method, path, err)
+    if (__DEV__) console.warn("[api] network error", method, path, err)
     throw new ApiError(0, SERVICE_UNAVAILABLE_MESSAGE)
   }
 
@@ -137,7 +153,7 @@ export async function apiFetch<T = unknown>(
         ? (data as { error?: string; message?: string }).error ||
           (data as { error?: string; message?: string }).message
         : null) || res.statusText
-    console.warn("[api]", res.status, method, path, technical, data)
+    if (__DEV__) console.warn("[api]", res.status, method, path, technical, data)
     throw new ApiError(res.status, userFacingApiMessage(res.status), data)
   }
   return data as T
@@ -162,7 +178,7 @@ export async function apiUpload<T = unknown>(
       body: formData,
     })
   } catch (err) {
-    console.warn("[api] network error POST", path, err)
+    if (__DEV__) console.warn("[api] network error POST", path, err)
     throw new ApiError(0, SERVICE_UNAVAILABLE_MESSAGE)
   }
 
@@ -175,7 +191,7 @@ export async function apiUpload<T = unknown>(
         ? (data as { error?: string; message?: string }).error ||
           (data as { error?: string; message?: string }).message
         : null) || res.statusText
-    console.warn("[api]", res.status, "POST", path, technical, data)
+    if (__DEV__) console.warn("[api]", res.status, "POST", path, technical, data)
     throw new ApiError(res.status, userFacingApiMessage(res.status), data)
   }
   return data as T

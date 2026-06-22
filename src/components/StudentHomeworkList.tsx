@@ -4,12 +4,14 @@ import { useFocusEffect } from "expo-router"
 import { exercisesApi, homeworkApi, controlWorkApi } from "../lib/api"
 import {
   getHomeworkListSnapshot,
+  loadHomeworkListCache,
   setHomeworkListSnapshot,
 } from "../lib/homework-list-cache"
 import { HomeworkSection, type HomeworkItem } from "./HomeworkSection"
 import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
 import { parsePodcastHomeworkSlug, podcastWordLabel, type PodcastEpisode } from "../types/podcast"
+import { prefetchPodcastEpisodes } from "../lib/app-cache"
 import type { GrammarExercise } from "../types/grammar"
 import type { StudentHomeworkEntry, StudentControlWorkEntry } from "../types/domain"
 import { colors, spacing } from "../theme/tokens"
@@ -20,6 +22,15 @@ const STATUS_ORDER: Record<Status, number> = {
   pending: 0,
   in_progress: 1,
   completed: 2,
+}
+
+async function fetchExercisesBySlug(slugs: string[]): Promise<GrammarExercise[]> {
+  if (slugs.length === 0) return []
+
+  const results = await Promise.all(
+    slugs.map((slug) => exercisesApi.get(slug).catch(() => null)),
+  )
+  return results.filter((exercise): exercise is GrammarExercise => exercise != null)
 }
 
 async function fetchPodcastsBySlug(slugs: string[]): Promise<Map<string, PodcastEpisode>> {
@@ -34,6 +45,44 @@ async function fetchPodcastsBySlug(slugs: string[]): Promise<Map<string, Podcast
   )
 
   return map
+}
+
+function homeworkExerciseSlugs(entries: StudentHomeworkEntry[]): string[] {
+  return [
+    ...new Set(
+      entries
+        .filter(
+          ({ homework }) =>
+            (homework.subject === "grammar" || homework.subject === "speaking") &&
+            homework.exerciseSlug,
+        )
+        .map(({ homework }) => homework.exerciseSlug!),
+    ),
+  ]
+}
+
+function podcastSlugsNeedingReviewedWords(entries: StudentHomeworkEntry[]): string[] {
+  return [
+    ...new Set(
+      entries
+        .map((entry) => {
+          const slug = parsePodcastHomeworkSlug(entry.homework.exerciseSlug)
+          const wordsReviewed = entry.submission.attempt?.listeningStats?.wordsReviewed ?? 0
+          return slug && wordsReviewed > 0 ? slug : null
+        })
+        .filter((slug): slug is string => !!slug),
+    ),
+  ]
+}
+
+function podcastHomeworkSlugs(entries: StudentHomeworkEntry[]): string[] {
+  return [
+    ...new Set(
+      entries
+        .map((entry) => parsePodcastHomeworkSlug(entry.homework.exerciseSlug))
+        .filter((slug): slug is string => !!slug),
+    ),
+  ]
 }
 
 function mapHomeworkItems(
@@ -182,59 +231,94 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
     getHomeworkListSnapshot(studentId),
   )
   const [refreshing, setRefreshing] = useState(false)
-  const [animateItemIds, setAnimateItemIds] = useState<Set<string> | undefined>(undefined)
+  const [animateItemIds, setAnimateItemIds] = useState<Set<string>>(() => new Set())
   const hasLoadedRef = useRef(items !== null)
   const itemsRef = useRef(items)
+  const loadGenerationRef = useRef(0)
   itemsRef.current = items
 
-  const load = useCallback(
-    async (opts?: { force?: boolean; background?: boolean }) => {
-      try {
-        const [entries, controlEntries, exList] = await Promise.all([
-          homeworkApi.mine(opts),
-          controlWorkApi.mine(opts),
-          // Route mapping only needs slug→topic; catalog changes rarely — skip force refresh.
-          exercisesApi.list(),
-        ])
-
-        const podcastSlugs = [
-          ...new Set(
-            entries
-              .map((entry) => parsePodcastHomeworkSlug(entry.homework.exerciseSlug))
-              .filter((slug): slug is string => !!slug),
-          ),
-        ]
-        const podcastsBySlug = await fetchPodcastsBySlug(podcastSlugs)
-
-        const mapped = mergeHomeworkItems(entries, controlEntries, exList, podcastsBySlug)
-
-        if (opts?.background && itemsRef.current) {
-          const prevIds = new Set(itemsRef.current.map((i) => i.id))
-          const newIds = mapped.filter((i) => !prevIds.has(i.id)).map((i) => i.id)
-          if (newIds.length > 0) {
-            setAnimateItemIds(new Set(newIds))
-          }
+  const publishItems = useCallback(
+    (mapped: HomeworkItem[], opts?: { background?: boolean }) => {
+      if (opts?.background && itemsRef.current) {
+        const prevIds = new Set(itemsRef.current.map((i) => i.id))
+        const newIds = mapped.filter((i) => !prevIds.has(i.id)).map((i) => i.id)
+        if (newIds.length > 0) {
+          setAnimateItemIds(new Set(newIds))
         }
-
-        setHomeworkListSnapshot(studentId, mapped)
-        setItems(mapped)
-        hasLoadedRef.current = true
-      } catch {
-        if (!hasLoadedRef.current) setItems([])
       }
+
+      setHomeworkListSnapshot(studentId, mapped)
+      setItems(mapped)
+      hasLoadedRef.current = true
     },
     [studentId],
   )
 
+  const load = useCallback(
+    async (opts?: { force?: boolean; background?: boolean }) => {
+      const generation = ++loadGenerationRef.current
+      const fetchOpts = opts?.force ? { force: true as const } : undefined
+
+      try {
+        const [entries, controlEntries] = await Promise.all([
+          homeworkApi.mine(fetchOpts),
+          controlWorkApi.mine(fetchOpts),
+        ])
+
+        if (generation !== loadGenerationRef.current) return
+
+        const exList = await fetchExercisesBySlug(homeworkExerciseSlugs(entries))
+        if (generation !== loadGenerationRef.current) return
+
+        const mapped = mergeHomeworkItems(entries, controlEntries, exList, new Map())
+        publishItems(mapped, { background: opts?.background })
+
+        const homeworkPodcastSlugs = podcastHomeworkSlugs(entries)
+        if (homeworkPodcastSlugs.length > 0) {
+          void fetchPodcastsBySlug(homeworkPodcastSlugs).then((podcastsForPrefetch) => {
+            if (generation !== loadGenerationRef.current) return
+            prefetchPodcastEpisodes([...podcastsForPrefetch.values()])
+          })
+        }
+
+        const podcastSlugs = podcastSlugsNeedingReviewedWords(entries)
+        if (podcastSlugs.length === 0) return
+
+        const podcastsBySlug = await fetchPodcastsBySlug(podcastSlugs)
+        if (generation !== loadGenerationRef.current) return
+
+        const enriched = mergeHomeworkItems(entries, controlEntries, exList, podcastsBySlug)
+        publishItems(enriched, { background: true })
+      } catch {
+        if (generation !== loadGenerationRef.current) return
+        if (!hasLoadedRef.current) setItems([])
+      }
+    },
+    [publishItems],
+  )
+
   useFocusEffect(
     useCallback(() => {
-      if (itemsRef.current !== null) {
-        setAnimateItemIds(new Set())
-        void load({ force: true, background: true })
-      } else {
-        void load()
+      let cancelled = false
+
+      void (async () => {
+        if (itemsRef.current === null) {
+          const cached = await loadHomeworkListCache(studentId)
+          if (cancelled) return
+          if (cached) {
+            setItems(cached)
+            hasLoadedRef.current = true
+          }
+        }
+
+        const hasVisibleItems = itemsRef.current !== null
+        await load({ background: hasVisibleItems })
+      })()
+
+      return () => {
+        cancelled = true
       }
-    }, [load]),
+    }, [studentId, load]),
   )
 
   const onRefresh = useCallback(async () => {
@@ -266,4 +350,3 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   skeletonWrap: { paddingHorizontal: spacing.screen, paddingBottom: spacing.xl },
 })
-

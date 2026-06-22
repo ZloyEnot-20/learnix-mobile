@@ -48,7 +48,7 @@ const TTL = {
   submissionDone: 300_000,
 } as const
 
-function submissionCacheTtl(sub: HomeworkSubmission): number {
+function submissionCacheTtl(sub: { status: string }): number {
   return sub.status === "submitted" || sub.status === "graded"
     ? TTL.submissionDone
     : TTL.submissionActive
@@ -70,7 +70,7 @@ export interface AuthUser {
   login: string
   email: string
   name: string
-  type: "admin" | "teacher" | "student" | "super_admin"
+  type: "admin" | "teacher" | "student" | "super_admin" | "guest"
   isPremium: boolean
   avatarUrl?: string | null
 }
@@ -86,6 +86,7 @@ export const authApi = {
     api.post<AuthResponse>("/auth/login", { login, password }, false),
   register: (email: string, password: string, name: string) =>
     api.post<AuthResponse>("/auth/register", { email, password, name }, false),
+  guest: () => api.post<AuthResponse>("/auth/guest", undefined, false),
   me: () => api.get<{ user: AuthUser }>("/auth/me"),
 }
 
@@ -108,6 +109,8 @@ export const studentsApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
+  deleteAccount: (id: string) =>
+    api.post<{ ok: true; deletedAt: string }>(`/students/${id}/delete-account`),
 }
 
 export const homeworkApi = {
@@ -208,7 +211,7 @@ export const controlWorkApi = {
       if (cached) return cached
     }
     const sub = await api.post<ControlWorkSubmission>("/control-works/start", { controlWorkId })
-    setCached(key, sub, submissionCacheTtl(sub as HomeworkSubmission))
+    setCached(key, sub, submissionCacheTtl(sub))
     invalidateControlWorkCaches(controlWorkId)
     return sub
   },
@@ -225,7 +228,7 @@ export const controlWorkApi = {
     setCached(
       cacheKey("POST", `/control-works/start:${controlWorkId}`),
       sub,
-      submissionCacheTtl(sub as HomeworkSubmission),
+      submissionCacheTtl(sub),
     )
     invalidateControlWorkCaches(controlWorkId)
     return sub
@@ -307,6 +310,15 @@ export const exercisesApi = {
       key,
       TTL.vocabDeck,
       () => api.get<VocabDeck>(`/exercises/vocab/${slug}`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  podcasts: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/exercises/podcasts")
+    return cachedFetch(
+      key,
+      TTL.podcast,
+      () => api.get<PodcastEpisode[]>("/exercises/podcasts"),
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },

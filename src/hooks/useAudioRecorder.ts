@@ -106,7 +106,7 @@ export function useAudioRecorder() {
         setStatus("recording")
         return true
       } catch (err) {
-        console.error("[audio] start recording failed:", err)
+        if (__DEV__) console.error("[audio] start recording failed:", err)
         setError("Could not start recording. Please try again.")
         setStatus("idle")
         return false
@@ -155,7 +155,7 @@ export function useAudioRecorder() {
         setStatus("stopped")
         return fileUri ? { uri: fileUri, durationMs: stoppedDurationMs } : null
       } catch (err) {
-        console.error("[audio] stop recording failed:", err)
+        if (__DEV__) console.error("[audio] stop recording failed:", err)
         setError("Could not stop recording.")
         setStatus("idle")
         return null

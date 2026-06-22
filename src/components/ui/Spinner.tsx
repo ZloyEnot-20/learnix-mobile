@@ -4,10 +4,11 @@ import { colors } from "../../theme/tokens"
 
 type SpinnerProps = {
   size?: number
+  color?: string
   style?: ViewStyle
 }
 
-export function Spinner({ size = 32, style }: SpinnerProps) {
+export function Spinner({ size = 32, color = colors.brand, style }: SpinnerProps) {
   const spin = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
@@ -40,6 +41,9 @@ export function Spinner({ size = 32, style }: SpinnerProps) {
             height: size,
             borderRadius: size / 2,
             borderWidth: stroke,
+            borderColor: "transparent",
+            borderTopColor: color,
+            borderRightColor: color,
             transform: [{ rotate }],
           },
         ]}
@@ -52,7 +56,5 @@ const styles = StyleSheet.create({
   wrap: { alignItems: "center", justifyContent: "center" },
   ring: {
     borderColor: "transparent",
-    borderTopColor: colors.brand,
-    borderRightColor: colors.brand,
   },
 })

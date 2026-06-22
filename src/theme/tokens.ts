@@ -19,6 +19,7 @@ export const colors = {
   error: "#EF4444",
   errorBg: "#FEE2E2",
   indigo: "#6366F1",
+  surface: "#FFFFFF",
   overlay: "rgba(17, 24, 39, 0.45)",
 }
 
@@ -50,16 +51,20 @@ export const radius = {
   card: 16,
   sheet: 20,
   sm: 8,
+  md: 12,
+  lg: 16,
   pill: 999,
 }
 
 export const spacing = {
   screen: 20,
   section: 16,
+  xs: 4,
   sm: 8,
   md: 12,
   lg: 20,
   xl: 24,
+  xxl: 40,
 }
 
 export const typography = {

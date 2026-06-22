@@ -8,6 +8,7 @@ npm-debug.*
 *.key
 *.mobileprovision
 *.orig.*
+google-play-service-account.json
 web-build/
 .env
 .env.local

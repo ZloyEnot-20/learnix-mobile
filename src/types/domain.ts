@@ -90,7 +90,6 @@ export interface HomeworkSubmission {
   score?: number
   startedAt?: string
   sessionStartedAt?: string
-  elapsedSeconds?: number
   pauseUsed?: boolean
   pausedAt?: string
   submittedAt?: string

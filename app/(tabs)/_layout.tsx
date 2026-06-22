@@ -3,6 +3,7 @@ import { View, StyleSheet } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
+import { isAppUser, isGuestUser } from "../../src/lib/guest"
 import { NotificationsBell } from "../../src/components/NotificationsBell"
 import { TabShellSkeleton } from "../../src/components/skeletons/Layouts"
 import { colors, spacing } from "../../src/theme/tokens"
@@ -28,6 +29,7 @@ const TAB_BAR_LIFT = 6
 export default function TabsLayout() {
   const { user, isLoading } = useAuth()
   const insets = useSafeAreaInsets()
+  const guest = isGuestUser(user)
   const tabBarPaddingBottom = Math.max(insets.bottom, 8) + TAB_BAR_LIFT
   const tabBarHeight = 48 + tabBarPaddingBottom
 
@@ -35,7 +37,7 @@ export default function TabsLayout() {
     return <TabShellSkeleton />
   }
 
-  if (!user || user.type !== "student") {
+  if (!user || !isAppUser(user)) {
     return <Redirect href="/login" />
   }
 
@@ -59,7 +61,7 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: colors.background },
         headerTitle: () => null,
         headerShadowVisible: false,
-        headerRight: () => <HeaderRight />,
+        headerRight: guest ? undefined : () => <HeaderRight />,
       }}
     >
       <Tabs.Screen

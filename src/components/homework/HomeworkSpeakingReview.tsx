@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons"
 import type { GrammarExercise } from "../../types/grammar"
 import type { HomeworkAttempt, Subject } from "../../types/domain"
 import { formatShortDate } from "../../lib/utils"
-import { prefetchSpeakingAudio, resolveSpeakingAudioUri } from "../../lib/speaking-audio-cache"
+import { resolveSpeakingAudioUri } from "../../lib/speaking-audio-cache"
+import { prefetchAppMediaAssets } from "../../lib/app-cache"
 import { PlaybackWaveformBars } from "../speaking/WaveformBars"
 import { SpeakingProgressBar } from "../speaking/SpeakingProgressBar"
 import { HomeworkReviewShell } from "./HomeworkReviewShell"
@@ -218,7 +219,9 @@ export function HomeworkSpeakingReview({
   )
 
   useEffect(() => {
-    void prefetchSpeakingAudio(recordings.map((r) => r.audioUrl))
+    prefetchAppMediaAssets({
+      speakingAudioUrls: recordings.map((r) => r.audioUrl),
+    })
   }, [recordings])
 
   const completedLabel = completedAt ? formatShortDate(completedAt) : null

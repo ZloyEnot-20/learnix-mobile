@@ -159,7 +159,7 @@ export function ProfileSkeleton() {
         </View>
       </SkeletonCard>
       <SkeletonCard>
-        {Array.from({ length: 6 }).map((_, i) => (
+        {Array.from({ length: 5 }).map((_, i) => (
           <ListRowSkeleton key={i} />
         ))}
       </SkeletonCard>
@@ -327,6 +327,30 @@ export function NotificationListSkeleton({ count = 5 }: { count?: number }) {
   )
 }
 
+export function CacheManagerSkeleton() {
+  return (
+    <View style={styles.cacheSkeleton}>
+      <Skeleton width={200} height={200} borderRadius={100} style={styles.cacheChartBone} />
+      <View style={styles.cacheRows}>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <SkeletonCard key={i} style={styles.cacheRow}>
+            <View style={styles.cacheRowTop}>
+              <Skeleton width={36} height={36} borderRadius={10} />
+              <View style={styles.flex}>
+                <Skeleton width="55%" height={14} />
+                <Skeleton width="80%" height={11} style={styles.gapSm} />
+                <Skeleton height={6} borderRadius={999} style={styles.gapSm} />
+              </View>
+              <Skeleton width={56} height={28} borderRadius={8} />
+            </View>
+          </SkeletonCard>
+        ))}
+      </View>
+      <Skeleton height={48} borderRadius={12} />
+    </View>
+  )
+}
+
 export function TabShellSkeleton() {
   return (
     <View style={styles.tabShell}>
@@ -475,6 +499,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 12,
     marginBottom: 8,
+  },
+  cacheSkeleton: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: spacing.md,
+    gap: spacing.lg,
+  },
+  cacheChartBone: {
+    alignSelf: "center",
+  },
+  cacheRows: {
+    gap: spacing.md,
+  },
+  cacheRow: {
+    padding: spacing.md,
+  },
+  cacheRowTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
   },
   notificationBanner: {
     marginBottom: 0,

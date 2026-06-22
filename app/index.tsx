@@ -1,5 +1,6 @@
 import { Redirect } from "expo-router"
 import { useAuth } from "../src/context/AuthContext"
+import { isAppUser } from "../src/lib/guest"
 import { View, StyleSheet } from "react-native"
 import { Spinner } from "../src/components/ui/Spinner"
 import { colors } from "../src/theme/tokens"
@@ -16,7 +17,7 @@ export default function Index() {
   }
 
   if (!user) return <Redirect href="/login" />
-  if (user.type !== "student") return <Redirect href="/login" />
+  if (!isAppUser(user)) return <Redirect href="/login" />
   return <Redirect href="/(tabs)" />
 }
 

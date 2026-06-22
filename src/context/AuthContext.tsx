@@ -7,19 +7,38 @@ import React, {
   useState,
 } from "react"
 import { authApi, clearApiCache, type AuthUser } from "../lib/api"
-import { clearTokens, getAccessToken, setTokens } from "../lib/api-client"
+import {
+  clearTokens,
+  getAccessToken,
+  isGuestMode,
+  setGuestMode,
+  setTokens,
+} from "../lib/api-client"
 import { clearHomeScreenSnapshot } from "../lib/home-screen-cache"
 import { clearProfileScreenSnapshot } from "../lib/profile-screen-cache"
 import { clearHomeworkListSnapshot } from "../lib/homework-list-cache"
 import { clearLastActivity } from "../lib/last-activity"
+import { GUEST_USER_ID, isGuestUser } from "../lib/guest"
 
 interface AuthContextValue {
   user: AuthUser | null
   isLoading: boolean
+  isGuest: boolean
   login: (login: string, password: string) => Promise<void>
+  loginAsGuest: () => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
   setUser: (user: AuthUser) => void
+}
+
+const GUEST_USER: AuthUser = {
+  id: GUEST_USER_ID,
+  login: "guest",
+  email: "",
+  name: "Guest",
+  type: "guest",
+  isPremium: false,
+  avatarUrl: null,
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -34,6 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       return
     }
+
+    if (await isGuestMode()) {
+      setUser(GUEST_USER)
+      return
+    }
+
     try {
       const { user: me } = await authApi.me()
       setUser(me)
@@ -53,25 +78,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearHomeScreenSnapshot()
     clearProfileScreenSnapshot()
     await clearLastActivity()
+    await setGuestMode(false)
     const res = await authApi.login(loginStr, password)
     await setTokens(res.accessToken, res.refreshToken)
     setUser(res.user)
   }, [])
 
+  const loginAsGuest = useCallback(async () => {
+    clearApiCache()
+    clearHomeworkListSnapshot()
+    clearHomeScreenSnapshot()
+    clearProfileScreenSnapshot()
+    await clearLastActivity()
+    const res = await authApi.guest()
+    await setGuestMode(true)
+    await setTokens(res.accessToken)
+    setUser(res.user)
+  }, [])
+
   const logout = useCallback(async () => {
     const userId = user?.id
+    const guest = isGuestUser(user)
     await clearTokens()
     clearApiCache()
     clearHomeworkListSnapshot()
     clearHomeScreenSnapshot()
     clearProfileScreenSnapshot()
-    await clearLastActivity(userId)
+    if (!guest) {
+      await clearLastActivity(userId)
+    }
     setUser(null)
-  }, [user?.id])
+  }, [user])
 
   const value = useMemo(
-    () => ({ user, isLoading, login, logout, refreshUser, setUser }),
-    [user, isLoading, login, logout, refreshUser],
+    () => ({
+      user,
+      isLoading,
+      isGuest: isGuestUser(user),
+      login,
+      loginAsGuest,
+      logout,
+      refreshUser,
+      setUser,
+    }),
+    [user, isLoading, login, loginAsGuest, logout, refreshUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

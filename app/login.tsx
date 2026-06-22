@@ -11,6 +11,7 @@ import {
 import { Redirect, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useAuth } from "../src/context/AuthContext"
+import { isAppUser, isStudentUser } from "../src/lib/guest"
 import { ApiError, getUserFacingErrorMessage } from "../src/lib/api-client"
 import { FadeInDown } from "../src/components/ui/FadeInDown"
 import { Spinner } from "../src/components/ui/Spinner"
@@ -18,7 +19,7 @@ import { useKeyboardHeight } from "../src/hooks/useKeyboardHeight"
 import { colors, radius, shadow, spacing, typography } from "../src/theme/tokens"
 
 export default function LoginScreen() {
-  const { user, isLoading, login } = useAuth()
+  const { user, isLoading, login, loginAsGuest } = useAuth()
   const router = useRouter()
   const insets = useSafeAreaInsets()
   const keyboardHeight = useKeyboardHeight()
@@ -26,6 +27,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [guestSubmitting, setGuestSubmitting] = useState(false)
 
   if (isLoading) {
     return (
@@ -35,7 +37,7 @@ export default function LoginScreen() {
     )
   }
 
-  if (user?.type === "student") {
+  if (isStudentUser(user)) {
     return <Redirect href="/(tabs)" />
   }
 
@@ -53,6 +55,19 @@ export default function LoginScreen() {
       setError(message)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleGuest = async () => {
+    setError("")
+    setGuestSubmitting(true)
+    try {
+      await loginAsGuest()
+      router.replace("/(tabs)")
+    } catch (e) {
+      setError(getUserFacingErrorMessage(e, "Could not start guest session. Please try again."))
+    } finally {
+      setGuestSubmitting(false)
     }
   }
 
@@ -116,13 +131,31 @@ export default function LoginScreen() {
         <Pressable
           style={[styles.btn, submitting && styles.btnDisabled]}
           onPress={handleLogin}
-          disabled={submitting || !loginStr || !password}
+          disabled={submitting || guestSubmitting || !loginStr || !password}
         >
           {submitting ? (
             <Spinner size={22} />
           ) : (
             <Text style={styles.btnText}>Sign in</Text>
           )}
+        </Pressable>
+        <Pressable
+          style={[styles.guestBtn, (submitting || guestSubmitting) && styles.btnDisabled]}
+          onPress={handleGuest}
+          disabled={submitting || guestSubmitting}
+        >
+          {guestSubmitting ? (
+            <Spinner size={22} color={colors.primary} />
+          ) : (
+            <Text style={styles.guestBtnText}>Continue as guest</Text>
+          )}
+        </Pressable>
+        <Pressable
+          style={styles.privacyLink}
+          onPress={() => router.push("/privacy-policy")}
+          disabled={submitting || guestSubmitting}
+        >
+          <Text style={styles.privacyLinkText}>Privacy Policy</Text>
         </Pressable>
       </View>
     </View>
@@ -143,6 +176,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderLight,
+    gap: spacing.sm,
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background },
   hero: {
@@ -209,4 +243,24 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  guestBtn: {
+    borderRadius: radius.button,
+    paddingVertical: 16,
+    alignItems: "center",
+    minHeight: 52,
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  guestBtnText: { color: colors.primary, fontSize: 16, fontWeight: "700" },
+  privacyLink: {
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+  },
+  privacyLinkText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    textDecorationLine: "underline",
+  },
 })

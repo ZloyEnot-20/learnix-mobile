@@ -189,7 +189,7 @@ export function PodcastRunner({
   onListeningActiveChange,
 }: {
   episode: PodcastEpisode
-  homeworkId: string
+  homeworkId?: string
   studentId?: string
   sessionStartedAt: number
   elapsedSeconds?: number
@@ -197,6 +197,7 @@ export function PodcastRunner({
   onListeningActiveChange?: (active: boolean) => void
 }) {
   const router = useRouter()
+  const isPractice = !homeworkId
   const words = episode.words
   const hasWords = words.length > 0
 
@@ -250,7 +251,10 @@ export function PodcastRunner({
       if (!duration) return
       const target = Math.max(0, Math.min(duration, ratio * duration))
       const from = lastPositionRef.current
-      if (Math.abs(target - from) > 0.3) {
+      if (
+        !isPractice &&
+        Math.abs(target - from) > 0.3
+      ) {
         seeksRef.current.push({
           fromSeconds: Math.round(from * 10) / 10,
           toSeconds: Math.round(target * 10) / 10,
@@ -298,6 +302,7 @@ export function PodcastRunner({
       totalBytes,
       bufferedRanges,
       redirectDownload,
+      isPractice,
     ],
   )
 
@@ -359,7 +364,7 @@ export function PodcastRunner({
   }, [duration])
 
   useEffect(() => {
-    if (!playing) {
+    if (isPractice || !playing) {
       lastTickRef.current = null
       return
     }
@@ -387,10 +392,10 @@ export function PodcastRunner({
       )
     }
     lastPositionRef.current = currentTime
-  }, [currentTime, playing, duration])
+  }, [currentTime, playing, duration, isPractice])
 
   useEffect(() => {
-    if (listeningCompleteRef.current) return
+    if (isPractice || listeningCompleteRef.current) return
     if (duration <= 0) return
 
     const atEnd =
@@ -408,7 +413,7 @@ export function PodcastRunner({
       setListeningComplete(true)
       player.pause()
     }
-  }, [currentTime, duration, playing, player])
+  }, [currentTime, duration, playing, player, isPractice])
 
   const togglePlay = useCallback(async () => {
     if (!audioReady) return
@@ -428,51 +433,55 @@ export function PodcastRunner({
     player.play()
   }, [audioReady, playing, player, listeningComplete, duration])
 
-  const submitAttempt = useCallback(
+  const finishSession = useCallback(
     async (wordsReviewed: number) => {
       if (submittedRef.current) return
       submittedRef.current = true
-      setSubmitting(true)
 
-      const segmentMs = Date.now() - sessionStartedAt
-      const elapsedMs =
-        elapsedSeconds != null ? elapsedSeconds * 1000 + segmentMs : segmentMs
+      if (!isPractice && studentId && homeworkId) {
+        setSubmitting(true)
 
-      const stats = buildListeningStats(
-        accumulatedListenRef.current,
-        seeksRef.current,
-        heardSegmentsRef.current,
-        duration,
-        listeningCompleteRef.current,
-        wordsReviewed,
-      )
+        const segmentMs = Date.now() - sessionStartedAt
+        const elapsedMs =
+          elapsedSeconds != null ? elapsedSeconds * 1000 + segmentMs : segmentMs
 
-      const totalQuestions = hasWords ? words.length : 1
-      const correctCount = hasWords ? wordsReviewed : listeningCompleteRef.current ? 1 : 0
+        const stats = buildListeningStats(
+          accumulatedListenRef.current,
+          seeksRef.current,
+          heardSegmentsRef.current,
+          duration,
+          listeningCompleteRef.current,
+          wordsReviewed,
+        )
 
-      const attemptPayload = {
-        totalQuestions,
-        correctCount,
-        durationSeconds: Math.round(elapsedMs / 1000),
-        answeredCount: hasWords ? wordsReviewed : listeningCompleteRef.current ? 1 : 0,
-        mistakes: [],
-        listeningStats: stats,
-      }
+        const totalQuestions = hasWords ? words.length : 1
+        const correctCount = hasWords ? wordsReviewed : listeningCompleteRef.current ? 1 : 0
 
-      try {
-        if (studentId) {
-          await homeworkApi.recordAttempt(homeworkId, attemptPayload)
+        const attemptPayload = {
+          totalQuestions,
+          correctCount,
+          durationSeconds: Math.round(elapsedMs / 1000),
+          answeredCount: hasWords ? wordsReviewed : listeningCompleteRef.current ? 1 : 0,
+          mistakes: [],
+          listeningStats: stats,
         }
-      } catch {
-        submittedRef.current = false
-      } finally {
-        setSubmitting(false)
+
+        try {
+          await homeworkApi.recordAttempt(homeworkId, attemptPayload)
+        } catch {
+          submittedRef.current = false
+          setSubmitting(false)
+          return
+        } finally {
+          setSubmitting(false)
+        }
       }
 
       onSessionEnd?.()
       setPhase("done")
     },
     [
+      isPractice,
       sessionStartedAt,
       elapsedSeconds,
       duration,
@@ -485,24 +494,24 @@ export function PodcastRunner({
   )
 
   const handleContinueFromListening = useCallback(() => {
-    if (!listeningComplete) return
+    if (!isPractice && !listeningComplete) return
     if (hasWords) {
       player.pause()
       setPhase("words")
       setWordIndex(0)
       return
     }
-    void submitAttempt(0)
-  }, [listeningComplete, hasWords, submitAttempt, player])
+    void finishSession(0)
+  }, [isPractice, listeningComplete, hasWords, finishSession, player])
 
   const handleNextWord = useCallback(() => {
     const reviewed = wordIndex + 1
     if (reviewed >= words.length) {
-      void submitAttempt(words.length)
+      void finishSession(words.length)
       return
     }
     setWordIndex(reviewed)
-  }, [wordIndex, words.length, submitAttempt])
+  }, [wordIndex, words.length, finishSession])
 
   const progressPct = useMemo(() => {
     if (phase === "listening") return Math.round(displayProgress * 100)
@@ -513,15 +522,6 @@ export function PodcastRunner({
   }, [phase, displayProgress, wordIndex, words.length])
 
   if (phase === "done") {
-    const stats = buildListeningStats(
-      accumulatedListenRef.current,
-      seeksRef.current,
-      heardSegmentsRef.current,
-      duration,
-      listeningCompleteRef.current,
-      hasWords ? words.length : 0,
-    )
-
     return (
       <HomeworkResultsLayout
         footer={<HomeworkFooterButton label="Done" onPress={() => router.back()} />}
@@ -532,11 +532,11 @@ export function PodcastRunner({
           </View>
           <Text style={styles.resultsTitle}>Listening complete</Text>
           <Text style={styles.resultsMeta}>{episode.title}</Text>
-          {hasWords ? (
+          {hasWords && !isPractice ? (
             <View style={styles.statsGrid}>
               <View style={styles.statItem}>
                 <Ionicons name="book-outline" size={18} color={colors.textSecondary} />
-                <Text style={styles.statValue}>{stats.wordsReviewed}</Text>
+                <Text style={styles.statValue}>{words.length}</Text>
                 <Text style={styles.statLabel}>words</Text>
               </View>
             </View>
@@ -546,14 +546,16 @@ export function PodcastRunner({
     )
   }
 
+  const canContinueListening = isPractice || listeningComplete
+
   const listeningFooter = (
     <Pressable
       onPress={handleContinueFromListening}
-      disabled={!listeningComplete || submitting}
+      disabled={!canContinueListening || submitting}
       style={({ pressed }) => [
         styles.primaryBtn,
-        (!listeningComplete || submitting) && styles.primaryBtnDisabled,
-        pressed && listeningComplete && !submitting && styles.btnPressed,
+        (!canContinueListening || submitting) && styles.primaryBtnDisabled,
+        pressed && canContinueListening && !submitting && styles.btnPressed,
       ]}
     >
       {submitting ? (
@@ -597,6 +599,7 @@ export function PodcastRunner({
   return (
     <HomeworkExerciseLayout
       progress={progressPct}
+      showTopBar={!isPractice}
       footer={phase === "listening" ? listeningFooter : wordsFooter}
       keyboardOffset={0}
       scrollable={false}
@@ -631,9 +634,7 @@ export function PodcastRunner({
                   bufferedRanges={bufferedRanges}
                   bufferedFillStyle={styles.bufferedFill}
                   onSeekPreview={handleSeekPreview}
-                  onSeek={
-                    !listeningComplete && duration > 0 ? handleSeek : undefined
-                  }
+                  onSeek={duration > 0 ? handleSeek : undefined}
                   style={styles.progressTrack}
                 />
                 <View style={styles.timeRow}>
@@ -656,9 +657,13 @@ export function PodcastRunner({
                 </Pressable>
 
                 <Text style={styles.hintText}>
-                  {listeningComplete
-                    ? "You reached the end. Continue when ready."
-                    : "Listen to the full episode to continue."}
+                  {isPractice
+                    ? hasWords
+                      ? "Continue when you're ready to review vocabulary."
+                      : "Tap complete when you're done listening."
+                    : listeningComplete
+                      ? "You reached the end. Continue when ready."
+                      : "Listen to the full episode to continue."}
                 </Text>
               </>
             )}

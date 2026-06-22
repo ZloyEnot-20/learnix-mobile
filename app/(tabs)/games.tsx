@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,9 +9,17 @@ import {
 import { useFocusEffect, useRouter } from "expo-router"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { useAuth } from "../../src/context/AuthContext"
+import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
+import {
+  filterGuestLevels,
+  isGuestUser,
+  isStudentUser,
+  limitGuestMaterials,
+} from "../../src/lib/guest"
 import { exercisesApi, studentsApi } from "../../src/lib/api"
 import { loadGamesContentCache, saveGamesContentCache } from "../../src/lib/games-content-cache"
-import { recordGameTopic, recordGameVocabulary } from "../../src/lib/record-activity"
+import { prefetchPodcastEpisodes } from "../../src/lib/app-cache"
+import { recordGamePodcast, recordGameTopic, recordGameVocabulary } from "../../src/lib/record-activity"
 import { LevelScale } from "../../src/components/LevelScale"
 import { GamesHistorySection } from "../../src/components/GamesHistorySection"
 import { WordsLearnedArc } from "../../src/components/WordsLearnedArc"
@@ -41,7 +48,15 @@ import {
   type StudentLevel,
 } from "../../src/types/gamification"
 import type { GrammarExercise } from "../../src/types/grammar"
+import {
+  PODCAST_SUBJECT_COLOR,
+  podcastHasWords,
+  type PodcastEpisode,
+} from "../../src/types/podcast"
 import type { TopicMeta, TopicSummary, VocabDeck } from "../../src/types/vocabulary"
+import {
+  VOCAB_SUBJECT_COLOR,
+} from "../../src/types/vocabulary"
 import { Ionicons } from "@expo/vector-icons"
 import { Collapsible } from "../../src/components/ui/Collapsible"
 import { FadeInDown } from "../../src/components/ui/FadeInDown"
@@ -66,24 +81,31 @@ const LEVEL_COLORS: Record<string, string> = {
   C2: "#A855F7",
 }
 
+/** Temporarily hide grammar topics in the Learn tab. */
+const SHOW_GRAMMAR_IN_LEARN = false
+
 type GameItem = {
   id: string
   title: string
   subtitle: string
   route: string
-  kind: "vocab" | "topic"
+  kind: "vocab" | "topic" | "podcast"
   topic?: string
   deckSlug?: string
+  podcastSlug?: string
   category?: "grammar" | "vocabulary" | "speaking"
 }
 
-type GameCategory = "vocabulary" | "grammar"
+type GameCategory = "vocabulary" | "grammar" | "podcasts"
 
 type Tab = "play" | "history"
 
 function gamesForCategory(games: GameItem[], category: GameCategory): GameItem[] {
   if (category === "vocabulary") {
     return games.filter((game) => game.kind === "vocab" || game.category === "vocabulary")
+  }
+  if (category === "podcasts") {
+    return games.filter((game) => game.kind === "podcast")
   }
   return games.filter(
     (game) => game.kind === "topic" && game.category !== "vocabulary",
@@ -195,13 +217,21 @@ const LevelBlock = React.memo(function LevelBlock({
   }, [expanded])
 
   const vocabularyGames = useMemo(() => gamesForCategory(games, "vocabulary"), [games])
-  const grammarGames = useMemo(() => gamesForCategory(games, "grammar"), [games])
+  const grammarGames = useMemo(
+    () => (SHOW_GRAMMAR_IN_LEARN ? gamesForCategory(games, "grammar") : []),
+    [games],
+  )
+  const podcastGames = useMemo(() => gamesForCategory(games, "podcasts"), [games])
+  const hasLearnContent =
+    vocabularyGames.length > 0 || grammarGames.length > 0 || podcastGames.length > 0
   const visibleGames =
     selectedCategory === "vocabulary"
       ? vocabularyGames
       : selectedCategory === "grammar"
         ? grammarGames
-        : []
+        : selectedCategory === "podcasts"
+          ? podcastGames
+          : []
 
   return (
     <View
@@ -264,7 +294,7 @@ const LevelBlock = React.memo(function LevelBlock({
         expanded={expanded}
         style={[styles.gamesPanel, { backgroundColor: accent + "08" }]}
       >
-        {vocabularyGames.length === 0 && grammarGames.length === 0 ? (
+        {!hasLearnContent ? (
           <Text style={styles.empty}>Nothing to learn at this level yet.</Text>
         ) : (
           <>
@@ -280,18 +310,20 @@ const LevelBlock = React.memo(function LevelBlock({
                   pressed && styles.categoryBtnPressed,
                 ]}
               >
-                <View style={[styles.categoryIconWrap, { backgroundColor: "#8B5CF622" }]}>
-                  <Ionicons name="library-outline" size={18} color="#8B5CF6" />
+                <View
+                  style={[
+                    styles.categoryIconWrap,
+                    { backgroundColor: VOCAB_SUBJECT_COLOR + "22" },
+                  ]}
+                >
+                  <Ionicons name="library-outline" size={18} color={VOCAB_SUBJECT_COLOR} />
                 </View>
                 <View style={styles.categoryTextWrap}>
                   <Text
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
-                    style={[
-                      styles.categoryLabel,
-                      selectedCategory === "vocabulary" && { color: accent },
-                    ]}
+                    style={styles.categoryLabel}
                   >
                     Vocabulary
                   </Text>
@@ -301,34 +333,67 @@ const LevelBlock = React.memo(function LevelBlock({
                 </View>
               </Pressable>
 
+              {SHOW_GRAMMAR_IN_LEARN ? (
+                <Pressable
+                  onPress={() => setSelectedCategory("grammar")}
+                  style={({ pressed }) => [
+                    styles.categoryBtn,
+                    selectedCategory === "grammar" && [
+                      styles.categoryBtnActive,
+                      { borderColor: accent, backgroundColor: accent + "14" },
+                    ],
+                    pressed && styles.categoryBtnPressed,
+                  ]}
+                >
+                  <View style={[styles.categoryIconWrap, { backgroundColor: "#F59E0B22" }]}>
+                    <Ionicons name="school-outline" size={18} color="#F59E0B" />
+                  </View>
+                  <View style={styles.categoryTextWrap}>
+                    <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.85}
+                      style={styles.categoryLabel}
+                    >
+                      Grammar
+                    </Text>
+                    <Text style={styles.categoryCount} numberOfLines={1}>
+                      {grammarGames.length} lesson{grammarGames.length === 1 ? "" : "s"}
+                    </Text>
+                  </View>
+                </Pressable>
+              ) : null}
+
               <Pressable
-                onPress={() => setSelectedCategory("grammar")}
+                onPress={() => setSelectedCategory("podcasts")}
                 style={({ pressed }) => [
                   styles.categoryBtn,
-                  selectedCategory === "grammar" && [
+                  selectedCategory === "podcasts" && [
                     styles.categoryBtnActive,
                     { borderColor: accent, backgroundColor: accent + "14" },
                   ],
                   pressed && styles.categoryBtnPressed,
                 ]}
               >
-                <View style={[styles.categoryIconWrap, { backgroundColor: "#F59E0B22" }]}>
-                  <Ionicons name="school-outline" size={18} color="#F59E0B" />
+                <View
+                  style={[
+                    styles.categoryIconWrap,
+                    { backgroundColor: PODCAST_SUBJECT_COLOR + "22" },
+                  ]}
+                >
+                  <Ionicons name="headset-outline" size={18} color={PODCAST_SUBJECT_COLOR} />
                 </View>
                 <View style={styles.categoryTextWrap}>
                   <Text
                     numberOfLines={1}
                     adjustsFontSizeToFit
                     minimumFontScale={0.85}
-                    style={[
-                      styles.categoryLabel,
-                      selectedCategory === "grammar" && { color: accent },
-                    ]}
+                    style={styles.categoryLabel}
                   >
-                    Grammar
+                    Podcasts
                   </Text>
                   <Text style={styles.categoryCount} numberOfLines={1}>
-                    {grammarGames.length} lesson{grammarGames.length === 1 ? "" : "s"}
+                    {podcastGames.length} episode{podcastGames.length === 1 ? "" : "s"}
                   </Text>
                 </View>
               </Pressable>
@@ -337,11 +402,21 @@ const LevelBlock = React.memo(function LevelBlock({
             {selectedCategory ? (
               visibleGames.length === 0 ? (
                 <Text style={styles.empty}>
-                  No {selectedCategory} lessons for this level yet.
+                  No{" "}
+                  {selectedCategory === "podcasts"
+                    ? "podcast episodes"
+                    : `${selectedCategory} lessons`}{" "}
+                  for this level yet.
                 </Text>
               ) : (
                 visibleGames.map((game) => {
                   const badge = progressLabel(game.kind, topicProgress, deckProgress, game)
+                  const cardAccent =
+                    game.kind === "vocab"
+                      ? VOCAB_SUBJECT_COLOR
+                      : game.kind === "podcast"
+                        ? PODCAST_SUBJECT_COLOR
+                        : accent
 
                   return (
                     <Pressable
@@ -353,11 +428,22 @@ const LevelBlock = React.memo(function LevelBlock({
                       ]}
                       onPress={() => onGamePress(game)}
                     >
-                      <View style={[styles.gameIconWrap, { backgroundColor: accent + "22" }]}>
+                      <View
+                        style={[
+                          styles.gameIconWrap,
+                          { backgroundColor: cardAccent + "22" },
+                        ]}
+                      >
                         <Ionicons
-                          name={game.kind === "vocab" ? "library-outline" : "school-outline"}
+                          name={
+                            game.kind === "vocab"
+                              ? "library-outline"
+                              : game.kind === "podcast"
+                                ? "headset-outline"
+                                : "school-outline"
+                          }
                           size={20}
-                          color={accent}
+                          color={cardAccent}
                         />
                       </View>
                       <View style={styles.gameBody}>
@@ -394,7 +480,11 @@ const LevelBlock = React.memo(function LevelBlock({
                 })
               )
             ) : (
-              <Text style={styles.categoryHint}>Choose vocabulary or grammar to see lessons</Text>
+              <Text style={styles.categoryHint}>
+                {SHOW_GRAMMAR_IN_LEARN
+                  ? "Choose vocabulary, grammar or podcasts to see lessons"
+                  : "Choose vocabulary or podcasts to see lessons"}
+              </Text>
             )}
           </>
         )}
@@ -405,17 +495,18 @@ const LevelBlock = React.memo(function LevelBlock({
 
 export default function GamesScreen() {
   const { user } = useAuth()
+  const guest = isGuestUser(user)
   const router = useRouter()
   const [tab, setTab] = useState<Tab>("play")
   const [exercises, setExercises] = useState<GrammarExercise[]>([])
   const [topics, setTopics] = useState<TopicSummary[]>([])
   const [vocabDecks, setVocabDecks] = useState<VocabDeck[]>([])
+  const [podcasts, setPodcasts] = useState<PodcastEpisode[]>([])
   const [studentLevel, setStudentLevel] = useState<StudentLevel | null>(null)
   const [studentLevelLoading, setStudentLevelLoading] = useState(true)
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null)
   const [historyMounted, setHistoryMounted] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [history, setHistory] = useState<GameHistoryEntry[]>([])
   const [summary, setSummary] = useState<LearningProgressSummary>({
     wordsLearned: 0,
@@ -433,7 +524,7 @@ export default function GamesScreen() {
       exerciseList: GrammarExercise[] = exercises,
       decks: VocabDeck[] = vocabDecks,
     ) => {
-      if (!user) return
+      if (!user || isGuestUser(user)) return
       try {
         const progress = await getLearningProgress(user.id)
         const nextTopicProgress = buildTopicProgressMap(progress.gameResults, exerciseList)
@@ -461,34 +552,35 @@ export default function GamesScreen() {
   )
 
   const applyContent = useCallback(
-    (exerciseList: GrammarExercise[], metas: TopicMeta[], decks: VocabDeck[]) => {
+    (
+      exerciseList: GrammarExercise[],
+      metas: TopicMeta[],
+      decks: VocabDeck[],
+      podcastList: PodcastEpisode[],
+    ) => {
       setExercises(exerciseList)
       setTopics(buildTopicSummaries(exerciseList, metas))
       setVocabDecks(decks)
+      setPodcasts(podcastList)
     },
     [],
   )
 
   const loadContent = async (opts?: { force?: boolean }) => {
     try {
-      const [exerciseList, metas, decks] = await Promise.all([
+      const [exerciseList, metas, decks, podcastList] = await Promise.all([
         exercisesApi.list(undefined, opts),
         exercisesApi.topics(opts),
         exercisesApi.vocab(opts),
+        exercisesApi.podcasts(opts),
       ])
       const exercises = exerciseList as GrammarExercise[]
-      applyContent(exercises, metas, decks)
-      await saveGamesContentCache(exercises, metas, decks)
+      applyContent(exercises, metas, decks, podcastList)
+      await saveGamesContentCache(exercises, metas, decks, podcastList)
+      prefetchPodcastEpisodes(podcastList)
       return { exerciseList: exercises, decks }
     } catch {
       return null
-    }
-  }
-
-  const load = async (opts?: { force?: boolean }) => {
-    const result = await loadContent(opts)
-    if (result) {
-      await loadProgress(result.exerciseList, result.decks)
     }
   }
 
@@ -500,7 +592,8 @@ export default function GamesScreen() {
       if (cancelled) return
 
       if (cached) {
-        applyContent(cached.exercises, cached.topicMetas, cached.vocabDecks)
+        applyContent(cached.exercises, cached.topicMetas, cached.vocabDecks, cached.podcasts)
+        prefetchPodcastEpisodes(cached.podcasts)
         setLoading(false)
         void loadProgress(cached.exercises, cached.vocabDecks)
       } else {
@@ -528,14 +621,8 @@ export default function GamesScreen() {
     }, [loadProgress]),
   )
 
-  const onRefresh = async () => {
-    setRefreshing(true)
-    await load({ force: true })
-    setRefreshing(false)
-  }
-
   useEffect(() => {
-    if (!user) {
+    if (!user || isGuestUser(user)) {
       setStudentLevel(null)
       setStudentLevelLoading(false)
       return
@@ -560,7 +647,8 @@ export default function GamesScreen() {
     }
   }, [user])
 
-  const currentLevel = studentLevel?.level ?? 1
+  const currentLevel = guest ? 3 : (studentLevel?.level ?? 1)
+  const visibleLevels = guest ? filterGuestLevels(LEVELS) : LEVELS
 
   const playableTopics = useMemo(
     () =>
@@ -602,11 +690,41 @@ export default function GamesScreen() {
           category: t.category,
         }))
 
-      map.set(key, [...decks, ...topicGames])
+      const podcastGames = podcasts
+        .filter((p) => clampToFixedLevel(primaryLevel([p.level])) === key)
+        .map((p) => {
+          const wordsLabel = podcastHasWords(p) ? ` · ${p.words.length} words` : ""
+          return {
+            id: `podcast-${p.slug}`,
+            title: p.title,
+            subtitle: `${p.durationMinutes} min · ${p.topic}${wordsLabel}`,
+            route: `/podcast/${p.slug}`,
+            kind: "podcast" as const,
+            podcastSlug: p.slug,
+          }
+        })
+
+      map.set(key, [
+        ...decks,
+        ...(SHOW_GRAMMAR_IN_LEARN ? topicGames : []),
+        ...podcastGames,
+      ])
+    }
+
+    if (guest) {
+      for (const levelKey of ["A1", "A2"]) {
+        const games = map.get(levelKey) ?? []
+        map.set(levelKey, limitGuestMaterials(games))
+      }
+      for (const { key } of LEVELS) {
+        if (key !== "A1" && key !== "A2") {
+          map.set(key, [])
+        }
+      }
     }
 
     return map
-  }, [vocabDecks, playableTopics])
+  }, [vocabDecks, playableTopics, podcasts, guest])
 
   const levelStats = useMemo(() => {
     const stats = new Map<string, { completed: number; total: number; completionPct: number }>()
@@ -631,17 +749,26 @@ export default function GamesScreen() {
 
   const handleGamePress = useCallback(
     (game: GameItem) => {
-      if (user?.type === "student" && user.id) {
+      const studentId = user && isStudentUser(user) ? user.id : null
+      if (studentId) {
         if (game.kind === "vocab" && game.deckSlug) {
           const deck = vocabDecks.find((d) => d.slug === game.deckSlug)
-          if (deck) recordGameVocabulary(user.id, deck, game.deckSlug)
+          if (deck) recordGameVocabulary(studentId, deck, game.deckSlug)
         } else if (game.kind === "topic" && game.topic) {
-          recordGameTopic(user.id, game.topic, game.title, game.category ?? "grammar")
+          recordGameTopic(
+            studentId,
+            game.topic,
+            game.title,
+            game.category === "vocabulary" ? "vocabulary" : "grammar",
+          )
+        } else if (game.kind === "podcast" && game.podcastSlug) {
+          const episode = podcasts.find((p) => p.slug === game.podcastSlug)
+          if (episode) recordGamePodcast(studentId, episode, game.podcastSlug)
         }
       }
       router.push(game.route as never)
     },
-    [router, user, vocabDecks],
+    [router, user, vocabDecks, podcasts],
   )
 
   useEffect(() => {
@@ -650,43 +777,59 @@ export default function GamesScreen() {
 
   if (!user) return null
 
+  const learnTabs = guest
+    ? [{ key: "play" as const, label: "Learn" }]
+    : [
+        { key: "play" as const, label: "Learn" },
+        {
+          key: "history" as const,
+          label: `History ${history.length > 0 ? `(${history.length})` : ""}`,
+        },
+      ]
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-      }
-    >
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {loading ? (
         <GamesSkeleton />
       ) : (
         <>
-          <FadeInDown index={0}>
-            <Text style={styles.subtitle}>Practise vocabulary and grammar by level</Text>
+          {guest ? (
+            <FadeInDown index={0} style={styles.section}>
+              <GuestAuthBanner
+                message="You are browsing a guest preview with 5 materials per level (A1 and A2). Sign in to unlock all levels, homework, and progress tracking."
+              />
+            </FadeInDown>
+          ) : null}
+
+          <FadeInDown index={guest ? 1 : 0}>
+            <Text style={styles.subtitle}>
+              {guest
+                ? "Guest preview — vocabulary and listening for A1 & A2"
+                : SHOW_GRAMMAR_IN_LEARN
+                  ? "Practise vocabulary, grammar and listening by level"
+                  : "Practise vocabulary and listening by level"}
+            </Text>
           </FadeInDown>
 
-          <FadeInDown index={1} style={styles.section}>
-            <ProgressSummary summary={summary} levelStats={levelWordStats} />
-          </FadeInDown>
+          {!guest ? (
+            <>
+              <FadeInDown index={1} style={styles.section}>
+                <ProgressSummary summary={summary} levelStats={levelWordStats} />
+              </FadeInDown>
 
-          <FadeInDown index={2} style={styles.section}>
-            <LevelScale
-              studentId={user.id}
-              compact
-              levelData={studentLevel}
-              levelLoading={studentLevelLoading}
-            />
-          </FadeInDown>
+              <FadeInDown index={2} style={styles.section}>
+                <LevelScale
+                  studentId={user.id}
+                  compact
+                  levelData={studentLevel}
+                  levelLoading={studentLevelLoading}
+                />
+              </FadeInDown>
+            </>
+          ) : null}
 
           <SwipeableTabs
-            tabs={[
-              { key: "play", label: "Learn" },
-              {
-                key: "history",
-                label: `History ${history.length > 0 ? `(${history.length})` : ""}`,
-              },
-            ]}
+            tabs={learnTabs}
             activeTab={tab}
             onTabChange={setTab}
             barStyle={styles.tabsBar}
@@ -694,7 +837,7 @@ export default function GamesScreen() {
             <>
               <Text style={styles.pickTitle}>Choose a level</Text>
               <View style={styles.levelGrid}>
-                {LEVELS.map(({ key, label }) => {
+                {visibleLevels.map(({ key, label }) => {
                   const stats = levelStats.get(key) ?? { completed: 0, total: 0, completionPct: 0 }
 
                   return (
@@ -702,7 +845,7 @@ export default function GamesScreen() {
                       key={key}
                       levelKey={key}
                       label={label}
-                      unlocked={isCefrUnlocked(key, currentLevel)}
+                      unlocked={guest || isCefrUnlocked(key, currentLevel)}
                       expanded={selectedLevel === key}
                       games={gamesByLevel.get(key) ?? []}
                       completed={stats.completed}
@@ -719,7 +862,7 @@ export default function GamesScreen() {
                 })}
               </View>
             </>
-            {historyMounted ? <GamesHistorySection history={history} /> : <View />}
+            {historyMounted && !guest ? <GamesHistorySection history={history} /> : <View />}
           </SwipeableTabs>
         </>
       )}

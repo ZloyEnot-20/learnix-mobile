@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import type { GrammarExercise } from "../types/grammar"
+import type { PodcastEpisode } from "../types/podcast"
 import type { TopicMeta, VocabDeck } from "../types/vocabulary"
 
 const STORAGE_KEY = "learnix_games_content"
@@ -8,6 +9,7 @@ export type GamesContentSnapshot = {
   exercises: GrammarExercise[]
   topicMetas: TopicMeta[]
   vocabDecks: VocabDeck[]
+  podcasts: PodcastEpisode[]
   cachedAt: number
 }
 
@@ -29,6 +31,7 @@ export async function loadGamesContentCache(): Promise<GamesContentSnapshot | nu
       exercises: parsed.exercises,
       topicMetas: parsed.topicMetas ?? [],
       vocabDecks: parsed.vocabDecks,
+      podcasts: parsed.podcasts ?? [],
       cachedAt: parsed.cachedAt ?? 0,
     }
     return memory
@@ -41,11 +44,13 @@ export async function saveGamesContentCache(
   exercises: GrammarExercise[],
   topicMetas: TopicMeta[],
   vocabDecks: VocabDeck[],
+  podcasts: PodcastEpisode[] = [],
 ): Promise<void> {
   const snapshot: GamesContentSnapshot = {
     exercises,
     topicMetas,
     vocabDecks,
+    podcasts,
     cachedAt: Date.now(),
   }
   memory = snapshot

@@ -179,6 +179,7 @@ interface HomeworkExerciseLayoutBaseProps {
   style?: StyleProp<ViewStyle>
   scrollable?: boolean
   keyboardOffset?: number
+  showTopBar?: boolean
 }
 
 interface HomeworkExerciseLayoutIndexedProps extends HomeworkExerciseLayoutBaseProps {
@@ -218,6 +219,7 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
     style,
     scrollable = true,
     keyboardOffset = 0,
+    showTopBar = true,
   } = props
 
   const insets = useSafeAreaInsets()
@@ -237,7 +239,7 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
 
   return (
     <View style={[styles.root, style]}>
-      <HomeworkTopBar progress={progress} />
+      {showTopBar ? <HomeworkTopBar progress={progress} /> : null}
 
       {instruction ? (
         <Pressable onPress={Keyboard.dismiss} style={styles.instructionRow}>

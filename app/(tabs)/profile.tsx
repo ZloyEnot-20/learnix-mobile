@@ -14,7 +14,10 @@ import { Ionicons } from "@expo/vector-icons"
 import * as ImagePicker from "expo-image-picker"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { useAuth } from "../../src/context/AuthContext"
+import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
+import { isGuestUser } from "../../src/lib/guest"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
+import { CacheManagerSheet } from "../../src/components/CacheManagerSheet"
 import { ProfileSkeleton } from "../../src/components/skeletons/Layouts"
 import { studentsApi, orgApi, testResultsApi, uploadsApi } from "../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../src/lib/api-client"
@@ -23,11 +26,9 @@ import {
   getLearningProgress,
 } from "../../src/lib/learned-vocabulary"
 import {
-  clearSpeakingAudioCache,
-  formatSpeakingAudioCacheSize,
-  getSpeakingAudioCacheSizeBytes,
-} from "../../src/lib/speaking-audio-cache"
-import { clearImageCache } from "../../src/lib/image-cache"
+  formatAppCacheSize,
+  prefetchAppMediaAssets,
+} from "../../src/lib/app-cache"
 import type { StudentLevel } from "../../src/types/gamification"
 import { colors, radius, shadow, spacing } from "../../src/theme/tokens"
 import {
@@ -268,9 +269,11 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(!initialBootstrap)
   const [refreshing, setRefreshing] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
+  const [deletingAccount, setDeletingAccount] = useState(false)
+  const [cacheSheetVisible, setCacheSheetVisible] = useState(false)
 
   const refreshCacheSize = useCallback(() => {
-    setCacheSizeLabel(formatSpeakingAudioCacheSize())
+    setCacheSizeLabel(formatAppCacheSize())
   }, [])
 
   const applySnapshot = useCallback((snap: ProfileScreenSnapshot) => {
@@ -341,7 +344,7 @@ export default function ProfileScreen() {
 
   const load = useCallback(
     async (opts?: { force?: boolean }) => {
-      if (!user) return
+      if (!user || isGuestUser(user)) return
 
       const [ctxResult, levelResult, leaderboardResult, progressResult, testResultsResult] =
         await Promise.allSettled([
@@ -368,10 +371,11 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!user) return
+      if (!user || isGuestUser(user)) return
 
       requestNotificationsRefresh()
       refreshCacheSize()
+      prefetchAppMediaAssets({ imageUrls: [user.avatarUrl] })
 
       const snap = getProfileScreenSnapshot(user.id)
       if (snap) {
@@ -429,6 +433,53 @@ export default function ProfileScreen() {
     ])
   }
 
+  const handleDeleteAccount = () => {
+    if (!user || deletingAccount) return
+
+    Alert.alert(
+      "Delete account",
+      "Your profile will be deactivated and you will lose access to homework, progress, and class features. This action cannot be undone from the app.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Confirm deletion",
+              "Are you absolutely sure? Your account will be marked as inactive.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Delete account",
+                  style: "destructive",
+                  onPress: async () => {
+                    setDeletingAccount(true)
+                    try {
+                      await studentsApi.deleteAccount(user.id)
+                      await logout()
+                      router.replace("/login")
+                    } catch (err) {
+                      Alert.alert(
+                        "Could not delete account",
+                        getUserFacingErrorMessage(
+                          err,
+                          "Please try again or contact your school administrator.",
+                        ),
+                      )
+                    } finally {
+                      setDeletingAccount(false)
+                    }
+                  },
+                },
+              ],
+            )
+          },
+        },
+      ],
+    )
+  }
+
   const handleAvatarUpload = async () => {
     if (!user || user.avatarUrl || avatarUploading) return
 
@@ -466,42 +517,8 @@ export default function ProfileScreen() {
     }
   }
 
-  const handleClearCache = () => {
-    const bytes = getSpeakingAudioCacheSizeBytes()
-    if (bytes <= 0) {
-      Alert.alert(
-        "Cache",
-        "Clear cached profile photos and other images? Voice recordings are already empty.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Clear images",
-            style: "destructive",
-            onPress: async () => {
-              await clearImageCache()
-              refreshCacheSize()
-            },
-          },
-        ],
-      )
-      return
-    }
-    Alert.alert(
-      "Clear cache",
-      `Remove ${formatSpeakingAudioCacheSize()} of cached voice recordings and all cached images?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            clearSpeakingAudioCache()
-            await clearImageCache()
-            refreshCacheSize()
-          },
-        },
-      ],
-    )
+  const handleOpenCache = () => {
+    setCacheSheetVisible(true)
   }
 
   const showSkeleton = loading
@@ -545,6 +562,27 @@ export default function ProfileScreen() {
 
   if (!user) return null
 
+  if (isGuestUser(user)) {
+    return (
+      <View style={styles.container}>
+        <GuestAuthBanner
+          variant="screen"
+          title="Create your student profile"
+          message="Sign in to save progress, receive homework, view your class schedule, and unlock the full Learnix experience."
+        />
+        <Pressable
+          style={styles.guestExitBtn}
+          onPress={async () => {
+            await logout()
+            router.replace("/login")
+          }}
+        >
+          <Text style={styles.guestExitText}>Exit guest mode</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
   const settingsItems: SettingsItem[] = [
     {
       id: "notifications",
@@ -556,54 +594,12 @@ export default function ProfileScreen() {
         Alert.alert("Notifications", "Open the bell icon in the top-right corner of any tab."),
     },
     {
-      id: "language",
-      label: "Language & Goal",
-      icon: "globe-outline",
-      iconBg: colors.primaryLight,
-      iconColor: colors.primary,
-      value: studentLevel?.unlockedCefrLevels?.slice(-1)[0] ?? "A1",
-      onPress: () =>
-        Alert.alert(
-          "Language & Goal",
-          studentLevel?.unlockedCefrLevels?.length
-            ? `Unlocked levels: ${studentLevel.unlockedCefrLevels.join(", ")}`
-            : "Complete exercises to unlock higher CEFR levels.",
-        ),
-    },
-    {
-      id: "subscription",
-      label: "Subscription",
-      icon: "card-outline",
-      iconBg: colors.successBg,
-      iconColor: colors.success,
-      value: user.isPremium ? "Premium" : "Free",
-      onPress: () =>
-        Alert.alert(
-          "Subscription",
-          user.isPremium
-            ? "You have an active Premium subscription."
-            : "You are on the Free plan. Contact your teacher for Premium access.",
-        ),
-    },
-    {
-      id: "account",
-      label: "Account",
-      icon: "person-circle-outline",
+      id: "privacy",
+      label: "Privacy Policy",
+      icon: "shield-checkmark-outline",
       iconBg: "#EDE9FE",
       iconColor: colors.indigo,
-      onPress: () =>
-        Alert.alert(
-          "Account",
-          [
-            user.name,
-            user.email,
-            user.login ? `Login: ${user.login}` : null,
-            groupName ? `Group: ${groupName}` : null,
-            teacherName ? `Teacher: ${teacherName}` : null,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        ),
+      onPress: () => router.push("/privacy-policy" as never),
     },
     {
       id: "help",
@@ -626,7 +622,16 @@ export default function ProfileScreen() {
       iconBg: "#E0F2FE",
       iconColor: "#0369A1",
       value: cacheSizeLabel,
-      onPress: handleClearCache,
+      onPress: handleOpenCache,
+    },
+    {
+      id: "delete-account",
+      label: deletingAccount ? "Deleting account…" : "Delete account",
+      icon: "trash-outline",
+      iconBg: colors.errorBg,
+      iconColor: colors.error,
+      destructive: true,
+      onPress: handleDeleteAccount,
     },
     {
       id: "logout",
@@ -640,7 +645,8 @@ export default function ProfileScreen() {
   ]
 
   return (
-    <Animated.ScrollView
+    <>
+      <Animated.ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       scrollEventThrottle={16}
@@ -757,6 +763,13 @@ export default function ProfileScreen() {
         </>
       )}
     </Animated.ScrollView>
+
+      <CacheManagerSheet
+        visible={cacheSheetVisible}
+        onClose={() => setCacheSheetVisible(false)}
+        onCacheChanged={refreshCacheSize}
+      />
+    </>
   )
 }
 
@@ -946,5 +959,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     fontVariant: ["tabular-nums"],
+  },
+  guestExitBtn: {
+    alignSelf: "center",
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  guestExitText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.textSecondary,
   },
 })

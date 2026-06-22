@@ -192,15 +192,6 @@ export function LevelScale({
         visible={showAll}
         onClose={() => setShowAll(false)}
         title="All levels"
-        headerRight={
-          <Pressable
-            onPress={() => setShowAll(false)}
-            hitSlop={8}
-            style={({ pressed }) => [styles.closeBtn, pressed && styles.closeBtnPressed]}
-          >
-            <Ionicons name="close" size={18} color={colors.textSecondary} />
-          </Pressable>
-        }
         contentStyle={styles.modalSheetContent}
       >
         <ScrollView

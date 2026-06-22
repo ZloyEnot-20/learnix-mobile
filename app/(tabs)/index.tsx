@@ -4,6 +4,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useNavigation } from "expo-router"
 import { useIsFocused } from "@react-navigation/native"
 import { useAuth } from "../../src/context/AuthContext"
+import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
+import { isGuestUser } from "../../src/lib/guest"
 import { ContinueLearningBanner } from "../../src/components/ContinueLearningBanner"
 import { NextLessonBanner } from "../../src/components/NextLessonBanner"
 import { NotificationsBell } from "../../src/components/NotificationsBell"
@@ -139,6 +141,7 @@ function HomeHeaderRight({
 export default function HomeScreen() {
   const navigation = useNavigation()
   const { user } = useAuth()
+  const guest = isGuestUser(user)
   const scrollY = useRef(new Animated.Value(0)).current
   const [headerRevealAt, setHeaderRevealAt] = useState(120)
   const [bannerRevealAt, setBannerRevealAt] = useState(88)
@@ -247,30 +250,36 @@ export default function HomeScreen() {
 
     navigation.setOptions({
       headerTitleAlign: "left",
-      headerTitle: () => (
-        <HomeHeaderGreeting
-          firstName={firstName}
-          scrollY={scrollY}
-          revealAt={headerRevealAt}
-        />
-      ),
-      headerRight: () => (
-        <HomeHeaderRight
-          schedule={lessonSchedule}
-          scrollY={scrollY}
-          bannerRevealAt={bannerRevealAt}
-        />
-      ),
+      headerTitle: guest
+        ? undefined
+        : () => (
+            <HomeHeaderGreeting
+              firstName={firstName}
+              scrollY={scrollY}
+              revealAt={headerRevealAt}
+            />
+          ),
+      headerRight: guest
+        ? undefined
+        : () => (
+            <HomeHeaderRight
+              schedule={lessonSchedule}
+              scrollY={scrollY}
+              bannerRevealAt={bannerRevealAt}
+            />
+          ),
       headerLeft: () => null,
-      headerTitleContainerStyle: {
-        left: spacing.screen,
-        right: 148,
-        alignItems: "flex-start",
-        maxWidth: undefined,
-      },
+      headerTitleContainerStyle: guest
+        ? undefined
+        : {
+            left: spacing.screen,
+            right: 148,
+            alignItems: "flex-start",
+            maxWidth: undefined,
+          },
       headerStyle: { backgroundColor: colors.background, minHeight: 56 },
     })
-  }, [navigation, user, firstName, scrollY, headerRevealAt, lessonSchedule, bannerRevealAt])
+  }, [navigation, user, guest, firstName, scrollY, headerRevealAt, lessonSchedule, bannerRevealAt])
 
   const handleGreetingLayout = useCallback((event: LayoutChangeEvent) => {
     setHeaderRevealAt(event.nativeEvent.layout.y)
@@ -282,6 +291,31 @@ export default function HomeScreen() {
   }, [])
 
   if (!user) return null
+
+  if (guest) {
+    return (
+      <Animated.ScrollView
+        style={[styles.container, styles.scrollOverflowVisible]}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <FadeInDown index={0}>
+          <View style={styles.greetingBlock}>
+            <Text style={styles.greeting}>Hello, Guest</Text>
+            <Text style={styles.subGreeting}>Explore a preview of Learnix materials</Text>
+          </View>
+        </FadeInDown>
+
+        <FadeInDown index={1}>
+          <IeltsMockTestBanner />
+        </FadeInDown>
+
+        <FadeInDown index={2}>
+          <GuestAuthBanner />
+        </FadeInDown>
+      </Animated.ScrollView>
+    )
+  }
 
   return (
     <Animated.ScrollView

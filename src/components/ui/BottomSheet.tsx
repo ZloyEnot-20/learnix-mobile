@@ -10,6 +10,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { colors, radius, shadow, spacing, typography } from "../../theme/tokens"
 
@@ -28,6 +29,8 @@ type BottomSheetProps = {
   contentStyle?: StyleProp<ViewStyle>
   /** Allow closing by dragging the handle/header down. Default: true */
   enableSwipeToClose?: boolean
+  /** Show an X button in the header. Default: true */
+  showCloseButton?: boolean
 }
 
 export function BottomSheet({
@@ -38,6 +41,7 @@ export function BottomSheet({
   headerRight,
   contentStyle,
   enableSwipeToClose = true,
+  showCloseButton = true,
 }: BottomSheetProps) {
   const insets = useSafeAreaInsets()
   const [rendered, setRendered] = useState(false)
@@ -46,6 +50,8 @@ export function BottomSheet({
   const prevVisible = useRef(false)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+  const enableSwipeRef = useRef(enableSwipeToClose)
+  enableSwipeRef.current = enableSwipeToClose
   const slide = useRef(new Animated.Value(SLIDE_DISTANCE)).current
   const dragY = useRef(new Animated.Value(0)).current
   const backdrop = useRef(new Animated.Value(0)).current
@@ -94,6 +100,9 @@ export function BottomSheet({
     runClose(true)
   }, [runClose])
 
+  const runCloseRef = useRef(runClose)
+  runCloseRef.current = runClose
+
   const openSheet = useCallback(() => {
     isClosing.current = false
     wasOpen.current = true
@@ -137,21 +146,21 @@ export function BottomSheet({
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) =>
-        enableSwipeToClose &&
+        enableSwipeRef.current &&
         gesture.dy > 4 &&
         Math.abs(gesture.dy) > Math.abs(gesture.dx),
       onPanResponderMove: (_, gesture) => {
-        if (!enableSwipeToClose || gesture.dy <= 0) return
+        if (!enableSwipeRef.current || gesture.dy <= 0) return
         dragY.setValue(gesture.dy)
         backdrop.setValue(Math.max(0, 1 - gesture.dy / 260))
       },
       onPanResponderRelease: (_, gesture) => {
-        if (!enableSwipeToClose) return
+        if (!enableSwipeRef.current) return
 
         if (gesture.dy > DISMISS_DRAG || gesture.vy > DISMISS_VELOCITY) {
           slide.setValue(gesture.dy)
           dragY.setValue(0)
-          runClose(true)
+          runCloseRef.current(true)
           return
         }
 
@@ -181,6 +190,8 @@ export function BottomSheet({
     }),
   ).current
 
+  const showHeader = title || headerRight || showCloseButton
+
   if (!rendered) return null
 
   return (
@@ -200,12 +211,29 @@ export function BottomSheet({
             },
           ]}
         >
-          <View {...(enableSwipeToClose ? panResponder.panHandlers : {})}>
+          <View
+            style={styles.dragZone}
+            {...(enableSwipeToClose ? panResponder.panHandlers : {})}
+          >
             <View style={styles.handle} />
-            {(title || headerRight) && (
+            {showHeader && (
               <View style={styles.header}>
                 {title ? <Text style={styles.title}>{title}</Text> : <View style={styles.headerSpacer} />}
-                {headerRight}
+                {(headerRight || showCloseButton) && (
+                  <View style={styles.headerActions}>
+                    {headerRight}
+                    {showCloseButton && (
+                      <Pressable
+                        onPress={handleDismiss}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Close"
+                      >
+                        <Ionicons name="close" size={22} color={colors.text} />
+                      </Pressable>
+                    )}
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -228,6 +256,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.sheet,
     maxHeight: "92%",
   },
+  dragZone: {
+    paddingBottom: spacing.sm,
+  },
   handle: {
     alignSelf: "center",
     width: 40,
@@ -243,6 +274,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingHorizontal: spacing.screen,
     paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   headerSpacer: { flex: 1 },
   title: { ...typography.h3, color: colors.text, flex: 1 },
