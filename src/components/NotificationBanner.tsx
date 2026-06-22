@@ -327,51 +327,69 @@ function SwipeableStackCard({
   item,
   depth,
   isTop,
+  isExiting,
+  dismissPromotesStack,
   hideBell,
   bellRef,
   screenWidth,
-  onDismiss,
+  onDismissStart,
+  onDismissComplete,
   onInteractionChange,
 }: {
   item: NotificationItem
   depth: number
   isTop: boolean
+  isExiting?: boolean
+  dismissPromotesStack: boolean
   hideBell?: boolean
   bellRef?: React.RefObject<View | null>
   screenWidth: number
-  onDismiss: () => void
+  onDismissStart: () => void
+  onDismissComplete: () => void
   onInteractionChange?: (active: boolean) => void
 }) {
   const translateX = useRef(new Animated.Value(0)).current
   const depthAnim = useRef(new Animated.Value(depth)).current
   const translateYTarget = translateYForDepth(depth)
   const translateYAnim = useRef(new Animated.Value(translateYTarget)).current
+  const prevDepthRef = useRef(depth)
   const dismissing = useRef(false)
   const dismissDistance = dismissDistanceForScreen(screenWidth)
 
   useEffect(() => {
+    const prevDepth = prevDepthRef.current
+    prevDepthRef.current = depth
+    const targetY = translateYForDepth(depth)
+
+    if (depth < prevDepth) {
+      depthAnim.setValue(depth)
+      translateYAnim.setValue(targetY)
+      return
+    }
+
     Animated.spring(depthAnim, {
       toValue: depth,
       useNativeDriver: true,
       tension: 120,
       friction: 14,
     }).start()
-  }, [depth, depthAnim])
-
-  useEffect(() => {
     Animated.spring(translateYAnim, {
-      toValue: translateYForDepth(depth),
+      toValue: targetY,
       useNativeDriver: true,
       tension: 120,
       friction: 14,
     }).start()
-  }, [depth, translateYAnim])
+  }, [depth, depthAnim, translateYAnim])
 
-  const dismiss = useCallback(() => {
+  const beginDismiss = useCallback(() => {
     if (dismissing.current) return
     dismissing.current = true
-    onDismiss()
-  }, [onDismiss])
+    onDismissStart()
+  }, [onDismissStart])
+
+  const completeDismiss = useCallback(() => {
+    onDismissComplete()
+  }, [onDismissComplete])
 
   const panResponder = useMemo(
     () =>
@@ -394,13 +412,15 @@ function SwipeableStackCard({
           const shouldDismiss = shouldDismissCard(g.dx, screenWidth)
           if (shouldDismiss) {
             const direction = g.dx >= 0 ? 1 : -1
+            beginDismiss()
+            if (dismissPromotesStack) finish()
             Animated.timing(translateX, {
               toValue: direction * dismissDistance,
               duration: 220,
               useNativeDriver: true,
             }).start(() => {
-              finish()
-              dismiss()
+              if (!dismissPromotesStack) finish()
+              completeDismiss()
             })
             return
           }
@@ -421,7 +441,7 @@ function SwipeableStackCard({
           }).start()
         },
       }),
-    [dismiss, dismissDistance, isTop, onInteractionChange, screenWidth, translateX],
+    [beginDismiss, completeDismiss, dismissDistance, dismissPromotesStack, isTop, onInteractionChange, screenWidth, translateX],
   )
 
   const scaleX = depthAnim.interpolate({
@@ -449,16 +469,17 @@ function SwipeableStackCard({
         styles.stackCard,
         { backgroundColor: getNotificationBannerColor(item.type) },
         {
-          zIndex: MAX_VISIBLE - depth,
-          opacity: isTop ? topOpacity : 1,
+          zIndex: isExiting ? MAX_VISIBLE + 1 : MAX_VISIBLE - depth,
+          opacity: isTop || isExiting ? topOpacity : 1,
           transform: [
-            { translateX: isTop ? translateX : 0 },
+            { translateX: isTop || isExiting ? translateX : 0 },
             { translateY: translateYAnim },
             { scaleX },
-            { rotate: isTop ? rotate : "0deg" },
+            { rotate: isTop || isExiting ? rotate : "0deg" },
           ],
         },
       ]}
+      pointerEvents={isExiting ? "none" : "auto"}
       {...(isTop ? panResponder.panHandlers : {})}
     >
       <NotificationCardContent item={item} hideBell={isTop && hideBell} bellRef={isTop ? bellRef : undefined} />
@@ -479,6 +500,7 @@ export function NotificationBanner({
   const [items, setItems] = useState<NotificationItem[]>([])
   const [loaded, setLoaded] = useState(false)
   const [rendered, setRendered] = useState(false)
+  const [exitingIds, setExitingIds] = useState<Set<string>>(() => new Set())
   const [shakeTopBell, setShakeTopBell] = useState(false)
   const [bellFlyPoints, setBellFlyPoints] = useState<{
     origin: BellPoint
@@ -500,6 +522,7 @@ export function NotificationBanner({
   const shakeResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingBellShakeRef = useRef(false)
   const isFocusedRef = useRef(isFocused)
+  const dismissStackSizeRef = useRef(0)
 
   useEffect(() => {
     isFocusedRef.current = isFocused
@@ -536,6 +559,10 @@ export function NotificationBanner({
     [items],
   )
   const visible = useMemo(() => unread.slice(0, MAX_VISIBLE), [unread])
+  const stackItems = useMemo(
+    () => visible.filter((n) => !exitingIds.has(n.id)),
+    [exitingIds, visible],
+  )
 
   const clearShakeTimers = useCallback(() => {
     if (shakeDelayRef.current) {
@@ -682,12 +709,12 @@ export function NotificationBanner({
   }, [clearShakeTimers, isFocused, loaded, scheduleTopBellShake, unread])
 
   const markRead = useCallback(async (item: NotificationItem) => {
+    setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)))
     try {
       await notificationsApi.markRead(item.id, true)
-      setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)))
       requestNotificationsRefresh()
     } catch {
-      /* ignore */
+      setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: false } : n)))
     }
   }, [])
 
@@ -745,15 +772,34 @@ export function NotificationBanner({
     [markRead, onScrollLockChange, sectionHeight, sectionMargin, sectionOpacity],
   )
 
-  const handleCardDismiss = useCallback(
+  const handleDismissStart = useCallback(
     (item: NotificationItem) => {
-      if (visible.length <= 1) {
+      dismissStackSizeRef.current = stackItems.length
+      if (stackItems.length <= 1) return
+      setExitingIds((prev) => {
+        const next = new Set(prev)
+        next.add(item.id)
+        return next
+      })
+      onScrollLockChange?.(false)
+    },
+    [onScrollLockChange, stackItems.length],
+  )
+
+  const handleDismissComplete = useCallback(
+    (item: NotificationItem) => {
+      if (dismissStackSizeRef.current <= 1) {
         collapseSection(item)
         return
       }
+      setExitingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(item.id)
+        return next
+      })
       void markRead(item)
     },
-    [collapseSection, markRead, visible.length],
+    [collapseSection, markRead],
   )
 
   const handleInteractionChange = useCallback(
@@ -811,18 +857,23 @@ export function NotificationBanner({
           <View style={styles.swipeStage}>
             <View style={[styles.stack, { height: MAX_STACK_HEIGHT }]}>
               {[...visible].reverse().map((item) => {
-                const depth = visible.findIndex((n) => n.id === item.id)
+                const isExiting = exitingIds.has(item.id)
+                const depth = isExiting ? -1 : stackItems.findIndex((n) => n.id === item.id)
+                const isTop = depth === 0
                 return (
                   <SwipeableStackCard
                     key={item.id}
                     item={item}
-                    depth={depth}
-                    isTop={depth === 0}
+                    depth={Math.max(depth, 0)}
+                    isTop={isTop}
+                    isExiting={isExiting}
+                    dismissPromotesStack={stackItems.length > 1}
                     hideBell={shakeTopBell}
                     bellRef={cardBellRef}
                     screenWidth={screenWidth}
-                    onDismiss={() => handleCardDismiss(item)}
-                    onInteractionChange={depth === 0 ? handleInteractionChange : undefined}
+                    onDismissStart={() => handleDismissStart(item)}
+                    onDismissComplete={() => handleDismissComplete(item)}
+                    onInteractionChange={isTop ? handleInteractionChange : undefined}
                   />
                 )
               })}

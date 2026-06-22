@@ -40,9 +40,11 @@ type SwipeableTabsProps<T extends string> = {
   onTabSwitch?: () => void
 }
 
-const SPRING = { useNativeDriver: true, tension: 90, friction: 14 }
+const SPRING = { useNativeDriver: true, tension: 90, friction: 14 } as const
 
-function animateTabSwitch() {
+export { SPRING as swipeableTabSpring }
+
+export function animateTabSwitch() {
   LayoutAnimation.configureNext(
     LayoutAnimation.create(
       animation.tabSwitchDuration,
@@ -50,6 +52,10 @@ function animateTabSwitch() {
       LayoutAnimation.Properties.opacity,
     ),
   )
+}
+
+function animateTabSwitchInternal() {
+  animateTabSwitch()
 }
 
 export function SwipeableTabs<T extends string>({
@@ -83,7 +89,7 @@ export function SwipeableTabs<T extends string>({
       dragStartIndex.current = clamped
       const nextTab = tabs[clamped]?.key
       if (notify && nextTab && nextTab !== activeTab) {
-        animateTabSwitch()
+        animateTabSwitchInternal()
         onTabSwitch?.()
         scrollRefs.current[clamped]?.scrollTo({ y: 0, animated: false })
         onTabChange(nextTab)

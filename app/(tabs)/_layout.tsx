@@ -57,6 +57,10 @@ export default function TabsLayout() {
         tabBarLabelStyle: {
           fontSize: 11,
           fontWeight: "600",
+          letterSpacing: -0.2,
+        },
+        tabBarItemStyle: {
+          paddingHorizontal: 0,
         },
         headerStyle: { backgroundColor: colors.background },
         headerTitle: () => null,
