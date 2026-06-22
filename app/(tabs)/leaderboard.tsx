@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,13 +13,13 @@ import { isGuestUser } from "../../src/lib/guest"
 import { LeaderboardPodium } from "../../src/components/LeaderboardPodium"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
 import { TierBadge } from "../../src/components/TierBadge"
-import { LeaderboardSkeleton } from "../../src/components/skeletons/Layouts"
+import { LeaderboardPodiumSkeleton, LeaderboardListSkeleton } from "../../src/components/skeletons/Layouts"
 import { orgApi, studentsApi } from "../../src/lib/api"
 import { prefetchAppMediaAssets } from "../../src/lib/app-cache"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import type { LeaderboardEntry, StudentLevel } from "../../src/types/gamification"
 import { getTierBarColor } from "../../src/types/gamification"
-import { colors, radius, spacing } from "../../src/theme/tokens"
+import { colors, radius, spacing, typography } from "../../src/theme/tokens"
 
 const MEDAL_COLORS = {
   1: { bg: "#FBBF24", text: "#78350F" },
@@ -133,7 +132,6 @@ export default function LeaderboardScreen() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [myLevel, setMyLevel] = useState<StudentLevel | null>(null)
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
 
   const load = useCallback(async (force = false) => {
     if (!user || isGuestUser(user)) return
@@ -174,14 +172,6 @@ export default function LeaderboardScreen() {
     }, []),
   )
 
-  const onRefresh = async () => {
-    setRefreshing(true)
-    await load(true)
-    setRefreshing(false)
-  }
-
-  const showSkeleton = loading || refreshing
-
   const meInList = useMemo(
     () => (user ? entries.find((entry) => entry.studentId === user.id) : undefined),
     [entries, user],
@@ -208,7 +198,7 @@ export default function LeaderboardScreen() {
       <View style={styles.container}>
         <GuestAuthBanner
           variant="screen"
-          title="Leaderboard is for students"
+          title="Top is for students"
           message="Sign in and join your learning center to earn XP, compete with classmates, and climb the rankings."
         />
       </View>
@@ -216,59 +206,90 @@ export default function LeaderboardScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-      }
-    >
-      {showSkeleton ? (
-        <LeaderboardSkeleton />
+    <View style={styles.container}>
+      <Text style={styles.title}>Top XP Leaders</Text>
+
+      {loading ? (
+        <>
+          <View style={styles.fixedTop}>
+            <LeaderboardPodiumSkeleton />
+          </View>
+          <ScrollView
+            style={styles.listScroll}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <LeaderboardListSkeleton />
+          </ScrollView>
+        </>
       ) : entries.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="trophy-outline" size={48} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No rankings yet</Text>
           <Text style={styles.emptyText}>
-            Complete homework and exercises to earn XP and climb the leaderboard.
+            Complete homework and exercises to earn XP and get on the board.
           </Text>
         </View>
       ) : (
         <>
-          <LeaderboardPodium entries={entries} currentUserId={user?.id} />
-
-          <View style={styles.list}>
-            {listEntries.map((entry) => (
-              <LeaderboardRow
-                key={entry.studentId}
-                entry={entry}
-                isMe={user?.id === entry.studentId}
-              />
-            ))}
+          <View style={styles.fixedTop}>
+            <LeaderboardPodium entries={entries} currentUserId={user?.id} />
           </View>
 
-          {myFallbackEntry ? (
-            <>
-              <View style={styles.separator} />
-              <LeaderboardRow
-                entry={myFallbackEntry}
-                isMe
-                highlightName
-                showYouBadge
-              />
-            </>
-          ) : null}
+          <ScrollView
+            style={styles.listScroll}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.list}>
+              {listEntries.map((entry) => (
+                <LeaderboardRow
+                  key={entry.studentId}
+                  entry={entry}
+                  isMe={user?.id === entry.studentId}
+                />
+              ))}
+            </View>
 
-          <LeaderboardFooter />
+            {myFallbackEntry ? (
+              <>
+                <View style={styles.separator} />
+                <LeaderboardRow
+                  entry={myFallbackEntry}
+                  isMe
+                  highlightName
+                  showYouBadge
+                />
+              </>
+            ) : null}
+
+            <LeaderboardFooter />
+          </ScrollView>
         </>
       )}
-    </ScrollView>
+    </View>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { paddingHorizontal: spacing.screen, paddingBottom: 40 },
+  title: {
+    ...typography.h3,
+    color: colors.text,
+    paddingHorizontal: spacing.screen,
+    paddingTop: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  fixedTop: {
+    paddingHorizontal: spacing.screen,
+  },
+  listScroll: {
+    flex: 1,
+  },
+  listContent: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: spacing.xl,
+  },
   list: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
@@ -402,8 +423,9 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   empty: {
+    flex: 1,
     alignItems: "center",
-    paddingTop: 80,
+    justifyContent: "center",
     paddingHorizontal: spacing.lg,
     gap: 8,
   },

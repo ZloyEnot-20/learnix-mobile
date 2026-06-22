@@ -373,24 +373,29 @@ export function TabShellSkeleton() {
   )
 }
 
-export function LeaderboardSkeleton() {
+export function LeaderboardPodiumSkeleton() {
   return (
-    <View>
-      <View style={styles.leaderboardPodium}>
-        <View style={[styles.row, styles.podiumRow]}>
-          {[68, 84, 64].map((size, i) => (
-            <View key={i} style={styles.podiumSlot}>
-              <Skeleton width={28} height={12} style={styles.center} />
-              <View style={styles.podiumAvatarSkeleton}>
-                <Skeleton circle height={size} />
-                <Skeleton width={i === 1 ? 34 : 28} height={i === 1 ? 34 : 28} borderRadius={999} style={styles.tierBadgeSkeleton} />
-              </View>
-              <Skeleton width={72} height={13} style={styles.gapSm} />
-              <Skeleton width={40} height={12} style={styles.gapSm} />
+    <View style={styles.leaderboardPodium}>
+      <View style={[styles.row, styles.podiumRow]}>
+        {[68, 84, 64].map((size, i) => (
+          <View key={i} style={styles.podiumSlot}>
+            <Skeleton width={28} height={12} style={styles.center} />
+            <View style={styles.podiumAvatarSkeleton}>
+              <Skeleton circle height={size} />
+              <Skeleton width={i === 1 ? 34 : 28} height={i === 1 ? 34 : 28} borderRadius={999} style={styles.tierBadgeSkeleton} />
             </View>
-          ))}
-        </View>
+            <Skeleton width={72} height={13} style={styles.gapSm} />
+            <Skeleton width={40} height={12} style={styles.gapSm} />
+          </View>
+        ))}
       </View>
+    </View>
+  )
+}
+
+export function LeaderboardListSkeleton() {
+  return (
+    <>
       <View style={styles.leaderboardListSkeleton}>
         {Array.from({ length: 8 }).map((_, i) => (
           <View key={i} style={styles.leaderboardRowSkeleton}>
@@ -416,6 +421,15 @@ export function LeaderboardSkeleton() {
           </View>
         </View>
       </SkeletonCard>
+    </>
+  )
+}
+
+export function LeaderboardSkeleton() {
+  return (
+    <View>
+      <LeaderboardPodiumSkeleton />
+      <LeaderboardListSkeleton />
     </View>
   )
 }

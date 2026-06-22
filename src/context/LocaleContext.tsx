@@ -20,7 +20,7 @@ interface LocaleContextValue {
 const LocaleContext = createContext<LocaleContextValue | null>(null)
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<AppLocale>("uz")
+  const [locale, setLocaleState] = useState<AppLocale>("en")
 
   useEffect(() => {
     AsyncStorage.getItem(LOCALE_KEY).then((stored) => {
