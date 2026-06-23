@@ -19,6 +19,15 @@ export interface VocabDeck {
   words: VocabWord[]
 }
 
+/** Lightweight deck row for catalogue screens (words loaded on open). */
+export interface VocabDeckSummary {
+  slug: string
+  title: string
+  description: string
+  level: string
+  wordCount: number
+}
+
 export function wordTranslation(word: VocabWord, lang: TranslationLang): string {
   if (lang === "uz") return word.translationUz || word.translation
   return word.translation

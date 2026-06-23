@@ -15,6 +15,7 @@ import type {
   HomeworkAttempt,
   HomeworkSubmission,
   StudentHomeworkEntry,
+  StudentHomeworkSummaryEntry,
   ControlWork,
   ControlWorkSubmission,
   StudentControlWorkEntry,
@@ -22,11 +23,11 @@ import type {
   ViolationReason,
   ViolationResponse,
 } from "../types/domain"
-import type { GrammarExercise } from "../types/grammar"
+import type { GrammarExercise, GrammarExerciseSummary, ExerciseMeta } from "../types/grammar"
 import type { StudentLevel, LeaderboardEntry } from "../types/gamification"
 import type { StudentContextResponse } from "./lesson-schedule"
-import type { VocabDeck, TopicMeta } from "../types/vocabulary"
-import type { PodcastEpisode } from "../types/podcast"
+import type { VocabDeck, TopicMeta, VocabDeckSummary } from "../types/vocabulary"
+import type { PodcastEpisode, PodcastSummary } from "../types/podcast"
 
 export { peekCached, peekStale, clearApiCache }
 
@@ -56,6 +57,7 @@ function submissionCacheTtl(sub: { status: string }): number {
 
 function invalidateHomeworkCaches(homeworkId?: string): void {
   invalidateKey(cacheKey("GET", "/homework/mine"))
+  invalidateKey(cacheKey("GET", "/homework/mine/summary"))
   clearHomeworkListSnapshot()
   if (homeworkId) {
     invalidateKey(cacheKey("GET", `/homework/${homeworkId}`))
@@ -123,6 +125,15 @@ export const homeworkApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
+  mineSummary: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/homework/mine/summary")
+    return cachedFetch(
+      key,
+      TTL.homeworkMine,
+      () => api.get<StudentHomeworkSummaryEntry[]>("/homework/mine/summary"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
   get: (id: string, opts?: { force?: boolean }) => {
     const key = cacheKey("GET", `/homework/${id}`)
     return cachedFetch(
@@ -178,6 +189,7 @@ export const homeworkApi = {
 
 function invalidateControlWorkCaches(controlWorkId?: string): void {
   invalidateKey(cacheKey("GET", "/control-works/mine"))
+  invalidateKey(cacheKey("GET", "/control-works/mine/summary"))
   clearHomeworkListSnapshot()
   if (controlWorkId) {
     invalidateKey(cacheKey("GET", `/control-works/${controlWorkId}`))
@@ -192,6 +204,15 @@ export const controlWorkApi = {
       key,
       TTL.homeworkMine,
       () => api.get<StudentControlWorkEntry[]>("/control-works/mine"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  mineSummary: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/control-works/mine/summary")
+    return cachedFetch(
+      key,
+      TTL.homeworkMine,
+      () => api.get<StudentControlWorkEntry[]>("/control-works/mine/summary"),
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
@@ -277,6 +298,26 @@ export const exercisesApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
+  summaries: (topic?: string, opts?: { force?: boolean }) => {
+    const path = `/exercises/summary${topic ? `?topic=${encodeURIComponent(topic)}` : ""}`
+    const key = cacheKey("GET", path)
+    return cachedFetch(
+      key,
+      TTL.exercises,
+      () => api.get<GrammarExerciseSummary[]>(path),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  metaBatch: async (slugs: string[], opts?: { force?: boolean }) => {
+    const normalized = [...new Set(slugs.filter(Boolean))].sort()
+    const key = cacheKey("POST", `/exercises/meta:${normalized.join(",")}`)
+    return cachedFetch(
+      key,
+      TTL.exercises,
+      () => api.post<ExerciseMeta[]>("/exercises/meta", { slugs: normalized }),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
   topics: (opts?: { force?: boolean }) => {
     const key = cacheKey("GET", "/exercises/topics")
     return cachedFetch(
@@ -304,6 +345,15 @@ export const exercisesApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
+  vocabSummaries: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/exercises/vocab/summary")
+    return cachedFetch(
+      key,
+      TTL.vocab,
+      () => api.get<VocabDeckSummary[]>("/exercises/vocab/summary"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
   vocabDeck: (slug: string, opts?: { force?: boolean }) => {
     const key = cacheKey("GET", `/exercises/vocab/${slug}`)
     return cachedFetch(
@@ -319,6 +369,15 @@ export const exercisesApi = {
       key,
       TTL.podcast,
       () => api.get<PodcastEpisode[]>("/exercises/podcasts"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  podcastSummaries: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/exercises/podcasts/summary")
+    return cachedFetch(
+      key,
+      TTL.podcast,
+      () => api.get<PodcastSummary[]>("/exercises/podcasts/summary"),
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },

@@ -76,6 +76,31 @@ export interface GrammarExercise {
   content: GrammarExerciseContent
 }
 
+/** Lightweight exercise row for catalogue / progress screens. */
+export interface GrammarExerciseSummary {
+  slug: string
+  title: string
+  topic: string
+  subtopic: string
+  category: GrammarCategory
+  level: string
+  type: GrammarExerciseType
+  estimatedTime: number
+  totalQuestions: number
+  passingScore: number
+}
+
+export interface ExerciseMeta {
+  slug: string
+  title: string
+  topic: string
+  subtopic: string
+  category: GrammarCategory
+  level: string
+  totalQuestions: number
+  passingScore: number
+}
+
 export const GRAMMAR_BLANK_TOKEN = "_____"
 
 export function isBlankCorrect(input: string, accepted: string[]): boolean {

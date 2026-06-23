@@ -2,9 +2,9 @@ import { exercisesApi, homeworkApi } from "./api"
 import type { LastActivity } from "./last-activity"
 import { getLastActivity, subjectLabel } from "./last-activity"
 import { findTopicMeta, topicDisplayTitle } from "./topic-meta"
-import { parseVocabHomeworkSlug, type TopicMeta, type VocabDeck } from "../types/vocabulary"
-import type { GrammarExercise } from "../types/grammar"
-import type { StudentHomeworkEntry } from "../types/domain"
+import { parseVocabHomeworkSlug, type TopicMeta, type VocabDeckSummary } from "../types/vocabulary"
+import type { ExerciseMeta } from "../types/grammar"
+import type { StudentHomeworkSummaryEntry } from "../types/domain"
 
 export interface ContinueLearningItem {
   route: string
@@ -16,25 +16,19 @@ export interface ContinueLearningItem {
   progressLabel?: string
 }
 
-function grammarSubject(ex: GrammarExercise): ContinueLearningItem["subject"] {
-  if (ex.category === "vocabulary") return "vocabulary"
-  if (ex.category === "speaking") return "speaking"
-  return "grammar"
-}
-
-function homeworkRoute(
-  entry: StudentHomeworkEntry,
-  exerciseBySlug: Map<string, GrammarExercise>,
-): string | undefined {
-  const { homework, submission } = entry
+function homeworkRoute(entry: StudentHomeworkSummaryEntry): string | undefined {
+  const { homework, submission, exerciseTopic } = entry
   const failed =
     submission.integrityStatus === "cheating_detected" ||
     submission.attempt?.failedDueToCheating
   if (failed) return undefined
 
-  if (homework.subject === "grammar" && homework.exerciseSlug) {
-    const ex = exerciseBySlug.get(homework.exerciseSlug)
-    if (ex) return `/homework/exercise/${ex.topic}/${ex.slug}?hw=${homework.id}`
+  if (
+    (homework.subject === "grammar" || homework.subject === "speaking") &&
+    homework.exerciseSlug &&
+    exerciseTopic
+  ) {
+    return `/homework/exercise/${exerciseTopic}/${homework.exerciseSlug}?hw=${homework.id}`
   }
   if (homework.subject === "vocabulary") {
     const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
@@ -43,7 +37,7 @@ function homeworkRoute(
   return undefined
 }
 
-function homeworkProgress(entry: StudentHomeworkEntry): {
+function homeworkProgress(entry: StudentHomeworkSummaryEntry): {
   progressPct?: number
   minutesLeft?: number
   progressLabel?: string
@@ -53,7 +47,7 @@ function homeworkProgress(entry: StudentHomeworkEntry): {
   const totalQuestions = attempt?.totalQuestions
   const answered =
     attempt?.answeredCount ??
-    (attempt ? attempt.correctCount + attempt.mistakes.length : 0)
+    (attempt ? attempt.correctCount + (attempt.mistakes?.length ?? 0) : 0)
 
   if (totalQuestions && totalQuestions > 0 && answered > 0) {
     const pct = Math.min(99, Math.round((answered / totalQuestions) * 100))
@@ -92,32 +86,32 @@ function homeworkProgress(entry: StudentHomeworkEntry): {
   return { progressPct: 5, progressLabel: "Started · tap to continue" }
 }
 
-function exerciseCategoryLabel(
-  ex: GrammarExercise,
-  topicMetas: TopicMeta[],
-): string {
-  const subject = grammarSubject(ex)
-  const topicTitle = topicDisplayTitle(topicMetas, ex.topic)
-  return `${subjectLabel(subject)}: ${ex.subtopic || topicTitle}`
+function exerciseCategoryLabel(meta: ExerciseMeta, topicMetas: TopicMeta[]): string {
+  const subject =
+    meta.category === "vocabulary"
+      ? "vocabulary"
+      : meta.category === "speaking"
+        ? "speaking"
+        : "grammar"
+  const topicTitle = topicDisplayTitle(topicMetas, meta.topic)
+  return `${subjectLabel(subject)}: ${meta.subtopic || topicTitle}`
 }
 
 function fromHomeworkEntry(
-  entry: StudentHomeworkEntry,
-  exerciseBySlug: Map<string, GrammarExercise>,
+  entry: StudentHomeworkSummaryEntry,
   topicMetas: TopicMeta[],
 ): ContinueLearningItem | null {
-  const route = homeworkRoute(entry, exerciseBySlug)
+  const route = homeworkRoute(entry)
   if (!route) return null
 
-  const { homework } = entry
-  const ex = homework.exerciseSlug ? exerciseBySlug.get(homework.exerciseSlug) : undefined
-  const categoryLabel = ex
-    ? exerciseCategoryLabel(ex, topicMetas)
+  const { homework, exerciseTitle } = entry
+  const categoryLabel = exerciseTitle
+    ? `${subjectLabel(homework.subject)}: ${exerciseTitle}`
     : `${subjectLabel(homework.subject)}: ${homework.title}`
 
   return {
     route,
-    title: ex?.title ?? homework.title,
+    title: exerciseTitle ?? homework.title,
     categoryLabel,
     subject: homework.subject,
     ...homeworkProgress(entry),
@@ -136,24 +130,40 @@ export function continueItemFromLastActivity(last: LastActivity): ContinueLearni
   }
 }
 
-function enrichGameActivity(
+function slugsFromLastActivity(last: LastActivity): string[] {
+  const exerciseMatch = last.route.match(/^\/exercise\/([^/]+)\/([^/?]+)/)
+  if (exerciseMatch) return [exerciseMatch[2]]
+
+  const homeworkMatch = last.route.match(/^\/homework\/exercise\/([^/]+)\/([^/?]+)/)
+  if (homeworkMatch) return [homeworkMatch[2]]
+
+  return []
+}
+
+async function enrichGameActivity(
   last: LastActivity,
-  exerciseBySlug: Map<string, GrammarExercise>,
+  exerciseBySlug: Map<string, ExerciseMeta>,
   topicMetas: TopicMeta[],
-  decks: VocabDeck[],
-): ContinueLearningItem {
+  decks: VocabDeckSummary[],
+): Promise<ContinueLearningItem> {
   const base = continueItemFromLastActivity(last)
 
   const exerciseMatch = last.route.match(/^\/exercise\/([^/]+)\/([^/?]+)/)
   if (exerciseMatch) {
     const slug = exerciseMatch[2]
-    const ex = exerciseBySlug.get(slug)
-    if (ex) {
+    const meta = exerciseBySlug.get(slug)
+    if (meta) {
+      const subject =
+        meta.category === "vocabulary"
+          ? "vocabulary"
+          : meta.category === "speaking"
+            ? "speaking"
+            : "grammar"
       return {
         ...base,
-        title: ex.title,
-        categoryLabel: exerciseCategoryLabel(ex, topicMetas),
-        subject: grammarSubject(ex),
+        title: meta.title,
+        categoryLabel: exerciseCategoryLabel(meta, topicMetas),
+        subject,
       }
     }
   }
@@ -195,8 +205,7 @@ function enrichGameActivity(
 }
 
 function pickInProgressHomework(
-  entries: StudentHomeworkEntry[],
-  exerciseBySlug: Map<string, GrammarExercise>,
+  entries: StudentHomeworkSummaryEntry[],
   topicMetas: TopicMeta[],
 ): ContinueLearningItem | null {
   const active = entries.filter(
@@ -217,21 +226,25 @@ function pickInProgressHomework(
     return ta - tb
   })
 
-  return fromHomeworkEntry(active[0], exerciseBySlug, topicMetas)
+  return fromHomeworkEntry(active[0], topicMetas)
 }
 
 export async function resolveContinueLearning(
   userId: string,
 ): Promise<ContinueLearningItem | null> {
-  const [last, entries, exList, topicMetas, decks] = await Promise.all([
+  const [last, entries, topicMetas, decks] = await Promise.all([
     getLastActivity(userId),
-    homeworkApi.mine().catch(() => [] as StudentHomeworkEntry[]),
-    exercisesApi.list().catch(() => [] as GrammarExercise[]),
+    homeworkApi.mineSummary().catch(() => [] as StudentHomeworkSummaryEntry[]),
     exercisesApi.topics().catch(() => [] as TopicMeta[]),
-    exercisesApi.vocab().catch(() => [] as VocabDeck[]),
+    exercisesApi.vocabSummaries().catch(() => [] as VocabDeckSummary[]),
   ])
 
-  const exerciseBySlug = new Map(exList.map((e) => [e.slug, e]))
+  const slugList = last ? slugsFromLastActivity(last) : []
+  const metaList =
+    slugList.length > 0
+      ? await exercisesApi.metaBatch(slugList).catch(() => [] as ExerciseMeta[])
+      : []
+  const exerciseBySlug = new Map(metaList.map((meta) => [meta.slug, meta]))
 
   if (last?.kind === "homework" && last.homeworkId) {
     const entry = entries.find((e) => e.homework.id === last.homeworkId)
@@ -239,7 +252,7 @@ export async function resolveContinueLearning(
       entry &&
       (entry.submission.status === "in_progress" || entry.submission.status === "paused")
     ) {
-      const item = fromHomeworkEntry(entry, exerciseBySlug, topicMetas)
+      const item = fromHomeworkEntry(entry, topicMetas)
       if (item) return item
     }
   }
@@ -248,7 +261,7 @@ export async function resolveContinueLearning(
     return enrichGameActivity(last, exerciseBySlug, topicMetas, decks)
   }
 
-  const inProgress = pickInProgressHomework(entries, exerciseBySlug, topicMetas)
+  const inProgress = pickInProgressHomework(entries, topicMetas)
   if (inProgress) return inProgress
 
   if (last?.kind === "homework") {

@@ -111,6 +111,14 @@ export interface StudentHomeworkEntry {
   submission: HomeworkSubmission
 }
 
+export interface StudentHomeworkSummaryEntry {
+  homework: HomeworkAssignment
+  submission: HomeworkSubmission
+  exerciseTopic?: string
+  exerciseTitle?: string
+  reviewedWordLabels?: string[]
+}
+
 export type ControlWorkSubject = "vocabulary" | "grammar" | "reading" | "listening" | "writing"
 
 export interface ControlWorkStep {

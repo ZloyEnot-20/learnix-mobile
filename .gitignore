@@ -9,6 +9,7 @@ npm-debug.*
 *.mobileprovision
 *.orig.*
 google-play-service-account.json
+.eas-submit/
 web-build/
 .env
 .env.local

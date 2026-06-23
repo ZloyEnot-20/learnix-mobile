@@ -30,6 +30,7 @@ import {
 } from "../../src/lib/continue-learning"
 import {
   getHomeScreenSnapshot,
+  loadHomeScreenCache,
   patchHomeScreenSnapshot,
   setHomeScreenSnapshot,
   type HomeScreenSnapshot,
@@ -230,18 +231,20 @@ export default function HomeScreen() {
 
       requestNotificationsRefresh()
 
-      const snap = getHomeScreenSnapshot(user.id)
-      if (snap) {
-        applySnapshot(snap)
-        if (!snap.scheduleChecked) {
-          void refreshLessonSchedule(user.id)
+      void (async () => {
+        const snap = getHomeScreenSnapshot(user.id) ?? (await loadHomeScreenCache(user.id))
+        if (snap) {
+          applySnapshot(snap)
+          if (!snap.scheduleChecked) {
+            void refreshLessonSchedule(user.id)
+          }
+          return
         }
-        return
-      }
 
-      setLoading(true)
-      setScheduleLoading(true)
-      void load()
+        setLoading(true)
+        setScheduleLoading(true)
+        void load()
+      })()
     }, [user, load, applySnapshot, refreshLessonSchedule]),
   )
 

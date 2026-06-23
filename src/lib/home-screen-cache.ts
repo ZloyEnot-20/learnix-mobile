@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage"
 import type { ContinueLearningItem } from "./continue-learning"
 import type { VocabularyReviewPreview } from "./learned-vocabulary"
 import type { LessonSchedule } from "./lesson-schedule"
@@ -12,15 +13,24 @@ export interface HomeScreenSnapshot {
   scheduleChecked?: boolean
 }
 
-let snapshot: { studentId: string; data: HomeScreenSnapshot } | null = null
+const STORAGE_KEY_PREFIX = "learnix_home_screen:"
+const TTL_MS = 10 * 60_000
+
+let snapshot: { studentId: string; data: HomeScreenSnapshot; at: number } | null = null
 
 export function getHomeScreenSnapshot(studentId: string): HomeScreenSnapshot | null {
   if (!snapshot || snapshot.studentId !== studentId) return null
+  if (Date.now() - snapshot.at > TTL_MS) return null
   return snapshot.data
 }
 
 export function setHomeScreenSnapshot(studentId: string, data: HomeScreenSnapshot): void {
-  snapshot = { studentId, data }
+  const at = Date.now()
+  snapshot = { studentId, data, at }
+  void AsyncStorage.setItem(
+    `${STORAGE_KEY_PREFIX}${studentId}`,
+    JSON.stringify({ data, at }),
+  ).catch(() => {})
 }
 
 export function patchHomeScreenSnapshot(
@@ -28,9 +38,32 @@ export function patchHomeScreenSnapshot(
   patch: Partial<HomeScreenSnapshot>,
 ): void {
   if (!snapshot || snapshot.studentId !== studentId) return
-  snapshot = { studentId, data: { ...snapshot.data, ...patch } }
+  const data = { ...snapshot.data, ...patch }
+  setHomeScreenSnapshot(studentId, data)
+}
+
+export async function loadHomeScreenCache(studentId: string): Promise<HomeScreenSnapshot | null> {
+  const memory = getHomeScreenSnapshot(studentId)
+  if (memory) return memory
+
+  try {
+    const raw = await AsyncStorage.getItem(`${STORAGE_KEY_PREFIX}${studentId}`)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as { data: HomeScreenSnapshot; at: number }
+    if (!parsed.data || Date.now() - parsed.at > TTL_MS) return null
+
+    snapshot = { studentId, data: parsed.data, at: parsed.at }
+    return parsed.data
+  } catch {
+    return null
+  }
 }
 
 export function clearHomeScreenSnapshot(): void {
+  const studentId = snapshot?.studentId
   snapshot = null
+  if (studentId) {
+    void AsyncStorage.removeItem(`${STORAGE_KEY_PREFIX}${studentId}`).catch(() => {})
+  }
 }

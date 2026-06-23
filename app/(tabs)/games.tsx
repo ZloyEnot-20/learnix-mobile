@@ -18,7 +18,6 @@ import {
 } from "../../src/lib/guest"
 import { exercisesApi, studentsApi } from "../../src/lib/api"
 import { loadGamesContentCache, saveGamesContentCache } from "../../src/lib/games-content-cache"
-import { prefetchPodcastEpisodes } from "../../src/lib/app-cache"
 import { recordGamePodcast, recordGameTopic, recordGameVocabulary } from "../../src/lib/record-activity"
 import { LevelScale } from "../../src/components/LevelScale"
 import { GamesHistorySection } from "../../src/components/GamesHistorySection"
@@ -47,13 +46,12 @@ import {
   requiredLevelFor,
   type StudentLevel,
 } from "../../src/types/gamification"
-import type { GrammarExercise } from "../../src/types/grammar"
+import type { GrammarExerciseSummary } from "../../src/types/grammar"
 import {
   PODCAST_SUBJECT_COLOR,
-  podcastHasWords,
-  type PodcastEpisode,
+  type PodcastSummary,
 } from "../../src/types/podcast"
-import type { TopicMeta, TopicSummary, VocabDeck } from "../../src/types/vocabulary"
+import type { TopicMeta, TopicSummary, VocabDeckSummary } from "../../src/types/vocabulary"
 import {
   VOCAB_SUBJECT_COLOR,
 } from "../../src/types/vocabulary"
@@ -498,10 +496,10 @@ export default function GamesScreen() {
   const guest = isGuestUser(user)
   const router = useRouter()
   const [tab, setTab] = useState<Tab>("play")
-  const [exercises, setExercises] = useState<GrammarExercise[]>([])
+  const [exerciseSummaries, setExerciseSummaries] = useState<GrammarExerciseSummary[]>([])
   const [topics, setTopics] = useState<TopicSummary[]>([])
-  const [vocabDecks, setVocabDecks] = useState<VocabDeck[]>([])
-  const [podcasts, setPodcasts] = useState<PodcastEpisode[]>([])
+  const [vocabSummaries, setVocabSummaries] = useState<VocabDeckSummary[]>([])
+  const [podcastSummaries, setPodcastSummaries] = useState<PodcastSummary[]>([])
   const [studentLevel, setStudentLevel] = useState<StudentLevel | null>(null)
   const [studentLevelLoading, setStudentLevelLoading] = useState(true)
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null)
@@ -521,13 +519,13 @@ export default function GamesScreen() {
 
   const loadProgress = useCallback(
     async (
-      exerciseList: GrammarExercise[] = exercises,
-      decks: VocabDeck[] = vocabDecks,
+      summaries: GrammarExerciseSummary[] = exerciseSummaries,
+      decks: VocabDeckSummary[] = vocabSummaries,
     ) => {
       if (!user || isGuestUser(user)) return
       try {
         const progress = await getLearningProgress(user.id)
-        const nextTopicProgress = buildTopicProgressMap(progress.gameResults, exerciseList)
+        const nextTopicProgress = buildTopicProgressMap(progress.gameResults, summaries)
         const nextDeckProgress = buildDeckProgressMap(progress, decks)
         setTopicProgress(nextTopicProgress)
         setDeckProgress(nextDeckProgress)
@@ -548,37 +546,50 @@ export default function GamesScreen() {
         })
       }
     },
-    [user, exercises, vocabDecks],
+    [user, exerciseSummaries, vocabSummaries],
   )
 
   const applyContent = useCallback(
     (
-      exerciseList: GrammarExercise[],
+      summaries: GrammarExerciseSummary[],
       metas: TopicMeta[],
-      decks: VocabDeck[],
-      podcastList: PodcastEpisode[],
+      decks: VocabDeckSummary[],
+      podcasts: PodcastSummary[],
     ) => {
-      setExercises(exerciseList)
-      setTopics(buildTopicSummaries(exerciseList, metas))
-      setVocabDecks(decks)
-      setPodcasts(podcastList)
+      setExerciseSummaries(summaries)
+      setTopics(buildTopicSummaries(summaries, metas))
+      setVocabSummaries(decks)
+      setPodcastSummaries(podcasts)
     },
     [],
   )
 
   const loadContent = async (opts?: { force?: boolean }) => {
     try {
-      const [exerciseList, metas, decks, podcastList] = await Promise.all([
-        exercisesApi.list(undefined, opts),
+      const summaryTasks: [
+        Promise<GrammarExerciseSummary[]>,
+        Promise<TopicMeta[]>,
+        Promise<VocabDeckSummary[]>,
+        Promise<PodcastSummary[]>,
+      ] = [
+        SHOW_GRAMMAR_IN_LEARN
+          ? exercisesApi.summaries(undefined, opts)
+          : Promise.resolve([] as GrammarExerciseSummary[]),
         exercisesApi.topics(opts),
-        exercisesApi.vocab(opts),
-        exercisesApi.podcasts(opts),
-      ])
-      const exercises = exerciseList as GrammarExercise[]
-      applyContent(exercises, metas, decks, podcastList)
-      await saveGamesContentCache(exercises, metas, decks, podcastList)
-      prefetchPodcastEpisodes(podcastList)
-      return { exerciseList: exercises, decks }
+        exercisesApi.vocabSummaries(opts),
+        exercisesApi.podcastSummaries(opts),
+      ]
+
+      const [exerciseList, metas, decks, podcastList] = await Promise.all(summaryTasks)
+      applyContent(exerciseList, metas, decks, podcastList)
+      await saveGamesContentCache({
+        exerciseSummaries: exerciseList,
+        topicMetas: metas,
+        vocabSummaries: decks,
+        podcastSummaries: podcastList,
+        cachedAt: Date.now(),
+      })
+      return { exerciseList, decks }
     } catch {
       return null
     }
@@ -592,10 +603,14 @@ export default function GamesScreen() {
       if (cancelled) return
 
       if (cached) {
-        applyContent(cached.exercises, cached.topicMetas, cached.vocabDecks, cached.podcasts)
-        prefetchPodcastEpisodes(cached.podcasts)
+        applyContent(
+          cached.exerciseSummaries,
+          cached.topicMetas,
+          cached.vocabSummaries,
+          cached.podcastSummaries,
+        )
         setLoading(false)
-        void loadProgress(cached.exercises, cached.vocabDecks)
+        void loadProgress(cached.exerciseSummaries, cached.vocabSummaries)
       } else {
         setLoading(true)
       }
@@ -667,12 +682,12 @@ export default function GamesScreen() {
     const map = new Map<string, GameItem[]>()
 
     for (const { key } of LEVELS) {
-      const decks = vocabDecks
+      const decks = vocabSummaries
         .filter((d) => clampToFixedLevel(primaryLevel([d.level])) === key)
         .map((d) => ({
           id: `deck-${d.slug}`,
           title: d.title,
-          subtitle: `${d.words.length} words · Flashcards & Quiz`,
+          subtitle: `${d.wordCount} words · Flashcards & Quiz`,
           route: `/vocabulary/${d.slug}`,
           kind: "vocab" as const,
           deckSlug: d.slug,
@@ -690,10 +705,10 @@ export default function GamesScreen() {
           category: t.category,
         }))
 
-      const podcastGames = podcasts
+      const podcastGames = podcastSummaries
         .filter((p) => clampToFixedLevel(primaryLevel([p.level])) === key)
         .map((p) => {
-          const wordsLabel = podcastHasWords(p) ? ` · ${p.words.length} words` : ""
+          const wordsLabel = p.wordCount > 0 ? ` · ${p.wordCount} words` : ""
           return {
             id: `podcast-${p.slug}`,
             title: p.title,
@@ -724,7 +739,7 @@ export default function GamesScreen() {
     }
 
     return map
-  }, [vocabDecks, playableTopics, podcasts, guest])
+  }, [vocabSummaries, playableTopics, podcastSummaries, guest])
 
   const levelStats = useMemo(() => {
     const stats = new Map<string, { completed: number; total: number; completionPct: number }>()
@@ -752,7 +767,7 @@ export default function GamesScreen() {
       const studentId = user && isStudentUser(user) ? user.id : null
       if (studentId) {
         if (game.kind === "vocab" && game.deckSlug) {
-          const deck = vocabDecks.find((d) => d.slug === game.deckSlug)
+          const deck = vocabSummaries.find((d) => d.slug === game.deckSlug)
           if (deck) recordGameVocabulary(studentId, deck, game.deckSlug)
         } else if (game.kind === "topic" && game.topic) {
           recordGameTopic(
@@ -762,13 +777,13 @@ export default function GamesScreen() {
             game.category === "vocabulary" ? "vocabulary" : "grammar",
           )
         } else if (game.kind === "podcast" && game.podcastSlug) {
-          const episode = podcasts.find((p) => p.slug === game.podcastSlug)
+          const episode = podcastSummaries.find((p) => p.slug === game.podcastSlug)
           if (episode) recordGamePodcast(studentId, episode, game.podcastSlug)
         }
       }
       router.push(game.route as never)
     },
-    [router, user, vocabDecks, podcasts],
+    [router, user, vocabSummaries, podcastSummaries],
   )
 
   useEffect(() => {

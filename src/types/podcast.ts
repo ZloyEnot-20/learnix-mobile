@@ -27,6 +27,18 @@ export interface PodcastEpisode {
   words: PodcastWord[]
 }
 
+/** Lightweight podcast row for catalogue screens (audio loaded on open). */
+export interface PodcastSummary {
+  slug: string
+  title: string
+  topic: string
+  description: string
+  level: string
+  difficulty: PodcastDifficulty
+  durationMinutes: number
+  wordCount: number
+}
+
 export function podcastWordLabel(word: PodcastWord): string {
   return (word.word ?? word.term ?? "").trim()
 }

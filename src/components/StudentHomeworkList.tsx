@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from "react"
 import { StyleSheet, View } from "react-native"
 import { useFocusEffect } from "expo-router"
-import { exercisesApi, homeworkApi, controlWorkApi } from "../lib/api"
+import { homeworkApi, controlWorkApi } from "../lib/api"
 import {
   getHomeworkListSnapshot,
   loadHomeworkListCache,
@@ -10,10 +10,11 @@ import {
 import { HomeworkSection, type HomeworkItem } from "./HomeworkSection"
 import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
-import { parsePodcastHomeworkSlug, podcastWordLabel, type PodcastEpisode } from "../types/podcast"
-import { prefetchPodcastEpisodes } from "../lib/app-cache"
-import type { GrammarExercise } from "../types/grammar"
-import type { StudentHomeworkEntry, StudentControlWorkEntry } from "../types/domain"
+import { parsePodcastHomeworkSlug } from "../types/podcast"
+import type {
+  StudentControlWorkEntry,
+  StudentHomeworkSummaryEntry,
+} from "../types/domain"
 import { colors, spacing } from "../theme/tokens"
 
 type Status = "pending" | "in_progress" | "completed"
@@ -24,75 +25,8 @@ const STATUS_ORDER: Record<Status, number> = {
   completed: 2,
 }
 
-async function fetchExercisesBySlug(slugs: string[]): Promise<GrammarExercise[]> {
-  if (slugs.length === 0) return []
-
-  const results = await Promise.all(
-    slugs.map((slug) => exercisesApi.get(slug).catch(() => null)),
-  )
-  return results.filter((exercise): exercise is GrammarExercise => exercise != null)
-}
-
-async function fetchPodcastsBySlug(slugs: string[]): Promise<Map<string, PodcastEpisode>> {
-  const map = new Map<string, PodcastEpisode>()
-  if (slugs.length === 0) return map
-
-  await Promise.all(
-    slugs.map(async (slug) => {
-      const episode = await exercisesApi.podcast(slug).catch(() => null)
-      if (episode) map.set(slug, episode)
-    }),
-  )
-
-  return map
-}
-
-function homeworkExerciseSlugs(entries: StudentHomeworkEntry[]): string[] {
-  return [
-    ...new Set(
-      entries
-        .filter(
-          ({ homework }) =>
-            (homework.subject === "grammar" || homework.subject === "speaking") &&
-            homework.exerciseSlug,
-        )
-        .map(({ homework }) => homework.exerciseSlug!),
-    ),
-  ]
-}
-
-function podcastSlugsNeedingReviewedWords(entries: StudentHomeworkEntry[]): string[] {
-  return [
-    ...new Set(
-      entries
-        .map((entry) => {
-          const slug = parsePodcastHomeworkSlug(entry.homework.exerciseSlug)
-          const wordsReviewed = entry.submission.attempt?.listeningStats?.wordsReviewed ?? 0
-          return slug && wordsReviewed > 0 ? slug : null
-        })
-        .filter((slug): slug is string => !!slug),
-    ),
-  ]
-}
-
-function podcastHomeworkSlugs(entries: StudentHomeworkEntry[]): string[] {
-  return [
-    ...new Set(
-      entries
-        .map((entry) => parsePodcastHomeworkSlug(entry.homework.exerciseSlug))
-        .filter((slug): slug is string => !!slug),
-    ),
-  ]
-}
-
-function mapHomeworkItems(
-  entries: StudentHomeworkEntry[],
-  exList: GrammarExercise[],
-  podcastsBySlug: Map<string, PodcastEpisode>,
-): HomeworkItem[] {
-  const exerciseBySlug = new Map(exList.map((e) => [e.slug, e]))
-
-  const mapped: HomeworkItem[] = entries.map(({ homework, submission }) => {
+function mapHomeworkItems(entries: StudentHomeworkSummaryEntry[]): HomeworkItem[] {
+  return entries.map(({ homework, submission, exerciseTopic, reviewedWordLabels }) => {
     const failedCheating =
       submission.integrityStatus === "cheating_detected" ||
       submission.attempt?.failedDueToCheating
@@ -109,10 +43,10 @@ function mapHomeworkItems(
     if (!failedCheating) {
       if (
         (homework.subject === "grammar" || homework.subject === "speaking") &&
-        homework.exerciseSlug
+        homework.exerciseSlug &&
+        exerciseTopic
       ) {
-        const ex = exerciseBySlug.get(homework.exerciseSlug)
-        if (ex) route = `/homework/exercise/${ex.topic}/${ex.slug}?hw=${homework.id}`
+        route = `/homework/exercise/${exerciseTopic}/${homework.exerciseSlug}?hw=${homework.id}`
       } else if (homework.subject === "vocabulary") {
         const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
         if (deckSlug) route = `/homework/vocabulary/${deckSlug}?hw=${homework.id}`
@@ -122,19 +56,6 @@ function mapHomeworkItems(
           route = `/homework/podcast/${podcastSlug}?hw=${homework.id}`
         }
         kind = "podcast"
-      }
-    }
-
-    const podcastSlug = parsePodcastHomeworkSlug(homework.exerciseSlug)
-    const wordsReviewed = submission.attempt?.listeningStats?.wordsReviewed ?? 0
-    let reviewedWords: string[] | undefined
-    if (podcastSlug && wordsReviewed > 0) {
-      const episode = podcastsBySlug.get(podcastSlug)
-      if (episode) {
-        reviewedWords = episode.words
-          .slice(0, wordsReviewed)
-          .map(podcastWordLabel)
-          .filter(Boolean)
       }
     }
 
@@ -157,11 +78,9 @@ function mapHomeworkItems(
       correctCount: submission.attempt?.correctCount,
       totalQuestions: submission.attempt?.totalQuestions,
       listeningStats: submission.attempt?.listeningStats,
-      reviewedWords,
+      reviewedWords: reviewedWordLabels,
     }
   })
-
-  return mapped
 }
 
 function mapControlWorkItems(entries: StudentControlWorkEntry[]): HomeworkItem[] {
@@ -207,15 +126,10 @@ function mapControlWorkItems(entries: StudentControlWorkEntry[]): HomeworkItem[]
 }
 
 function mergeHomeworkItems(
-  homeworkEntries: StudentHomeworkEntry[],
+  homeworkEntries: StudentHomeworkSummaryEntry[],
   controlEntries: StudentControlWorkEntry[],
-  exList: GrammarExercise[],
-  podcastsBySlug: Map<string, PodcastEpisode>,
 ): HomeworkItem[] {
-  const mapped = [
-    ...mapHomeworkItems(homeworkEntries, exList, podcastsBySlug),
-    ...mapControlWorkItems(controlEntries),
-  ]
+  const mapped = [...mapHomeworkItems(homeworkEntries), ...mapControlWorkItems(controlEntries)]
   mapped.sort((a, b) => {
     const s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status]
     if (s !== 0) return s
@@ -261,34 +175,14 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
 
       try {
         const [entries, controlEntries] = await Promise.all([
-          homeworkApi.mine(fetchOpts),
-          controlWorkApi.mine(fetchOpts),
+          homeworkApi.mineSummary(fetchOpts),
+          controlWorkApi.mineSummary(fetchOpts),
         ])
 
         if (generation !== loadGenerationRef.current) return
 
-        const exList = await fetchExercisesBySlug(homeworkExerciseSlugs(entries))
-        if (generation !== loadGenerationRef.current) return
-
-        const mapped = mergeHomeworkItems(entries, controlEntries, exList, new Map())
+        const mapped = mergeHomeworkItems(entries, controlEntries)
         publishItems(mapped, { background: opts?.background })
-
-        const homeworkPodcastSlugs = podcastHomeworkSlugs(entries)
-        if (homeworkPodcastSlugs.length > 0) {
-          void fetchPodcastsBySlug(homeworkPodcastSlugs).then((podcastsForPrefetch) => {
-            if (generation !== loadGenerationRef.current) return
-            prefetchPodcastEpisodes([...podcastsForPrefetch.values()])
-          })
-        }
-
-        const podcastSlugs = podcastSlugsNeedingReviewedWords(entries)
-        if (podcastSlugs.length === 0) return
-
-        const podcastsBySlug = await fetchPodcastsBySlug(podcastSlugs)
-        if (generation !== loadGenerationRef.current) return
-
-        const enriched = mergeHomeworkItems(entries, controlEntries, exList, podcastsBySlug)
-        publishItems(enriched, { background: true })
       } catch {
         if (generation !== loadGenerationRef.current) return
         if (!hasLoadedRef.current) setItems([])

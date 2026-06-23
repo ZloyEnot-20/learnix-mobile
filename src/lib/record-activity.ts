@@ -2,8 +2,8 @@ import { saveLastActivity, subjectLabel } from "./last-activity"
 import { humanizeSlug } from "./topic-meta"
 import type { Subject } from "../types/domain"
 import type { GrammarExercise } from "../types/grammar"
-import type { PodcastEpisode } from "../types/podcast"
-import type { VocabDeck } from "../types/vocabulary"
+import type { PodcastEpisode, PodcastSummary } from "../types/podcast"
+import type { VocabDeck, VocabDeckSummary } from "../types/vocabulary"
 
 function grammarSubject(ex: GrammarExercise): Subject {
   return ex.category === "vocabulary" ? "vocabulary" : "grammar"
@@ -59,7 +59,11 @@ export function recordGameExercise(
   })
 }
 
-export function recordGameVocabulary(userId: string, deck: VocabDeck, deckSlug: string): void {
+export function recordGameVocabulary(
+  userId: string,
+  deck: Pick<VocabDeck | VocabDeckSummary, "title">,
+  deckSlug: string,
+): void {
   void saveLastActivity(userId, {
     kind: "game",
     route: `/vocabulary/${deckSlug}`,
@@ -71,7 +75,7 @@ export function recordGameVocabulary(userId: string, deck: VocabDeck, deckSlug: 
 
 export function recordGamePodcast(
   userId: string,
-  episode: PodcastEpisode,
+  episode: Pick<PodcastEpisode | PodcastSummary, "title" | "topic">,
   podcastSlug: string,
 ): void {
   void saveLastActivity(userId, {

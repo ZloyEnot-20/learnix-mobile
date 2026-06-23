@@ -465,12 +465,8 @@ export function clearPodcastAudioCache(): void {
   if (dir.exists) dir.delete()
 }
 
-export function prefetchPodcastAudio(urls: string[]): void {
-  const remote = urls.filter((url) => /^https?:\/\//i.test(url))
-  for (const url of remote) {
-    const manager = getPodcastAudioDownloadManager(url)
-    manager.start()
-  }
+export function prefetchPodcastAudio(_urls: string[]): void {
+  // Podcast audio is downloaded only when the user opens a listening screen.
 }
 
 export function isSecondsBuffered(

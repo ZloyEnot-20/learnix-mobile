@@ -18,7 +18,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   splash: {
     image: "./assets/splash-icon.png",
     resizeMode: "contain",
-    backgroundColor: "#01AEF9",
+    backgroundColor: "#ffffff",
   },
   ios: {
     supportsTablet: true,
@@ -56,6 +56,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     "expo-router",
     "expo-font",
+    [
+      "expo-splash-screen",
+      {
+        image: "./assets/splash-icon.png",
+        imageWidth: 168,
+        resizeMode: "contain",
+        backgroundColor: "#ffffff",
+      },
+    ],
     [
       "expo-audio",
       {

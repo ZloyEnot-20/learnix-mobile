@@ -1,15 +1,14 @@
 import React from "react"
-import { StyleSheet, View } from "react-native"
+import { Dimensions, StyleSheet, View } from "react-native"
 import { Image } from "expo-image"
 
-const LOGO = require("../../assets/icon.png")
-const LOGO_SIZE = 112
-const LOGO_RADIUS = 12
+const LOGO = require("../../assets/splash-icon.png")
+const LOGO_SIZE = Math.round(Dimensions.get("window").width * 0.42)
 
 export function AppSplashScreen() {
   return (
     <View style={styles.container}>
-      <Image source={LOGO} style={styles.logo} contentFit="cover" />
+      <Image source={LOGO} style={styles.logo} contentFit="contain" />
     </View>
   )
 }
@@ -24,6 +23,5 @@ const styles = StyleSheet.create({
   logo: {
     width: LOGO_SIZE,
     height: LOGO_SIZE,
-    borderRadius: LOGO_RADIUS,
   },
 })

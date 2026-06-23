@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react"
 import {
+  FlatList,
   Pressable,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
   View,
@@ -391,9 +393,22 @@ export function HomeworkSection({
     </View>
   )
 
+  const refreshControl = onRefresh ? (
+    <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+  ) : undefined
+
   const activeContent = (
-    <>
-      {active.length === 0 ? (
+    <FlatList
+      data={active}
+      keyExtractor={(item) => item.id}
+      style={styles.list}
+      contentContainerStyle={[
+        styles.listScrollContent,
+        active.length === 0 ? styles.listScrollContentEmpty : null,
+      ]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={tab === "active" ? refreshControl : undefined}
+      ListEmptyComponent={
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
             <Ionicons name="checkmark-circle-outline" size={28} color={colors.success} />
@@ -401,22 +416,40 @@ export function HomeworkSection({
           <Text style={styles.emptyTitle}>All caught up</Text>
           <Text style={styles.emptyDesc}>No active homework right now.</Text>
         </View>
-      ) : (
-        active.map((hw, i) => {
-          const animate = animateItemIds === undefined ? true : animateItemIds.has(hw.id)
-          return (
-            <HomeworkListItem key={hw.id} id={hw.id} index={i} animate={animate}>
-              <HomeworkCard hw={hw} isNew={animateItemIds?.has(hw.id)} />
-            </HomeworkListItem>
-          )
-        })
-      )}
-    </>
+      }
+      renderItem={({ item: hw, index: i }) => {
+        const animate = animateItemIds === undefined ? true : animateItemIds.has(hw.id)
+        return (
+          <HomeworkListItem id={hw.id} index={i} animate={animate}>
+            <HomeworkCard hw={hw} isNew={animateItemIds?.has(hw.id)} />
+          </HomeworkListItem>
+        )
+      }}
+    />
+  )
+
+  const historySections = useMemo(
+    () =>
+      historyGroups.map((group) => ({
+        title: group.label,
+        data: group.items,
+      })),
+    [historyGroups],
   )
 
   const historyContent = (
-    <>
-      {completed.length === 0 ? (
+    <SectionList
+      sections={historySections}
+      keyExtractor={(item) => item.id}
+      style={styles.list}
+      contentContainerStyle={[
+        styles.listScrollContent,
+        completed.length === 0 ? styles.listScrollContentEmpty : null,
+      ]}
+      showsVerticalScrollIndicator={false}
+      refreshControl={tab === "history" ? refreshControl : undefined}
+      stickySectionHeadersEnabled={false}
+      ListEmptyComponent={
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
             <Ionicons name="document-text-outline" size={28} color={colors.textMuted} />
@@ -424,22 +457,18 @@ export function HomeworkSection({
           <Text style={styles.emptyTitle}>No completed homework yet</Text>
           <Text style={styles.emptyDesc}>Finished tasks will appear here.</Text>
         </View>
-      ) : (
-        historyGroups.map((group) => (
-          <View key={group.label}>
-            <Text style={styles.groupLabel}>{group.label}</Text>
-            {group.items.map((hw) => (
-              <HomeworkHistoryCard key={hw.id} hw={hw} />
-            ))}
-          </View>
-        ))
+      }
+      renderSectionHeader={({ section }) => (
+        <Text style={styles.groupLabel}>{section.title}</Text>
       )}
-    </>
+      renderItem={({ item: hw }) => <HomeworkHistoryCard hw={hw} />}
+    />
   )
 
   return (
     <SwipeableTabs
       style={styles.container}
+      fill
       header={sectionHeader}
       barStyle={styles.tabsBar}
       contentStyle={styles.listContent}
@@ -455,12 +484,6 @@ export function HomeworkSection({
       ]}
       activeTab={tab}
       onTabChange={setTab}
-      scrollable
-      refreshControl={
-        onRefresh ? (
-          <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
-        ) : undefined
-      }
     >
       {activeContent}
       {historyContent}
@@ -477,6 +500,18 @@ const styles = StyleSheet.create({
   tabsBar: { marginBottom: spacing.md },
   listContent: {
     paddingHorizontal: 0,
+    flex: 1,
+    minHeight: 0,
+  },
+  list: {
+    flex: 1,
+  },
+  listScrollContent: {
+    paddingBottom: spacing.xl,
+    gap: spacing.sm,
+  },
+  listScrollContentEmpty: {
+    flexGrow: 1,
   },
   header: {
     flexDirection: "row",

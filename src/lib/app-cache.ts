@@ -3,7 +3,6 @@ import { clearImageCache, prefetchRemoteImages } from "./image-cache"
 import {
   clearPodcastAudioCache,
   getPodcastAudioCacheSizeBytes,
-  prefetchPodcastAudio,
 } from "./podcast-audio-cache"
 import {
   clearSpeakingAudioCache,
@@ -121,21 +120,11 @@ export async function clearAppCache(): Promise<void> {
 }
 
 export function prefetchAppMediaAssets(opts: {
-  podcastAudioUrls?: (string | null | undefined)[]
   speakingAudioUrls?: (string | null | undefined)[]
   imageUrls?: (string | null | undefined)[]
 }): void {
-  prefetchPodcastAudio(
-    (opts.podcastAudioUrls ?? []).filter((url): url is string => !!url),
-  )
   void prefetchSpeakingAudio(
     (opts.speakingAudioUrls ?? []).filter((url): url is string => !!url),
   )
   void prefetchRemoteImages((opts.imageUrls ?? []).filter((url): url is string => !!url))
-}
-
-export function prefetchPodcastEpisodes(podcasts: { audioUrl: string }[]): void {
-  prefetchAppMediaAssets({
-    podcastAudioUrls: podcasts.map((episode) => episode.audioUrl),
-  })
 }

@@ -36,6 +36,8 @@ type SwipeableTabsProps<T extends string> = {
   barStyle?: StyleProp<ViewStyle>
   contentStyle?: StyleProp<ViewStyle>
   scrollable?: boolean
+  /** When true, panels expand to fill remaining height (for nested FlatList). */
+  fill?: boolean
   refreshControl?: React.ReactElement<RefreshControlProps>
   onTabSwitch?: () => void
 }
@@ -68,6 +70,7 @@ export function SwipeableTabs<T extends string>({
   barStyle,
   contentStyle,
   scrollable = false,
+  fill = false,
   refreshControl,
   onTabSwitch,
 }: SwipeableTabsProps<T>) {
@@ -179,7 +182,15 @@ export function SwipeableTabs<T extends string>({
 
   const renderPanel = (panel: React.ReactNode, index: number) => {
     const inner = (
-      <View style={[styles.panelInner, scrollable && styles.panelInnerScrollable]}>{panel}</View>
+      <View
+        style={[
+          styles.panelInner,
+          (scrollable || fill) && styles.panelInnerScrollable,
+          fill && styles.panelInnerFill,
+        ]}
+      >
+        {panel}
+      </View>
     )
     if (!scrollable) return inner
 
@@ -203,7 +214,7 @@ export function SwipeableTabs<T extends string>({
   }
 
   return (
-    <View style={[scrollable ? styles.rootFlex : styles.root, style]}>
+    <View style={[scrollable || fill ? styles.rootFlex : styles.root, style]}>
       {header ? <View style={styles.header}>{header}</View> : null}
 
       <View style={[styles.tabs, barStyle]} onLayout={onTabsLayout}>
@@ -225,7 +236,10 @@ export function SwipeableTabs<T extends string>({
       </View>
 
       <View
-        style={[scrollable ? styles.panelsClipFlex : styles.panelsClip, contentStyle]}
+        style={[
+          scrollable || fill ? styles.panelsClipFlex : styles.panelsClip,
+          contentStyle,
+        ]}
         onLayout={onPanelsLayout}
         {...(panelWidth > 0 && tabCount > 1 ? panResponder.panHandlers : {})}
       >
@@ -301,5 +315,9 @@ const styles = StyleSheet.create({
   panelInner: { gap: spacing.md },
   panelInnerScrollable: {
     flexGrow: 1,
+  },
+  panelInnerFill: {
+    flex: 1,
+    minHeight: 0,
   },
 })

@@ -554,11 +554,12 @@ function masteredWords(progress: LearningProgress): StudyWord[] {
 
 export function buildDeckProgressMap(
   progress: LearningProgress,
-  decks: { slug: string; words: unknown[] }[],
+  decks: { slug: string; words?: unknown[]; wordCount?: number }[],
 ): Map<string, DeckProgress> {
   const map = new Map<string, DeckProgress>()
 
   for (const deck of decks) {
+    const totalWords = deck.wordCount ?? deck.words?.length ?? 0
     const wordsLearned = progress.studyWords.filter(
       (w) => w.deckSlug === deck.slug && isWordMastered(w),
     ).length
@@ -569,7 +570,7 @@ export function buildDeckProgressMap(
     map.set(deck.slug, {
       deckSlug: deck.slug,
       wordsLearned,
-      totalWords: deck.words.length,
+      totalWords: totalWords,
       quizAttempts: attempts.length,
       lastScorePct: last ? scorePct(last.correct, last.total) : null,
       completed: attempts.length > 0,
@@ -607,7 +608,7 @@ export function buildLearningProgressSummary(
 
 export function buildWordsLearnedByLevel(
   progress: LearningProgress,
-  decks: { slug: string; level: string; words: unknown[] }[],
+  decks: { slug: string; level: string; words?: unknown[]; wordCount?: number }[],
 ): LevelWordStats[] {
   const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"]
   const totals = new Map<string, number>()
@@ -620,7 +621,7 @@ export function buildWordsLearnedByLevel(
 
   for (const deck of decks) {
     const level = clampToFixedLevel(primaryLevel([deck.level]))
-    totals.set(level, (totals.get(level) ?? 0) + deck.words.length)
+    totals.set(level, (totals.get(level) ?? 0) + (deck.wordCount ?? deck.words?.length ?? 0))
   }
 
   for (const word of progress.studyWords) {
