@@ -21,6 +21,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     backgroundColor: "#ffffff",
   },
   ios: {
+    icon: "./assets/icon.png",
     supportsTablet: true,
     bundleIdentifier: "com.learnix.uz",
     buildNumber: "1",
@@ -43,7 +44,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     adaptiveIcon: {
       foregroundImage: "./assets/adaptive-icon.png",
-      backgroundColor: "#01AEF9",
+      backgroundColor: "#05CBFA",
     },
     package: "com.learnix.uz",
     versionCode: 1,
