@@ -103,6 +103,7 @@ export default function HomeworkVocabularyScreen() {
   const [alreadyFailed, setAlreadyFailed] = useState(false)
 
   const [pendingSuspicious, setPendingSuspicious] = useState(false)
+  const [sessionEnded, setSessionEnded] = useState(false)
 
   const [awaitingNetwork, setAwaitingNetwork] = useState(false)
 
@@ -394,7 +395,7 @@ export default function HomeworkVocabularyScreen() {
 
             homeworkId={homeworkId}
 
-            active={sessionReady && !alreadyFailed}
+            active={sessionReady && !alreadyFailed && !sessionEnded}
 
             pauseUsed={pauseUsed}
 
@@ -419,6 +420,7 @@ export default function HomeworkVocabularyScreen() {
               homeworkMode
 
               onQuizActiveChange={setQuizActive}
+              onSessionEnd={() => setSessionEnded(true)}
 
             />
 

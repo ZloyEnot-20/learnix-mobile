@@ -45,6 +45,7 @@ interface VocabScreenProps {
   homeworkMode?: boolean
   studentId?: string
   onQuizActiveChange?: (active: boolean) => void
+  onSessionEnd?: () => void
 }
 
 export function VocabularyScreen({
@@ -56,6 +57,7 @@ export function VocabularyScreen({
   homeworkMode = false,
   studentId,
   onQuizActiveChange,
+  onSessionEnd,
 }: VocabScreenProps) {
   const router = useRouter()
   const [mode, setMode] = useState<Mode>(homeworkMode ? "quiz" : "menu")
@@ -74,6 +76,7 @@ export function VocabularyScreen({
 
   const handleQuizComplete = (correct: number, total: number) => {
     onQuizActiveChange?.(false)
+    onSessionEnd?.()
     setQuizScore({ correct, total })
     setMode("results")
     if (studentId) {

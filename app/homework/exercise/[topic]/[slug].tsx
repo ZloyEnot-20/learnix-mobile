@@ -112,6 +112,7 @@ export default function HomeworkExerciseScreen() {
   const [alreadyFailed, setAlreadyFailed] = useState(false)
 
   const [pendingSuspicious, setPendingSuspicious] = useState(false)
+  const [sessionEnded, setSessionEnded] = useState(false)
 
   const handleEntryResult = useCallback((sub: HomeworkSubmission | null) => {
     if (isHomeworkEntryFailed(sub)) setAlreadyFailed(true)
@@ -342,7 +343,7 @@ export default function HomeworkExerciseScreen() {
 
             homeworkId={homeworkId}
 
-            active={sessionReady && !alreadyFailed}
+            active={sessionReady && !alreadyFailed && !sessionEnded}
 
             pauseUsed={pauseUsed}
 
@@ -369,6 +370,7 @@ export default function HomeworkExerciseScreen() {
               sessionStartedAt={sessionStartedAt}
 
               lockNavigation
+              onSessionEnd={() => setSessionEnded(true)}
 
             />
 

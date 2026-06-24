@@ -424,6 +424,8 @@ const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: spacing.screen,
     paddingTop: spacing.md,
+    backgroundColor: "#FFFFFF",
+    zIndex: 1,
   },
 })
 
