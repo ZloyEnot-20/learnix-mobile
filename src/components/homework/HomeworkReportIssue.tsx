@@ -2,8 +2,11 @@ import React, { useCallback, useState } from "react"
 import {
   ActivityIndicator,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -40,7 +43,12 @@ export function HomeworkReportIssueButton({
     setVisible(false)
   }, [submitting])
 
+  const dismissKeyboard = useCallback(() => {
+    Keyboard.dismiss()
+  }, [])
+
   const submit = useCallback(async () => {
+    Keyboard.dismiss()
     setSubmitting(true)
     setError(null)
     try {
@@ -73,90 +81,109 @@ export function HomeworkReportIssueButton({
       </Pressable>
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
-        <Pressable style={styles.backdrop} onPress={close}>
-          <Pressable style={styles.dialog} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.dialogIcon}>
-              <Ionicons name="flag" size={28} color={colors.brand} />
-            </View>
-
-            {sent ? (
-              <>
-                <Text style={styles.title}>Report sent</Text>
-                <Text style={styles.body}>
-                  Thank you. Your teacher will review this issue and fix the exercise if needed.
-                </Text>
-                <Pressable onPress={close} style={styles.primaryBtn}>
-                  <Text style={styles.primaryBtnText}>Done</Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Text style={styles.title}>Report an issue?</Text>
-                <Text style={styles.body}>
-                  Tell us if something looks wrong in this exercise — incorrect answers, broken
-                  audio, typos, or missing content. We will send a report to your teacher with the
-                  current question details.
-                </Text>
-
-                <View style={styles.metaBox}>
-                  <Text style={styles.metaTitle} numberOfLines={2}>
-                    {report.exerciseTitle}
-                  </Text>
-                  {questionLabel ? (
-                    <Text style={styles.metaLine}>{questionLabel}</Text>
-                  ) : null}
-                  {report.questionPrompt ? (
-                    <Text style={styles.metaPrompt} numberOfLines={3}>
-                      {report.questionPrompt}
-                    </Text>
-                  ) : null}
-                </View>
-
-                <View style={styles.messageWrap}>
-                  <Text style={styles.messageLabel}>Your message (optional)</Text>
-                  <TextInput
-                    style={styles.messageInput}
-                    value={message}
-                    onChangeText={setMessage}
-                    placeholder="Describe the problem briefly…"
-                    placeholderTextColor={colors.textMuted}
-                    maxLength={MESSAGE_MAX}
-                    multiline
-                    autoCorrect
-                    autoCapitalize="sentences"
-                    underlineColorAndroid="transparent"
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+        >
+          <Pressable style={styles.backdrop} onPress={close}>
+            <ScrollView
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+            >
+              <Pressable style={styles.dialog} onPress={dismissKeyboard}>
+                <View style={styles.dialogIcon}>
+                  <Ionicons
+                    name={sent ? "checkmark-circle" : "flag"}
+                    size={28}
+                    color={sent ? colors.success : colors.brand}
                   />
-                  <Text style={styles.messageCounter}>
-                    {message.length}/{MESSAGE_MAX}
-                  </Text>
                 </View>
 
-                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                {sent ? (
+                  <View style={styles.successBlock}>
+                    <Text style={styles.title}>Report sent</Text>
+                    <Text style={styles.body}>
+                      Thanks! We will review this and fix the exercise if needed.
+                    </Text>
+                    <Pressable onPress={close} style={styles.doneBtn}>
+                      <Text style={styles.primaryBtnText}>Done</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.title}>Report an issue?</Text>
+                    <Text style={styles.body}>
+                      Flag incorrect answers, broken audio, typos, or other problems. We will review
+                      your report.
+                    </Text>
 
-                <View style={styles.actions}>
-                  <Pressable
-                    onPress={close}
-                    disabled={submitting}
-                    style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
-                  >
-                    <Text style={styles.secondaryBtnText}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={submit}
-                    disabled={submitting}
-                    style={[styles.primaryBtn, submitting && styles.btnDisabled]}
-                  >
-                    {submitting ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <Text style={styles.primaryBtnText}>Send report</Text>
-                    )}
-                  </Pressable>
-                </View>
-              </>
-            )}
+                    <View style={styles.metaBox}>
+                      <Text style={styles.metaTitle} numberOfLines={2}>
+                        {report.exerciseTitle}
+                      </Text>
+                      {questionLabel ? (
+                        <Text style={styles.metaLine}>{questionLabel}</Text>
+                      ) : null}
+                      {report.questionPrompt ? (
+                        <Text style={styles.metaPrompt} numberOfLines={3}>
+                          {report.questionPrompt}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <View style={styles.messageWrap}>
+                      <Text style={styles.messageLabel}>Your message (optional)</Text>
+                      <TextInput
+                        style={styles.messageInput}
+                        value={message}
+                        onChangeText={setMessage}
+                        placeholder="Describe the problem briefly…"
+                        placeholderTextColor={colors.textMuted}
+                        maxLength={MESSAGE_MAX}
+                        multiline
+                        autoCorrect
+                        autoCapitalize="sentences"
+                        returnKeyType="done"
+                        blurOnSubmit
+                        underlineColorAndroid="transparent"
+                      />
+                      <Text style={styles.messageCounter}>
+                        {message.length}/{MESSAGE_MAX}
+                      </Text>
+                    </View>
+
+                    {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+                    <View style={styles.actions}>
+                      <Pressable
+                        onPress={close}
+                        disabled={submitting}
+                        style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
+                      >
+                        <Text style={styles.secondaryBtnText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={submit}
+                        disabled={submitting}
+                        style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                      >
+                        {submitting ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <Text style={styles.primaryBtnText}>Send</Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+              </Pressable>
+            </ScrollView>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   )
@@ -170,17 +197,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   iconBtnPressed: { opacity: 0.6 },
+  modalRoot: {
+    flex: 1,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(17, 24, 39, 0.45)",
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
     paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
   },
   dialog: {
     backgroundColor: "#FFFFFF",
     borderRadius: radius.card,
     padding: spacing.lg,
     gap: spacing.md,
+    maxWidth: 400,
+    width: "100%",
+    alignSelf: "center",
   },
   dialogIcon: {
     width: 52,
@@ -191,6 +228,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignSelf: "center",
   },
+  successBlock: {
+    gap: spacing.md,
+    alignItems: "stretch",
+  },
   title: {
     fontSize: 20,
     fontWeight: "700",
@@ -199,7 +240,7 @@ const styles = StyleSheet.create({
   },
   body: {
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 21,
     color: colors.textSecondary,
     textAlign: "center",
   },
@@ -260,6 +301,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     marginTop: spacing.xs,
+  },
+  doneBtn: {
+    alignSelf: "stretch",
+    backgroundColor: colors.brand,
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 48,
   },
   primaryBtn: {
     flex: 1,
