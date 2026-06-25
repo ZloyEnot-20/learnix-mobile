@@ -26,33 +26,33 @@ function TierModalCard({
   isPassed: boolean
   range: string
 }) {
-  const isMaster = tier.id === "master"
+  const isLegend = tier.id === "legend"
 
   const card = (
     <View
       style={[
         styles.tierCard,
-        isMaster && styles.tierCardMaster,
-        isCurrent && (isMaster ? styles.tierCardMasterCurrent : styles.tierCardCurrent),
+        isLegend && styles.tierCardMaster,
+        isCurrent && (isLegend ? styles.tierCardMasterCurrent : styles.tierCardCurrent),
       ]}
     >
       <TierBadge tierId={tier.id} size={56} />
       <View style={styles.tierInfo}>
         <View style={styles.tierTitleRow}>
-          {isMaster ? (
+          {isLegend ? (
             <Ionicons name="flame" size={15} color="#EA580C" style={styles.masterFlame} />
           ) : null}
-          <Text style={[styles.tierName, isMaster && styles.tierNameMaster]}>{tier.label}</Text>
-          <Text style={[styles.tierRange, isMaster && styles.tierRangeMaster]}>{range}</Text>
+          <Text style={[styles.tierName, isLegend && styles.tierNameMaster]}>{tier.label}</Text>
+          <Text style={[styles.tierRange, isLegend && styles.tierRangeMaster]}>{range}</Text>
           {isCurrent && <Text style={styles.youAreHere}>You are here</Text>}
           {isPassed && <Ionicons name="checkmark-circle" size={16} color="#10B981" />}
         </View>
-        <Text style={[styles.tierTagline, isMaster && styles.tierTaglineMaster]}>{tier.tagline}</Text>
+        <Text style={[styles.tierTagline, isLegend && styles.tierTaglineMaster]}>{tier.tagline}</Text>
         <Text style={styles.tierDesc}>{tier.description}</Text>
         <View style={styles.perksRow}>
           {tier.perks.map((p) => (
-            <View key={p} style={[styles.perkPill, isMaster && styles.perkPillMaster]}>
-              <Text style={[styles.perkText, isMaster && styles.perkTextMaster]}>{p}</Text>
+            <View key={p} style={[styles.perkPill, isLegend && styles.perkPillMaster]}>
+              <Text style={[styles.perkText, isLegend && styles.perkTextMaster]}>{p}</Text>
             </View>
           ))}
         </View>
@@ -60,7 +60,7 @@ function TierModalCard({
     </View>
   )
 
-  if (!isMaster) return card
+  if (!isLegend) return card
 
   return (
     <View style={styles.tierCardMasterGlow}>
@@ -118,7 +118,11 @@ export function LevelScale({
   if (!data) return null
 
   const tier = tierForLevel(data.level)
-  const progressPct = Math.round((data.pointsIntoLevel / data.pointsForNextLevel) * 100)
+  const progressPct = data.isMaxLevel
+    ? 100
+    : data.pointsForNextLevel > 0
+      ? Math.round((data.pointsIntoLevel / data.pointsForNextLevel) * 100)
+      : 0
 
   return (
     <>
@@ -155,7 +159,9 @@ export function LevelScale({
             />
           </View>
           <Text style={styles.progressLabel}>
-            {data.pointsIntoLevel.toLocaleString()}/{data.pointsForNextLevel.toLocaleString()}
+            {data.isMaxLevel
+              ? "Max level reached"
+              : `${data.pointsIntoLevel.toLocaleString()}/${data.pointsForNextLevel.toLocaleString()}`}
           </Text>
         </View>
 
@@ -202,8 +208,8 @@ export function LevelScale({
             const isCurrent = t.id === tier.id
             const isPassed = data.level > t.maxLevel
             const range =
-              t.maxLevel === Number.POSITIVE_INFINITY
-                ? `Lvl ${t.minLevel}+`
+              t.maxLevel === t.minLevel
+                ? `Lvl ${t.minLevel}`
                 : `Lvl ${t.minLevel}–${t.maxLevel}`
             return (
               <TierModalCard

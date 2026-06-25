@@ -1,6 +1,8 @@
 export interface StudentLevel {
   totalPoints: number
   level: number
+  maxLevel: number
+  isMaxLevel: boolean
   tier: TierId
   tierLabel: string
   levelName: string
@@ -10,13 +12,14 @@ export interface StudentLevel {
   breakdown: {
     homeworkPoints: number
     exercisePoints: number
+    learnPoints: number
     completedHomework: number
   }
   requirements: Record<string, number>
   unlockedCefrLevels: string[]
 }
 
-export type TierId = "bronze" | "silver" | "gold" | "diamond" | "master"
+export type TierId = "bronze" | "silver" | "gold" | "diamond" | "legend"
 
 export interface TierMeta {
   id: TierId
@@ -30,6 +33,8 @@ export interface TierMeta {
   description: string
   perks: string[]
 }
+
+export const MAX_LEVEL = 30
 
 export const TIERS: TierMeta[] = [
   {
@@ -72,7 +77,7 @@ export const TIERS: TierMeta[] = [
     id: "diamond",
     label: "Diamond",
     minLevel: 21,
-    maxLevel: 30,
+    maxLevel: 29,
     color: "#0891B2",
     barColor: "#06B6D4",
     icon: "/tiers/diamond.png",
@@ -81,16 +86,16 @@ export const TIERS: TierMeta[] = [
     perks: ["C1 level unlocked", "IELTS-level materials", "Diamond badge"],
   },
   {
-    id: "master",
-    label: "Master",
-    minLevel: 31,
-    maxLevel: Number.POSITIVE_INFINITY,
+    id: "legend",
+    label: "Legend",
+    minLevel: 30,
+    maxLevel: 30,
     color: "#A855F7",
     barColor: "#C084FC",
     icon: "/tiers/master.png",
-    tagline: "Legendary tier",
-    description: "The highest peak — a true Master.",
-    perks: ["All levels open", "C2 exclusive content", "Master badge"],
+    tagline: "The ultimate peak",
+    description: "Level 30 — a true Legend. Few ever reach this summit.",
+    perks: ["All levels open", "C2 exclusive content", "Legend badge"],
   },
 ]
 

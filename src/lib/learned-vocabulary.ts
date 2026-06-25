@@ -39,6 +39,13 @@ export interface VocabQuizResult {
   source: "game" | "homework"
 }
 
+export interface VocabWordAnswer {
+  term: string
+  correct: boolean
+  interactionType?: string
+  deckSlug?: string
+}
+
 export interface GameExerciseResult {
   slug: string
   title: string
@@ -121,6 +128,41 @@ interface LearningProgress {
 }
 
 const memory = new Map<string, LearningProgress>()
+
+let syncTimer: ReturnType<typeof setTimeout> | null = null
+const SYNC_DEBOUNCE_MS = 5000
+
+function scheduleLearnSync(userId: string): void {
+  if (syncTimer) clearTimeout(syncTimer)
+  syncTimer = setTimeout(() => {
+    syncTimer = null
+    void syncLearnProgressToServer(userId)
+  }, SYNC_DEBOUNCE_MS)
+}
+
+async function syncLearnProgressToServer(userId: string): Promise<void> {
+  const progress = await loadProgress(userId)
+  await analyticsApi
+    .syncLearn({
+      studyWords: progress.studyWords.map((w) => ({
+        term: w.term,
+        deckSlug: w.deckSlug ?? "general",
+        correctCount: w.correctCount,
+        totalAttempts: w.correctCount,
+        masteredAt: w.masteredAt,
+        wantToLearn: w.wantToLearn,
+        lastReviewedAt: w.lastReviewedAt,
+      })),
+      vocabResults: progress.vocabResults.map((r) => ({
+        deckSlug: r.deckSlug,
+        deckTitle: r.deckTitle,
+        correct: r.correct,
+        total: r.total,
+        completedAt: r.completedAt,
+      })),
+    })
+    .catch(() => {})
+}
 
 function storageKey(userId: string): string {
   return `${KEY_PREFIX}${userId}`
@@ -416,6 +458,17 @@ export async function recordReviewAnswer(
   await saveProgress(userId, progress)
   notifyHomeVocabPreviewChanged(userId)
 
+  void analyticsApi
+    .recordVocabWord({
+      term,
+      deckSlug: deckSlug ?? "general",
+      correct,
+      interactionType: "multiple_choice",
+    })
+    .catch(() => {})
+
+  scheduleLearnSync(userId)
+
   return {
     correctCount: nextCount,
     newlyMastered,
@@ -429,6 +482,7 @@ export async function recordVocabDeckCompletion(
   correct: number,
   total: number,
   source: "game" | "homework",
+  wordAnswers: VocabWordAnswer[] = [],
 ): Promise<void> {
   const progress = await loadProgress(userId)
   const now = new Date().toISOString()
@@ -455,6 +509,8 @@ export async function recordVocabDeckCompletion(
       correct,
       total,
       source,
+      totalWords: deck.words.length,
+      wordAnswers,
       words: deck.words.map((w) => ({
         term: w.term,
         partOfSpeech: w.partOfSpeech,
@@ -464,6 +520,8 @@ export async function recordVocabDeckCompletion(
       })),
     })
     .catch(() => {})
+
+  scheduleLearnSync(userId)
 }
 
 export async function recordGameExerciseResult(

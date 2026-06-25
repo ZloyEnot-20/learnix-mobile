@@ -14,7 +14,7 @@ const TIER_ICONS = {
   silver: require("../../assets/tiers/silver.png"),
   gold: require("../../assets/tiers/gold.png"),
   diamond: require("../../assets/tiers/diamond.png"),
-  master: require("../../assets/tiers/master.png"),
+  legend: require("../../assets/tiers/master.png"),
 } as const
 
 export function TierBadge({ tierId, size = 48, dimmed = false }: TierBadgeProps) {

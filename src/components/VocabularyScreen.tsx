@@ -74,7 +74,7 @@ export function VocabularyScreen({
     onQuizActiveChange?.(mode === "quiz")
   }, [mode, onQuizActiveChange])
 
-  const handleQuizComplete = (correct: number, total: number) => {
+  const handleQuizComplete = (correct: number, total: number, wordAnswers: { term: string; correct: boolean; deckSlug: string }[]) => {
     onQuizActiveChange?.(false)
     onSessionEnd?.()
     setQuizScore({ correct, total })
@@ -86,6 +86,7 @@ export function VocabularyScreen({
         correct,
         total,
         homeworkMode ? "homework" : "game",
+        wordAnswers,
       )
     }
     if (controlWorkId != null && stepIndex != null && isStudent) {
@@ -348,13 +349,18 @@ function Quiz({
   lang: TranslationLang
   homeworkMode?: boolean
   onExit: () => void
-  onComplete: (correct: number, total: number) => void
+  onComplete: (
+    correct: number,
+    total: number,
+    wordAnswers: { term: string; correct: boolean; deckSlug: string }[],
+  ) => void
 }) {
   const questions = useMemo(() => shuffle(deck.words), [deck.words])
   const [index, setIndex] = useState(0)
   const [correct, setCorrect] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [checked, setChecked] = useState(false)
+  const [wordAnswers, setWordAnswers] = useState<{ term: string; correct: boolean; deckSlug: string }[]>([])
 
   const word = questions[index]
   const options = useMemo(() => {
@@ -369,11 +375,15 @@ function Quiz({
   const handleCheck = () => {
     if (selected == null || checked) return
     const isCorrect = selected === wordTranslation(word, lang)
+    const nextCorrect = isCorrect ? correct + 1 : correct
+    const answer = { term: word.term, correct: isCorrect, deckSlug: deck.slug }
+    const nextAnswers = [...wordAnswers, answer]
+    setWordAnswers(nextAnswers)
     if (isCorrect) setCorrect((c) => c + 1)
 
     if (homeworkMode) {
       if (index + 1 >= questions.length) {
-        onComplete(isCorrect ? correct + 1 : correct, questions.length)
+        onComplete(nextCorrect, questions.length, nextAnswers)
       } else {
         setIndex((i) => i + 1)
         setSelected(null)
@@ -386,7 +396,7 @@ function Quiz({
 
   const handleNext = () => {
     if (index + 1 >= questions.length) {
-      onComplete(correct, questions.length)
+      onComplete(correct, questions.length, wordAnswers)
       return
     }
     if (checked) {
