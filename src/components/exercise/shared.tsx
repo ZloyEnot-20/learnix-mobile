@@ -1,5 +1,6 @@
 import React, { useRef } from "react"
 import {
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -162,7 +163,10 @@ export function ActionRow({
   if (result === "idle") {
     return (
       <Pressable
-        onPress={onCheck}
+        onPress={() => {
+          Keyboard.dismiss()
+          onCheck()
+        }}
         disabled={!canCheck}
         style={[btnStyle, !canCheck && styles.btnDisabled]}
       >
@@ -173,7 +177,13 @@ export function ActionRow({
     )
   }
   return (
-    <Pressable onPress={onNext} style={btnStyle}>
+    <Pressable
+      onPress={() => {
+        Keyboard.dismiss()
+        onNext()
+      }}
+      style={btnStyle}
+    >
       <Text style={btnTextStyle}>{isLast ? "See results" : "Next question"}</Text>
     </Pressable>
   )

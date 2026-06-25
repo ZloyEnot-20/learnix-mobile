@@ -26,6 +26,7 @@ import { SpeakingProgressBar } from "../speaking/SpeakingProgressBar"
 import { usePodcastAudioDownload } from "../../hooks/usePodcastAudioDownload"
 import { isSecondsBuffered } from "../../lib/podcast-audio-cache"
 import { colors, radius, shadow, spacing } from "../../theme/tokens"
+import type { IssueReportPayload } from "../../types/issue-report"
 
 const PLAYBACK_UPDATE_INTERVAL_MS = 250
 const SEEK_THRESHOLD_SECONDS = 1.5
@@ -596,6 +597,21 @@ export function PodcastRunner({
     </Pressable>
   )
 
+  const currentWord = words[wordIndex]
+  const reportIssue: IssueReportPayload | undefined = homeworkId
+    ? {
+        homeworkId,
+        exerciseSlug: episode.slug,
+        exerciseTitle: episode.title,
+        exerciseKind: "podcast",
+        questionIndex: phase === "words" ? wordIndex : undefined,
+        questionPrompt:
+          phase === "words" && currentWord
+            ? podcastWordLabel(currentWord)
+            : episode.title,
+      }
+    : undefined
+
   return (
     <HomeworkExerciseLayout
       progress={progressPct}
@@ -603,6 +619,7 @@ export function PodcastRunner({
       footer={phase === "listening" ? listeningFooter : wordsFooter}
       keyboardOffset={0}
       scrollable={false}
+      reportIssue={reportIssue}
     >
       {phase === "listening" ? (
         <View style={styles.listeningBody}>

@@ -10,6 +10,8 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import {
   GRAMMAR_BLANK_TOKEN,
+  formatFillBlankCorrectAnswer,
+  getAcceptableAnswersForBlank,
   isBlankCorrect,
   normalizeAnswer,
   type GrammarExercise,
@@ -33,6 +35,13 @@ import {
 } from "./shared"
 import { SpeakingRunner } from "./SpeakingRunner"
 import { colors, radius, spacing } from "../../theme/tokens"
+import { grammarIssueReport } from "../../types/issue-report"
+
+const exerciseTextInputProps = {
+  placeholderTextColor: colors.textMuted,
+  autoCorrect: false as const,
+  underlineColorAndroid: "transparent" as const,
+}
 
 export interface ExerciseRunnerProps {
   exercise: GrammarExercise
@@ -94,7 +103,7 @@ function HomeworkInstructions({
   homeworkId?: string
   instructions?: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
 
   if (!homeworkId || !instructions?.trim()) return null
 
@@ -129,6 +138,8 @@ function applyHomeworkAdvance(
 
 function ExerciseScreenFrame({
   homeworkId,
+  controlWorkId,
+  stepIndex,
   exercise,
   index,
   total,
@@ -136,10 +147,13 @@ function ExerciseScreenFrame({
   secondsLeft,
   questionInstruction,
   questionPrompt,
+  questionId,
   children,
   footer,
 }: {
   homeworkId?: string
+  controlWorkId?: string
+  stepIndex?: number
   exercise: GrammarExercise
   index: number
   total: number
@@ -147,6 +161,7 @@ function ExerciseScreenFrame({
   secondsLeft: number | null
   questionInstruction?: string
   questionPrompt?: string
+  questionId?: number
   children: React.ReactNode
   footer: React.ReactNode
 }) {
@@ -156,6 +171,15 @@ function ExerciseScreenFrame({
     exercise.type,
   )
 
+  const reportIssue = grammarIssueReport(exercise, {
+    homeworkId,
+    controlWorkId,
+    stepIndex,
+    questionIndex: index,
+    questionId,
+    questionPrompt,
+  })
+
   if (homeworkId) {
     return (
       <HomeworkExerciseLayout
@@ -163,6 +187,7 @@ function ExerciseScreenFrame({
         total={total}
         instruction={instruction}
         footer={footer}
+        reportIssue={reportIssue}
       >
         <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
         {children}
@@ -245,7 +270,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
   const handleCheck = useCallback(() => {
     if (!question || result !== "idle" || !allFilled) return
     const checks = inputs.map((val, i) =>
-      isBlankCorrect(val, question.acceptableAnswers?.[i] ?? []),
+      isBlankCorrect(val, getAcceptableAnswersForBlank(question, i)),
     )
     const allCorrect = checks.every(Boolean)
     if (allCorrect) setCorrectCount((c) => c + 1)
@@ -256,7 +281,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
           id: question.id,
           prompt: question.text,
           userAnswer: inputs.map((s) => s.trim()).filter(Boolean).join(" / "),
-          correctAnswer: question.blanks?.join(" / ") ?? "",
+          correctAnswer: formatFillBlankCorrectAnswer(question),
           explanation: question.explanation,
         },
       ])
@@ -325,23 +350,26 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
               <React.Fragment key={i}>
                 {seg ? <Text style={styles.homeworkSentenceText}>{seg}</Text> : null}
                 {i < blanksCount && (
-                  <TextInput
-                    style={[
-                      styles.homeworkBlankInput,
-                      result !== "idle" && (perBlank[i] ? styles.inputOk : styles.inputBad),
-                    ]}
-                    value={inputs[i] ?? ""}
-                    onChangeText={(val) => {
-                      setInputs((prev) => {
-                        const next = [...prev]
-                        next[i] = val
-                        return next
-                      })
-                    }}
-                    editable={result === "idle"}
-                    placeholder="..."
-                    autoCapitalize="none"
-                  />
+                  <View collapsable={false}>
+                    <TextInput
+                      {...exerciseTextInputProps}
+                      style={[
+                        styles.homeworkBlankInput,
+                        result !== "idle" && (perBlank[i] ? styles.inputOk : styles.inputBad),
+                      ]}
+                      value={inputs[i] ?? ""}
+                      onChangeText={(val) => {
+                        setInputs((prev) => {
+                          const next = [...prev]
+                          next[i] = val
+                          return next
+                        })
+                      }}
+                      editable={result === "idle"}
+                      placeholder="..."
+                      autoCapitalize="none"
+                    />
+                  </View>
                 )}
               </React.Fragment>
             ))}
@@ -354,6 +382,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
               {seg ? <Text style={styles.sentenceText}>{seg}</Text> : null}
               {i < blanksCount && (
                 <TextInput
+                  {...exerciseTextInputProps}
                   style={[
                     styles.blankInput,
                     result !== "idle" && (perBlank[i] ? styles.inputOk : styles.inputBad),
@@ -379,7 +408,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       {result !== "idle" && !homeworkId && (
         <FeedbackBox
           correct={result === "correct"}
-          correctAnswer={question.blanks?.join(" / ") ?? ""}
+          correctAnswer={formatFillBlankCorrectAnswer(question)}
           explanation={question.explanation}
         />
       )}
@@ -389,6 +418,8 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
   return (
     <ExerciseScreenFrame
       homeworkId={homeworkId}
+      controlWorkId={controlWorkId}
+      stepIndex={stepIndex}
       exercise={exercise}
       index={index}
       total={questions.length}
@@ -396,6 +427,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
       questionPrompt={question.text}
+      questionId={question.id}
       footer={actionRow}
     >
       {questionBody}
@@ -574,6 +606,8 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
   return (
     <ExerciseScreenFrame
       homeworkId={homeworkId}
+      controlWorkId={controlWorkId}
+      stepIndex={stepIndex}
       exercise={exercise}
       index={index}
       total={questions.length}
@@ -581,6 +615,7 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
       questionPrompt={renderedText}
+      questionId={question.id}
       footer={actionRow}
     >
       {questionBody}
@@ -726,6 +761,8 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
   return (
     <ExerciseScreenFrame
       homeworkId={homeworkId}
+      controlWorkId={controlWorkId}
+      stepIndex={stepIndex}
       exercise={exercise}
       index={index}
       total={questions.length}
@@ -733,6 +770,7 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
       questionPrompt={question.text}
+      questionId={question.id}
       footer={actionRow}
     >
       {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
@@ -882,6 +920,8 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
   return (
     <ExerciseScreenFrame
       homeworkId={homeworkId}
+      controlWorkId={controlWorkId}
+      stepIndex={stepIndex}
       exercise={exercise}
       index={index}
       total={questions.length}
@@ -889,6 +929,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
       questionPrompt={question.text}
+      questionId={question.id}
       footer={actionRow}
     >
       {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
@@ -896,6 +937,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
         <>
           <HomeworkSourceCard source={question.text} />
           <TextInput
+            {...exerciseTextInputProps}
             style={[
               styles.homeworkTextInput,
               result !== "idle" && (result === "correct" ? styles.inputOk : styles.inputBad),
@@ -911,6 +953,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
         <>
           <Text style={styles.questionText}>{question.text}</Text>
           <TextInput
+            {...exerciseTextInputProps}
             style={[styles.textInput, result !== "idle" && (result === "correct" ? styles.inputOk : styles.inputBad)]}
             value={input}
             onChangeText={setInput}
@@ -1159,12 +1202,17 @@ function MatchingRunner(props: ExerciseRunnerProps) {
   )
 
   if (homeworkId) {
+    const reportIssue = grammarIssueReport(exercise, {
+      homeworkId,
+      questionIndex: answeredCount,
+    })
     return (
       <HomeworkExerciseLayout
         index={answeredCount}
         total={total}
         instruction={homeworkInstructionForType("matching")}
         footer={matchFooter}
+        reportIssue={reportIssue}
       >
         <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
         {matchContent}
@@ -1431,6 +1479,8 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
   return (
     <ExerciseScreenFrame
       homeworkId={homeworkId}
+      controlWorkId={controlWorkId}
+      stepIndex={stepIndex}
       exercise={exercise}
       index={index}
       total={questions.length}
@@ -1438,6 +1488,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
       questionPrompt={sourceText || question.text}
+      questionId={question.id}
       footer={actionRow}
     >
       {homeworkId ? homeworkContent : defaultContent}
@@ -1588,6 +1639,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
                 <React.Fragment key={seg.id}>
                   {isEditing ? (
                     <TextInput
+                      {...exerciseTextInputProps}
                       style={styles.homeworkErrorInput}
                       value={edits[seg.id] ?? seg.text}
                       onChangeText={(t) => setEdits((e) => ({ ...e, [seg.id]: t }))}
@@ -1618,6 +1670,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
               <React.Fragment key={seg.id}>
                 {isEditing ? (
                   <TextInput
+                    {...exerciseTextInputProps}
                     style={styles.errorInput}
                     value={edits[seg.id] ?? seg.text}
                     onChangeText={(t) => setEdits((e) => ({ ...e, [seg.id]: t }))}
@@ -1651,6 +1704,8 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
   return (
     <ExerciseScreenFrame
       homeworkId={homeworkId}
+      controlWorkId={controlWorkId}
+      stepIndex={stepIndex}
       exercise={exercise}
       index={index}
       total={questions.length}
@@ -1658,6 +1713,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
       secondsLeft={secondsLeft}
       questionInstruction={question.instruction}
       questionPrompt={segments.map((s) => s.text).join("")}
+      questionId={question.id}
       footer={actionRow}
     >
       {errorContent}
@@ -1727,7 +1783,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     minWidth: 80,
+    minHeight: 40,
     fontSize: 16,
+    color: colors.text,
     marginHorizontal: 4,
     marginVertical: 4,
     backgroundColor: "#FAFAFA",
@@ -1762,6 +1820,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
     fontSize: 16,
+    color: colors.text,
     marginBottom: 8,
     backgroundColor: "#FAFAFA",
   },
@@ -1800,7 +1859,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 4,
     minWidth: 60,
+    minHeight: 36,
     fontSize: 16,
+    color: colors.text,
   },
   matchStatusRow: {
     flexDirection: "row",
@@ -1947,8 +2008,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     minWidth: 96,
+    minHeight: 40,
     fontSize: 16,
     fontWeight: "600",
+    color: colors.text,
     backgroundColor: "#FFFFFF",
   },
   homeworkTextInput: {
@@ -1961,6 +2024,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     fontWeight: "600",
+    color: colors.text,
     backgroundColor: "#FFFFFF",
     marginTop: spacing.md,
   },
@@ -2057,8 +2121,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     minWidth: 72,
+    minHeight: 36,
     fontSize: 16,
     fontWeight: "600",
+    color: colors.text,
   },
   homeworkMatchOption: {
     borderWidth: 1.5,

@@ -14,7 +14,9 @@ import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight"
 import { HomeworkSessionContext } from "./HomeworkSessionShell"
+import { HomeworkReportIssueButton } from "./HomeworkReportIssue"
 import { GRAMMAR_BLANK_TOKEN } from "../../types/grammar"
+import type { IssueReportPayload } from "../../types/issue-report"
 import { colors, radius, spacing } from "../../theme/tokens"
 
 function normalizePromptText(value: string): string {
@@ -58,7 +60,13 @@ function useHomeworkShell() {
   return { confirmPause, pauseAvailable, showProtectedInfo }
 }
 
-function HomeworkTopBar({ progress }: { progress: number }) {
+function HomeworkTopBar({
+  progress,
+  reportIssue,
+}: {
+  progress: number
+  reportIssue?: IssueReportPayload
+}) {
   const { confirmPause, pauseAvailable, showProtectedInfo } = useHomeworkShell()
 
   return (
@@ -76,6 +84,8 @@ function HomeworkTopBar({ progress }: { progress: number }) {
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${progress}%` }]} />
       </View>
+
+      {reportIssue ? <HomeworkReportIssueButton report={reportIssue} /> : null}
 
       <Pressable
         onPress={pauseAvailable ? confirmPause : undefined}
@@ -180,6 +190,7 @@ interface HomeworkExerciseLayoutBaseProps {
   scrollable?: boolean
   keyboardOffset?: number
   showTopBar?: boolean
+  reportIssue?: IssueReportPayload
 }
 
 interface HomeworkExerciseLayoutIndexedProps extends HomeworkExerciseLayoutBaseProps {
@@ -220,6 +231,7 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
     scrollable = true,
     keyboardOffset = 0,
     showTopBar = true,
+    reportIssue,
   } = props
 
   const insets = useSafeAreaInsets()
@@ -232,14 +244,12 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
       : Math.max(insets.bottom, spacing.md) + keyboardOffset
 
   const body = (
-    <Pressable onPress={Keyboard.dismiss} style={scrollable ? undefined : styles.bodyFill}>
-      {children}
-    </Pressable>
+    <View style={scrollable ? undefined : styles.bodyFill}>{children}</View>
   )
 
   return (
     <View style={[styles.root, style]}>
-      {showTopBar ? <HomeworkTopBar progress={progress} /> : null}
+      {showTopBar ? <HomeworkTopBar progress={progress} reportIssue={reportIssue} /> : null}
 
       {instruction ? (
         <Pressable onPress={Keyboard.dismiss} style={styles.instructionRow}>

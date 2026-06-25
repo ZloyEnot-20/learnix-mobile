@@ -32,6 +32,7 @@ const PLAYBACK_UPDATE_INTERVAL_MS = 50
 import type { ExerciseRunnerProps } from "./ExerciseRunner"
 import { colors, radius, spacing } from "../../theme/tokens"
 import { analyticsApi, homeworkApi, controlWorkApi } from "../../lib/api"
+import { grammarIssueReport } from "../../types/issue-report"
 import { recordGameExerciseResult } from "../../lib/learned-vocabulary"
 
 type SpeakingResponse = {
@@ -544,12 +545,21 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
   )
 
   if (homeworkMode) {
+    const reportIssue = grammarIssueReport(exercise, {
+      homeworkId,
+      controlWorkId,
+      stepIndex,
+      questionIndex: index,
+      questionId: q.id,
+      questionPrompt: q.text,
+    })
     return (
       <HomeworkExerciseLayout
         progress={progressPct}
         footer={footer}
         keyboardOffset={0}
         scrollable={false}
+        reportIssue={reportIssue}
       >
         <ProgressBar index={index} total={questions.length} correctCount={responses.length} />
         {body}

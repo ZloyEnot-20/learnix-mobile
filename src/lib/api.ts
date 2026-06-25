@@ -28,6 +28,7 @@ import type { StudentLevel, LeaderboardEntry } from "../types/gamification"
 import type { StudentContextResponse } from "./lesson-schedule"
 import type { VocabDeck, TopicMeta, VocabDeckSummary } from "../types/vocabulary"
 import type { PodcastEpisode, PodcastSummary } from "../types/podcast"
+import type { IssueReport, IssueReportPayload } from "../types/issue-report"
 
 export { peekCached, peekStale, clearApiCache }
 
@@ -509,5 +510,10 @@ export const analyticsApi = {
     api.get(`/analytics/learn/progress${studentId ? `/${studentId}` : ""}`),
   summary: (studentId?: string) =>
     api.get(`/analytics${studentId ? `/students/${studentId}/summary` : "/summary"}`),
+}
+
+export const issueReportsApi = {
+  create: (payload: IssueReportPayload) =>
+    api.post<IssueReport>("/issue-reports", payload),
 }
 

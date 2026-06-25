@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import {
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -33,6 +34,7 @@ import {
 } from "../types/vocabulary"
 import { colors } from "../theme/colors"
 import { radius, shadow, spacing } from "../theme/tokens"
+import type { IssueReportPayload } from "../types/issue-report"
 
 type Mode = "menu" | "flashcards" | "quiz" | "results"
 
@@ -163,6 +165,9 @@ export function VocabularyScreen({
         deck={deck}
         lang={lang}
         homeworkMode={homeworkMode}
+        homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
         onExit={() => setMode(homeworkMode ? "quiz" : "menu")}
         onComplete={handleQuizComplete}
       />
@@ -342,12 +347,18 @@ function Quiz({
   deck,
   lang,
   homeworkMode,
+  homeworkId,
+  controlWorkId,
+  stepIndex,
   onExit,
   onComplete,
 }: {
   deck: VocabDeck
   lang: TranslationLang
   homeworkMode?: boolean
+  homeworkId?: string
+  controlWorkId?: string
+  stepIndex?: number
   onExit: () => void
   onComplete: (
     correct: number,
@@ -382,6 +393,7 @@ function Quiz({
     if (isCorrect) setCorrect((c) => c + 1)
 
     if (homeworkMode) {
+      Keyboard.dismiss()
       if (index + 1 >= questions.length) {
         onComplete(nextCorrect, questions.length, nextAnswers)
       } else {
@@ -395,6 +407,7 @@ function Quiz({
   }
 
   const handleNext = () => {
+    Keyboard.dismiss()
     if (index + 1 >= questions.length) {
       onComplete(correct, questions.length, wordAnswers)
       return
@@ -455,12 +468,27 @@ function Quiz({
   )
 
   if (homeworkMode) {
+    const reportIssue: IssueReportPayload | undefined =
+      homeworkId || controlWorkId
+        ? {
+            homeworkId,
+            controlWorkId,
+            stepIndex,
+            exerciseSlug: deck.slug,
+            exerciseTitle: deck.title,
+            exerciseKind: "vocabulary",
+            questionIndex: index,
+            questionPrompt: word.term,
+          }
+        : undefined
+
     return (
       <HomeworkExerciseLayout
         index={index}
         total={questions.length}
         instruction="Choose the correct translation."
         footer={actionButton}
+        reportIssue={reportIssue}
       >
         <HomeworkSourceCard source={word.term} />
         {optionsBlock}

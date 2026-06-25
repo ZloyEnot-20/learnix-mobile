@@ -1,6 +1,10 @@
 import { cacheKey, peekStale } from "./api-cache"
 import type { HomeworkAttempt, HomeworkSubmission, StudentHomeworkEntry } from "../types/domain"
-import type { GrammarExercise, GrammarQuestion } from "../types/grammar"
+import {
+  formatFillBlankCorrectAnswer,
+  type GrammarExercise,
+  type GrammarQuestion,
+} from "../types/grammar"
 
 export type QuestionReviewStatus = "correct" | "incorrect" | "skipped"
 
@@ -31,7 +35,7 @@ export function questionCorrectAnswer(
 ): string {
   switch (exercise.type) {
     case "fill-in-the-blank":
-      return question.blanks?.join(" / ") ?? ""
+      return formatFillBlankCorrectAnswer(question)
     case "multiple-choice":
     case "matching":
       return question.correctAnswer ?? ""
