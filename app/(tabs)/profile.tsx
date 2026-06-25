@@ -8,6 +8,8 @@ import {
   StyleSheet,
   Text,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native"
 import { useFocusEffect, useNavigation, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
@@ -220,6 +222,18 @@ function ClassInfoIcon({ name }: { name: keyof typeof Ionicons.glyphMap }) {
   return (
     <View style={styles.classInfoIconSlot}>
       <Ionicons name={name} size={14} color={colors.textSecondary} />
+    </View>
+  )
+}
+
+function DeveloperCredit({ style }: { style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.developerCredit, style]}>
+      <View style={styles.developerCreditPill}>
+        <Text style={styles.developerCreditText}>
+          Developed by <Text style={styles.developerCreditBrand}>AOne</Text>
+        </Text>
+      </View>
     </View>
   )
 }
@@ -564,7 +578,7 @@ export default function ProfileScreen() {
 
   if (isGuestUser(user)) {
     return (
-      <View style={styles.container}>
+      <View style={[styles.container, styles.guestContainer]}>
         <GuestAuthBanner
           variant="screen"
           title="Create your student profile"
@@ -579,6 +593,7 @@ export default function ProfileScreen() {
         >
           <Text style={styles.guestExitText}>Exit guest mode</Text>
         </Pressable>
+        <DeveloperCredit style={styles.developerCreditGuest} />
       </View>
     )
   }
@@ -759,6 +774,8 @@ export default function ProfileScreen() {
                 />
               ))}
             </View>
+
+            <DeveloperCredit />
           </View>
         </>
       )}
@@ -966,9 +983,39 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
   },
+  guestContainer: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: spacing.xl,
+  },
+  developerCreditGuest: {
+    marginTop: "auto",
+  },
   guestExitText: {
     fontSize: 14,
     fontWeight: "600",
     color: colors.textSecondary,
+  },
+  developerCredit: {
+    alignSelf: "flex-end",
+    marginTop: spacing.xl,
+  },
+  developerCreditPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.borderLight,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.brand + "33",
+  },
+  developerCreditText: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: colors.textMuted,
+    letterSpacing: 0.3,
+  },
+  developerCreditBrand: {
+    fontWeight: "800",
+    color: colors.brand,
+    letterSpacing: 0.8,
   },
 })
