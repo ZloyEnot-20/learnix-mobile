@@ -24,7 +24,7 @@ import {
 } from "../homework/HomeworkExerciseLayout"
 import { SpeakingProgressBar } from "../speaking/SpeakingProgressBar"
 import { usePodcastAudioDownload } from "../../hooks/usePodcastAudioDownload"
-import { isSecondsBuffered } from "../../lib/podcast-audio-cache"
+import { isSecondsBuffered, getPodcastDownloadProgressPercent } from "../../lib/podcast-audio-cache"
 import { colors, radius, shadow, spacing } from "../../theme/tokens"
 import type { IssueReportPayload } from "../../types/issue-report"
 
@@ -220,6 +220,15 @@ export function PodcastRunner({
     redirectDownload,
   } = usePodcastAudioDownload(episode.audioUrl)
 
+  const downloadProgress = getPodcastDownloadProgressPercent({
+    playbackUri,
+    isFullyCached,
+    ready: downloadReady,
+    totalBytes,
+    bufferedRanges,
+  })
+  const podcastDownloaded = isPractice || isFullyCached
+
   const sessionStartRef = useRef(Date.now())
   const lastPositionRef = useRef(0)
   const accumulatedListenRef = useRef(0)
@@ -330,6 +339,7 @@ export function PodcastRunner({
           interruptionMode: "doNotMix",
         })
         if (cancelled || !downloadReady) return
+        if (!isPractice && !isFullyCached) return
         player.replace({ uri: playbackUriRef.current })
       } catch {
         if (!cancelled) setAudioReady(false)
@@ -339,7 +349,7 @@ export function PodcastRunner({
     return () => {
       cancelled = true
     }
-  }, [episode.audioUrl, downloadReady, player])
+  }, [episode.audioUrl, downloadReady, isFullyCached, isPractice, player])
 
   useEffect(() => {
     cachedPlaybackAppliedRef.current = false
@@ -417,7 +427,7 @@ export function PodcastRunner({
   }, [currentTime, duration, playing, player, isPractice])
 
   const togglePlay = useCallback(async () => {
-    if (!audioReady) return
+    if (!audioReady || !podcastDownloaded) return
     if (playing) {
       player.pause()
       return
@@ -432,7 +442,7 @@ export function PodcastRunner({
       lastPositionRef.current = 0
     }
     player.play()
-  }, [audioReady, playing, player, listeningComplete, duration])
+  }, [audioReady, podcastDownloaded, playing, player, listeningComplete, duration])
 
   const finishSession = useCallback(
     async (wordsReviewed: number) => {
@@ -616,6 +626,7 @@ export function PodcastRunner({
     <HomeworkExerciseLayout
       progress={progressPct}
       showTopBar={!isPractice}
+      protectedSession={false}
       footer={phase === "listening" ? listeningFooter : wordsFooter}
       keyboardOffset={0}
       scrollable={false}
@@ -641,7 +652,21 @@ export function PodcastRunner({
           </View>
 
           <View style={styles.playerPanel}>
-            {!audioReady || !downloadReady ? (
+            {!isPractice && !podcastDownloaded ? (
+              <View style={styles.downloadPanel}>
+                <Ionicons name="cloud-download-outline" size={40} color={colors.primary} />
+                <Text style={styles.downloadTitle}>Loading podcast</Text>
+                <Text style={styles.downloadSubtitle}>
+                  Wait until the episode is fully downloaded before listening.
+                </Text>
+                <View style={styles.downloadTrack}>
+                  <View
+                    style={[styles.downloadFill, { width: `${downloadProgress}%` }]}
+                  />
+                </View>
+                <Text style={styles.downloadPercent}>{downloadProgress}%</Text>
+              </View>
+            ) : !audioReady || !downloadReady ? (
               <ActivityIndicator size="large" color={colors.primary} />
             ) : (
               <>
@@ -661,8 +686,12 @@ export function PodcastRunner({
 
                 <Pressable
                   onPress={togglePlay}
-                  disabled={!audioReady}
-                  style={({ pressed }) => [styles.playBtn, pressed && styles.btnPressed]}
+                  disabled={!audioReady || !podcastDownloaded}
+                  style={({ pressed }) => [
+                    styles.playBtn,
+                    (!audioReady || !podcastDownloaded) && styles.playBtnDisabled,
+                    pressed && audioReady && podcastDownloaded && styles.btnPressed,
+                  ]}
                   accessibilityRole="button"
                   accessibilityLabel={playing ? "Pause" : "Play"}
                 >
@@ -746,6 +775,42 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     gap: spacing.sm,
   },
+  downloadPanel: {
+    width: "100%",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  downloadTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+  },
+  downloadSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+  downloadTrack: {
+    width: "100%",
+    height: 10,
+    borderRadius: radius.pill,
+    backgroundColor: "#E8E8E8",
+    overflow: "hidden",
+  },
+  downloadFill: {
+    height: "100%",
+    borderRadius: radius.pill,
+    backgroundColor: colors.success,
+  },
+  downloadPercent: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textMuted,
+    fontVariant: ["tabular-nums"],
+  },
   progressTrack: { width: "100%" },
   bufferedFill: { backgroundColor: "#86efac" },
   timeRow: {
@@ -763,6 +828,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: spacing.sm,
   },
+  playBtnDisabled: { opacity: 0.45 },
   hintText: {
     fontSize: 13,
     color: colors.textSecondary,

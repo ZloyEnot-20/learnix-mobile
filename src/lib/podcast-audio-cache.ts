@@ -469,6 +469,27 @@ export function prefetchPodcastAudio(_urls: string[]): void {
   // Podcast audio is downloaded only when the user opens a listening screen.
 }
 
+export function getPodcastDownloadProgressPercent(snapshot: PodcastDownloadSnapshot): number {
+  if (snapshot.isFullyCached) return 100
+  if (snapshot.totalBytes <= 0) return 0
+
+  const sorted = [...snapshot.bufferedRanges]
+    .filter((range) => range.end > range.start)
+    .sort((a, b) => a.start - b.start)
+
+  let bufferedFraction = 0
+  let cursor = 0
+  for (const range of sorted) {
+    const start = Math.max(range.start, cursor)
+    if (range.end > start) {
+      bufferedFraction += range.end - start
+      cursor = range.end
+    }
+  }
+
+  return Math.min(100, Math.round(bufferedFraction * 100))
+}
+
 export function isSecondsBuffered(
   snapshot: PodcastDownloadSnapshot,
   seconds: number,

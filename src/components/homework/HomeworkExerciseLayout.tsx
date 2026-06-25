@@ -63,23 +63,29 @@ function useHomeworkShell() {
 function HomeworkTopBar({
   progress,
   reportIssue,
+  protectedSession = true,
 }: {
   progress: number
   reportIssue?: IssueReportPayload
+  protectedSession?: boolean
 }) {
   const { confirmPause, pauseAvailable, showProtectedInfo } = useHomeworkShell()
 
   return (
     <View style={[styles.topBar, { paddingTop: spacing.sm }]}>
-      <Pressable
-        onPress={showProtectedInfo}
-        hitSlop={12}
-        style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
-        accessibilityRole="button"
-        accessibilityLabel="Protected homework info"
-      >
-        <Ionicons name="lock-closed-outline" size={22} color={colors.textMuted} />
-      </Pressable>
+      {protectedSession ? (
+        <Pressable
+          onPress={showProtectedInfo}
+          hitSlop={12}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Protected homework info"
+        >
+          <Ionicons name="lock-closed-outline" size={22} color={colors.textMuted} />
+        </Pressable>
+      ) : (
+        <View style={styles.iconBtn} />
+      )}
 
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${progress}%` }]} />
@@ -87,24 +93,28 @@ function HomeworkTopBar({
 
       {reportIssue ? <HomeworkReportIssueButton report={reportIssue} /> : null}
 
-      <Pressable
-        onPress={pauseAvailable ? confirmPause : undefined}
-        disabled={!pauseAvailable}
-        hitSlop={12}
-        style={({ pressed }) => [
-          styles.iconBtn,
-          !pauseAvailable && styles.iconBtnDisabled,
-          pressed && pauseAvailable && styles.iconBtnPressed,
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Pause homework"
-      >
-        <Ionicons
-          name="pause"
-          size={22}
-          color={pauseAvailable ? colors.textMuted : "#D1D5DB"}
-        />
-      </Pressable>
+      {protectedSession ? (
+        <Pressable
+          onPress={pauseAvailable ? confirmPause : undefined}
+          disabled={!pauseAvailable}
+          hitSlop={12}
+          style={({ pressed }) => [
+            styles.iconBtn,
+            !pauseAvailable && styles.iconBtnDisabled,
+            pressed && pauseAvailable && styles.iconBtnPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Pause homework"
+        >
+          <Ionicons
+            name="pause"
+            size={22}
+            color={pauseAvailable ? colors.textMuted : "#D1D5DB"}
+          />
+        </Pressable>
+      ) : (
+        <View style={styles.iconBtn} />
+      )}
     </View>
   )
 }
@@ -190,6 +200,7 @@ interface HomeworkExerciseLayoutBaseProps {
   scrollable?: boolean
   keyboardOffset?: number
   showTopBar?: boolean
+  protectedSession?: boolean
   reportIssue?: IssueReportPayload
 }
 
@@ -231,6 +242,7 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
     scrollable = true,
     keyboardOffset = 0,
     showTopBar = true,
+    protectedSession = true,
     reportIssue,
   } = props
 
@@ -249,7 +261,13 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
 
   return (
     <View style={[styles.root, style]}>
-      {showTopBar ? <HomeworkTopBar progress={progress} reportIssue={reportIssue} /> : null}
+      {showTopBar ? (
+        <HomeworkTopBar
+          progress={progress}
+          reportIssue={reportIssue}
+          protectedSession={protectedSession}
+        />
+      ) : null}
 
       {instruction ? (
         <Pressable onPress={Keyboard.dismiss} style={styles.instructionRow}>

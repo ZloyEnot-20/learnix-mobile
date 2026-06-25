@@ -5,18 +5,15 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { useAuth } from "../../../src/context/AuthContext"
 import { exercisesApi, homeworkApi, peekStale } from "../../../src/lib/api"
 import { cacheKey } from "../../../src/lib/api-cache"
+import { BackButton } from "../../../src/components/ui/BackButton"
 import { PodcastRunner } from "../../../src/components/podcast/PodcastRunner"
 import { HomeworkCheatingFailed } from "../../../src/components/homework/HomeworkCheatingFailed"
-import { HomeworkSessionShell } from "../../../src/components/homework/HomeworkSessionShell"
 import { HomeworkPodcastReview } from "../../../src/components/homework/HomeworkPodcastReview"
 import { HomeworkStatusScreen } from "../../../src/components/homework/HomeworkStatusScreen"
 import { PodcastScreenSkeleton } from "../../../src/components/skeletons/Layouts"
 import { ScreenErrorBoundary } from "../../../src/components/ui/ScreenErrorBoundary"
 import { isCompletedSubmission, resolveHomeworkSubmission } from "../../../src/lib/homework-review"
-import {
-  resolveHomeworkSessionStart,
-  resumeHomeworkSession,
-} from "../../../src/lib/homework-session-start"
+import { resolveHomeworkSessionStart } from "../../../src/lib/homework-session-start"
 import {
   isHomeworkEntryFailed,
   useHomeworkEntryOnFocus,
@@ -47,7 +44,6 @@ export default function HomeworkPodcastScreen() {
     return episode === null && !hasReview
   })
 
-  const [pauseUsed, setPauseUsed] = useState(false)
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [reviewSubmission, setReviewSubmission] = useState<HomeworkSubmission | null>(() => {
@@ -60,11 +56,9 @@ export default function HomeworkPodcastScreen() {
     return sub?.submittedAt ?? undefined
   })
   const [alreadyFailed, setAlreadyFailed] = useState(false)
-  const [pendingSuspicious, setPendingSuspicious] = useState(false)
   const [awaitingNetwork, setAwaitingNetwork] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
-  const [sessionEnded, setSessionEnded] = useState(false)
 
   const retryLoad = useCallback(() => {
     setLoadError(false)
@@ -76,18 +70,6 @@ export default function HomeworkPodcastScreen() {
   }, [])
 
   useHomeworkEntryOnFocus(homeworkId, isStudent, handleEntryResult)
-
-  const handleSuspiciousDismissed = useCallback(async () => {
-    if (!homeworkId || !isStudent) return
-    setPendingSuspicious(false)
-    const sub = await resumeHomeworkSession(homeworkId)
-    if (!sub) return
-    setPauseUsed(sub.pauseUsed ?? false)
-    setElapsedSeconds(sub.elapsedSeconds ?? 0)
-    setSessionStartedAt(
-      sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
-    )
-  }, [homeworkId, isStudent])
 
   useRetryWhenOffline(awaitingNetwork, () => setReloadKey((key) => key + 1))
 
@@ -108,7 +90,6 @@ export default function HomeworkPodcastScreen() {
         if (cancelled) return
 
         const sub = isStudent ? sessionStart?.sub ?? null : null
-        const needsSuspiciousAck = sessionStart?.needsSuspiciousAck ?? false
 
         setEpisode(ep ?? null)
         if (hwData?.subject) setHomeworkSubject(hwData.subject)
@@ -132,14 +113,6 @@ export default function HomeworkPodcastScreen() {
           setAwaitingNetwork(true)
         } else if (ep && isStudent) {
           setAwaitingNetwork(false)
-          setPendingSuspicious(needsSuspiciousAck)
-          if (needsSuspiciousAck && sub) {
-            setPauseUsed(sub.pauseUsed ?? false)
-            setElapsedSeconds(sub.elapsedSeconds ?? 0)
-            setSessionStartedAt(
-              sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
-            )
-          }
         }
       } catch {
         if (!cancelled) {
@@ -162,7 +135,6 @@ export default function HomeworkPodcastScreen() {
     let cancelled = false
 
     async function beginSession() {
-      if (pendingSuspicious) return
       const subRaw = await homeworkApi
         .start(homeworkId, { force: true, skipEntryCount: true })
         .catch(() => null)
@@ -185,7 +157,6 @@ export default function HomeworkPodcastScreen() {
       }
 
       setAwaitingNetwork(false)
-      setPauseUsed(sub.pauseUsed ?? false)
       setElapsedSeconds(sub.elapsedSeconds ?? 0)
       setSessionStartedAt(
         sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
@@ -196,14 +167,14 @@ export default function HomeworkPodcastScreen() {
     return () => {
       cancelled = true
     }
-  }, [isStudent, homeworkId, sessionStartedAt, reviewSubmission, pendingSuspicious])
+  }, [isStudent, homeworkId, sessionStartedAt, reviewSubmission])
 
   const sessionReady =
     !loading && episode != null && !reviewSubmission && sessionStartedAt != null
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <ScreenErrorBoundary
           title="Couldn't open podcast"
@@ -241,14 +212,8 @@ export default function HomeworkPodcastScreen() {
               completedAt={completedAt}
             />
           ) : (
-            <HomeworkSessionShell
-              homeworkId={homeworkId}
-              active={sessionReady && !alreadyFailed && !sessionEnded}
-              pauseUsed={pauseUsed}
-              initialSuspicious={pendingSuspicious}
-              onSuspiciousDismissed={handleSuspiciousDismissed}
-              title={episode.title}
-            >
+            <>
+              <BackButton onPress={() => router.back()} style={styles.back} />
               {sessionReady && sessionStartedAt != null ? (
                 <PodcastRunner
                   episode={episode}
@@ -256,12 +221,11 @@ export default function HomeworkPodcastScreen() {
                   studentId={isStudent ? user?.id : undefined}
                   sessionStartedAt={sessionStartedAt}
                   elapsedSeconds={elapsedSeconds}
-                  onSessionEnd={() => setSessionEnded(true)}
                 />
               ) : (
                 <PodcastScreenSkeleton />
               )}
-            </HomeworkSessionShell>
+            </>
           )}
         </ScreenErrorBoundary>
       </SafeAreaView>
@@ -272,4 +236,5 @@ export default function HomeworkPodcastScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FFFFFF" },
   fill: { flex: 1 },
+  back: { marginLeft: 16, marginBottom: 4 },
 })
