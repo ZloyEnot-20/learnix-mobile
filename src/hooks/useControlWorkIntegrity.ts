@@ -1,25 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AppState, BackHandler, type AppStateStatus } from "react-native"
 import { useNavigation } from "expo-router"
-import { homeworkApi } from "../lib/api"
+import { controlWorkApi } from "../lib/api"
 import { API_URL } from "../lib/api-client"
 import {
-  claimHomeworkIntegritySession,
-  isActiveHomeworkIntegritySession,
-} from "../lib/homework-integrity-session"
+  claimControlWorkIntegritySession,
+  isActiveControlWorkIntegritySession,
+} from "../lib/control-work-integrity-session"
 import { needsSuspiciousAcknowledgement } from "../lib/homework-session-start"
 import type { IntegrityStatus, ViolationReason } from "../types/domain"
 
-/** Min time outside the app before a leave counts as a violation. */
 const BACKGROUND_FAIL_THRESHOLD_MS = 1200
-/** Ignore integrity triggers briefly after a homework screen becomes active (navigation transitions). */
 const MOUNT_GRACE_MS = 1000
 
 function isBackgroundState(state: AppStateStatus): boolean {
   return state === "inactive" || state === "background"
 }
 
-export interface HomeworkIntegrityState {
+export interface ControlWorkIntegrityState {
   failed: boolean
   suspicious: boolean
   pauseUsed: boolean
@@ -29,13 +27,13 @@ export interface HomeworkIntegrityState {
   dismissSuspicious: () => void
 }
 
-export function useHomeworkIntegrity(
-  homeworkId: string | undefined,
+export function useControlWorkIntegrity(
+  controlWorkId: string | undefined,
   active: boolean,
   initialPauseUsed: boolean,
   onPaused: () => void,
   initialSuspicious = false,
-): HomeworkIntegrityState {
+): ControlWorkIntegrityState {
   const navigation = useNavigation()
   const [failed, setFailed] = useState(false)
   const [suspicious, setSuspicious] = useState(initialSuspicious)
@@ -58,8 +56,8 @@ export function useHomeworkIntegrity(
 
   const shouldMonitorRef = useRef<() => boolean>(() => false)
   shouldMonitorRef.current = () => {
-    if (!homeworkId || !active || failed || suspicious) return false
-    if (!isActiveHomeworkIntegritySession(homeworkId)) return false
+    if (!controlWorkId || !active || failed || suspicious) return false
+    if (!isActiveControlWorkIntegritySession(controlWorkId)) return false
     return Date.now() >= monitoringReadyAtRef.current
   }
 
@@ -84,28 +82,28 @@ export function useHomeworkIntegrity(
   }, [initialSuspicious])
 
   useEffect(() => {
-    if (!homeworkId || !active) return
-    return claimHomeworkIntegritySession(homeworkId)
-  }, [homeworkId, active])
+    if (!controlWorkId || !active) return
+    return claimControlWorkIntegritySession(controlWorkId)
+  }, [controlWorkId, active])
 
   useEffect(() => {
     if (active) {
       monitoringReadyAtRef.current = Date.now() + MOUNT_GRACE_MS
     }
-  }, [active, homeworkId])
+  }, [active, controlWorkId])
 
   const canMonitor = useCallback(() => {
-    if (!homeworkId || !active || failed || suspicious) return false
-    if (!isActiveHomeworkIntegritySession(homeworkId)) return false
+    if (!controlWorkId || !active || failed || suspicious) return false
+    if (!isActiveControlWorkIntegritySession(controlWorkId)) return false
     return Date.now() >= monitoringReadyAtRef.current
-  }, [homeworkId, active, failed, suspicious])
+  }, [controlWorkId, active, failed, suspicious])
 
   const pauseSession = useCallback(
     async (opts?: { fromViolation?: boolean }) => {
-      if (!homeworkId || processingRef.current) return
+      if (!controlWorkId || processingRef.current) return
       processingRef.current = true
       try {
-        const res = await homeworkApi.pause(homeworkId)
+        const res = await controlWorkApi.pause(controlWorkId)
         if (res.action === "fail" || res.submission?.integrityStatus === "cheating_detected") {
           setFailed(true)
           setIntegrityStatus("cheating_detected")
@@ -130,7 +128,7 @@ export function useHomeworkIntegrity(
         processingRef.current = false
       }
     },
-    [homeworkId, onPaused],
+    [controlWorkId, onPaused],
   )
 
   const applyOptimisticViolation = useCallback(() => {
@@ -155,11 +153,11 @@ export function useHomeworkIntegrity(
   }, [])
 
   const syncIntegrityFromServer = useCallback(async () => {
-    if (!homeworkId || !active || failed || suspicious) return
+    if (!controlWorkId || !active || failed || suspicious) return
 
     try {
-      const sub = await homeworkApi.start(homeworkId, { force: true, skipEntryCount: true })
-      if (sub.integrityStatus === "cheating_detected" || sub.attempt?.failedDueToCheating) {
+      const sub = await controlWorkApi.start(controlWorkId, { force: true })
+      if (sub.integrityStatus === "cheating_detected") {
         setFailed(true)
         setIntegrityStatus("cheating_detected")
         return
@@ -172,13 +170,13 @@ export function useHomeworkIntegrity(
     } catch {
       // Offline or transient — optimistic UI already shown when applicable.
     }
-  }, [homeworkId, active, failed, suspicious])
+  }, [controlWorkId, active, failed, suspicious])
 
   syncIntegrityFromServerRef.current = syncIntegrityFromServer
 
   const leaveSession = useCallback(
     async (reason: ViolationReason) => {
-      if (!homeworkId || !canMonitor() || processingRef.current) return
+      if (!controlWorkId || !canMonitor() || processingRef.current) return
       const now = Date.now()
       if (now < cooldownUntilRef.current) return
 
@@ -188,7 +186,7 @@ export function useHomeworkIntegrity(
       applyOptimisticViolation()
 
       try {
-        const res = await homeworkApi.reportViolation(homeworkId, reason)
+        const res = await controlWorkApi.reportViolation(controlWorkId, reason)
         if (res.integrityStatus) setIntegrityStatus(res.integrityStatus)
         if (res.pauseUsed) setPauseUsed(true)
 
@@ -218,7 +216,7 @@ export function useHomeworkIntegrity(
         processingRef.current = false
       }
     },
-    [homeworkId, canMonitor, applyOptimisticViolation, syncIntegrityFromServer],
+    [controlWorkId, canMonitor, applyOptimisticViolation, syncIntegrityFromServer],
   )
 
   leaveSessionRef.current = leaveSession
@@ -241,11 +239,11 @@ export function useHomeworkIntegrity(
   }, [canMonitor, leaveSession])
 
   useEffect(() => {
-    if (!homeworkId || !active || failed || suspicious) return
+    if (!controlWorkId || !active || failed || suspicious) return
 
     const unsubscribe = navigation.addListener("beforeRemove", (e) => {
       if (allowLeaveRef.current) return
-      if (!isActiveHomeworkIntegritySession(homeworkId)) return
+      if (!isActiveControlWorkIntegritySession(controlWorkId)) return
       if (Date.now() < monitoringReadyAtRef.current) return
 
       e.preventDefault()
@@ -253,10 +251,10 @@ export function useHomeworkIntegrity(
     })
 
     return unsubscribe
-  }, [navigation, homeworkId, active, failed, suspicious, leaveSession])
+  }, [navigation, controlWorkId, active, failed, suspicious, leaveSession])
 
   useEffect(() => {
-    if (!homeworkId || !active || failed || suspicious) {
+    if (!controlWorkId || !active || failed || suspicious) {
       clearBackgroundTimer()
       backgroundStartedAtRef.current = null
       return
@@ -292,7 +290,6 @@ export function useHomeworkIntegrity(
 
     appStateRef.current = AppState.currentState
 
-    // If the app was already backgrounded when monitoring started, begin tracking immediately.
     if (isBackgroundState(AppState.currentState)) {
       maybeRecordBackgroundStart()
       scheduleBackgroundCheck()
@@ -322,7 +319,7 @@ export function useHomeworkIntegrity(
       sub.remove()
       clearBackgroundTimer()
     }
-  }, [homeworkId, active, failed, suspicious, clearBackgroundTimer])
+  }, [controlWorkId, active, failed, suspicious, clearBackgroundTimer])
 
   useEffect(() => {
     if (!canMonitor()) return

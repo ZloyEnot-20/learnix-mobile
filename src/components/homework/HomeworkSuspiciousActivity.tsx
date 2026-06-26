@@ -20,8 +20,8 @@ export function HomeworkSuspiciousActivity({
       icon="warning-outline"
       iconColor="#B45309"
       iconBg="#FEF3C7"
-      title="Leave homework?"
-      description="You left the app during an assignment. Would you like to continue now or pause and finish later? If you leave again, this homework will fail."
+      title="Suspicious activity"
+      description="Cheating suspicion detected. Please do not leave the app during homework. Continue now or pause and finish later — if you leave again, this homework will fail."
       buttonLabel="Continue assignment"
       onButtonPress={onContinue}
       secondaryButtonLabel={pauseAvailable ? "Pause" : undefined}

@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react"
+import React, { useCallback, useRef, useState } from "react"
 import {
   Pressable,
   RefreshControl,
@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { useAuth } from "../../../../src/context/AuthContext"
 import { controlWorkApi } from "../../../../src/lib/api"
 import { BackButton } from "../../../../src/components/ui/BackButton"
+import { ExerciseListSkeleton } from "../../../../src/components/skeletons/Layouts"
 import type {
   ControlWork,
   ControlWorkStep,
@@ -48,23 +49,30 @@ export default function ControlWorkScreen() {
   const [sub, setSub] = useState<ControlWorkSubmission | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const hasLoadedRef = useRef(false)
 
   const load = useCallback(async (force?: boolean) => {
     if (!id) return
+    const isInitial = !hasLoadedRef.current
+    if (isInitial) setLoading(true)
     try {
       const [work, entries] = await Promise.all([
-        controlWorkApi.get(id, { force }),
-        controlWorkApi.mine({ force }),
+        controlWorkApi.get(id, { force: force ?? true }),
+        controlWorkApi.mine({ force: force ?? true }),
       ])
       const entry = entries.find((e) => e.controlWork.id === id)
       setCw(work)
       setSub(entry?.submission ?? null)
+      hasLoadedRef.current = true
       if (entry && user?.type === "student" && entry.submission.status === "pending") {
-        const started = await controlWorkApi.start(id, { force })
+        const started = await controlWorkApi.start(id, { force: true })
         setSub(started)
       }
     } catch {
-      setCw(null)
+      if (isInitial) {
+        setCw(null)
+        setSub(null)
+      }
     } finally {
       setLoading(false)
     }
@@ -72,7 +80,7 @@ export default function ControlWorkScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void load()
+      void load(true)
     }, [load]),
   )
 
@@ -92,6 +100,8 @@ export default function ControlWorkScreen() {
 
   const onOpenStep = (stepIndex: number) => {
     if (!cw || !sub || completed) return
+    const result = sub.stepResults?.[stepIndex]
+    if (result?.status === "completed") return
     if (stepIndex !== currentStep) return
     const step = cw.steps[stepIndex]
     if (!step) return
@@ -124,10 +134,8 @@ export default function ControlWorkScreen() {
           </View>
         </View>
 
-        {loading ? (
-          <View style={styles.center}>
-            <Text style={styles.muted}>Loading…</Text>
-          </View>
+        {loading && !cw ? (
+          <ExerciseListSkeleton count={4} />
         ) : !cw ? (
           <View style={styles.center}>
             <Text style={styles.error}>Progress test not found</Text>

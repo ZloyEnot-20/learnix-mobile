@@ -255,6 +255,19 @@ export const controlWorkApi = {
     invalidateControlWorkCaches(controlWorkId)
     return sub
   },
+  pause: async (controlWorkId: string) => {
+    const res = await api.post<ViolationResponse>("/control-works/pause", { controlWorkId })
+    invalidateControlWorkCaches(controlWorkId)
+    return res
+  },
+  reportViolation: async (controlWorkId: string, reason: ViolationReason) => {
+    const res = await api.post<ViolationResponse>("/control-works/violation", {
+      controlWorkId,
+      reason,
+    })
+    invalidateControlWorkCaches(controlWorkId)
+    return res
+  },
 }
 
 export interface NotificationItem {

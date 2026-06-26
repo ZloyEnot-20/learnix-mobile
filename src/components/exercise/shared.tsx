@@ -1,4 +1,4 @@
-import React, { useRef } from "react"
+import React, { useRef, useState } from "react"
 import {
   Keyboard,
   Pressable,
@@ -222,6 +222,7 @@ export function ResultsScreen({
 }) {
   const router = useRouter()
   const recorded = useRef(false)
+  const [stepSaved, setStepSaved] = useState(!controlWorkId || stepIndex == null || !studentId)
   const segmentMs = (finishedAt ?? Date.now()) - startedAt
   const elapsedMs =
     homeworkId && elapsedSeconds != null
@@ -283,7 +284,8 @@ export function ResultsScreen({
             explanation: m.explanation,
           })),
         })
-        .catch(() => {})
+        .then(() => setStepSaved(true))
+        .catch(() => setStepSaved(true))
       return
     }
 
@@ -314,26 +316,34 @@ export function ResultsScreen({
   const hasMistakes = mistakes.length > 0
   const resultTitle = timedOut ? "Time's up!" : passed ? "Well done!" : "Keep practising"
   const doneButton = (
-    <HomeworkFooterButton label="Done" onPress={() => router.back()} />
+    <HomeworkFooterButton
+      label="Done"
+      disabled={!stepSaved}
+      onPress={() => router.back()}
+    />
   )
 
-  if (homeworkId) {
+  if (homeworkId || controlWorkId) {
     return (
       <HomeworkResultsLayout footer={doneButton}>
         <View style={[styles.homeworkResultsHero, !hasMistakes && styles.homeworkResultsHeroCentered]}>
           <ResultStatusIcon variant={resultVariant(!!timedOut, passed)} />
-          <Text style={styles.homeworkResultsTitle}>{resultTitle}</Text>
+          <Text style={styles.homeworkResultsTitle}>
+            {controlWorkId ? "Section complete" : resultTitle}
+          </Text>
           <Text style={styles.homeworkResultsScore}>
             {correctCount}/{total} correct ({scorePct}%)
           </Text>
-          <Text style={styles.homeworkResultsMeta}>
-            {passed ? "You passed!" : `Need ${exercise.passingScore} to pass`}
-            {" · "}
-            {Math.max(1, Math.round(elapsedMs / 60000))} min
-          </Text>
+          {!controlWorkId ? (
+            <Text style={styles.homeworkResultsMeta}>
+              {passed ? "You passed!" : `Need ${exercise.passingScore} to pass`}
+              {" · "}
+              {Math.max(1, Math.round(elapsedMs / 60000))} min
+            </Text>
+          ) : null}
         </View>
 
-        {hasMistakes ? (
+        {hasMistakes && !controlWorkId ? (
           <View style={styles.homeworkMistakesSection}>
             <Text style={styles.homeworkMistakesTitle}>Review mistakes</Text>
             {mistakes.map((m) => (

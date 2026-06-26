@@ -1,9 +1,16 @@
 import { homeworkApi } from "./api"
 import { resolveHomeworkSubmission } from "./homework-review"
-import type { HomeworkSubmission } from "../types/domain"
+import type { HomeworkSubmission, IntegrityStatus } from "../types/domain"
 
 export function needsSuspiciousAcknowledgement(
-  sub: HomeworkSubmission | null | undefined,
+  sub:
+    | {
+        integrityStatus?: IntegrityStatus
+        pauseUsed?: boolean
+        status?: HomeworkSubmission["status"]
+      }
+    | null
+    | undefined,
 ): boolean {
   return (
     sub?.integrityStatus === "cheating_suspicion" &&

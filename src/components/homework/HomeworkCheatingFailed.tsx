@@ -14,7 +14,7 @@ export function HomeworkCheatingFailed() {
       iconColor="#C8102E"
       iconBg="rgba(200, 16, 46, 0.1)"
       title="Homework failed"
-      description="You left the homework session again during protected homework. This submission has been marked as failed."
+      description="Cheating suspicion detected. Please do not leave the app during homework. This submission has been marked as failed."
       buttonLabel="Back to homework"
       onButtonPress={() => router.back()}
     />

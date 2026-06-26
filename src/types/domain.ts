@@ -162,6 +162,8 @@ export interface ControlWorkSubmission {
   integrityStatus?: IntegrityStatus
   pauseUsed?: boolean
   pausedAt?: string
+  elapsedSeconds?: number
+  sessionStartedAt?: string
 }
 
 export interface StudentControlWorkEntry {

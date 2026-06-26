@@ -43,6 +43,10 @@ const exerciseTextInputProps = {
   underlineColorAndroid: "transparent" as const,
 }
 
+function isAssignmentMode(homeworkId?: string, controlWorkId?: string) {
+  return !!(homeworkId || controlWorkId)
+}
+
 export interface ExerciseRunnerProps {
   exercise: GrammarExercise
   homeworkId?: string
@@ -97,15 +101,15 @@ function QuestionCard({ children }: { children: React.ReactNode }) {
 }
 
 function HomeworkInstructions({
-  homeworkId,
+  visible,
   instructions,
 }: {
-  homeworkId?: string
+  visible?: boolean
   instructions?: string
 }) {
   const [open, setOpen] = useState(true)
 
-  if (!homeworkId || !instructions?.trim()) return null
+  if (!visible || !instructions?.trim()) return null
 
   return (
     <View style={styles.instructionsBox}>
@@ -123,14 +127,14 @@ function HomeworkInstructions({
   )
 }
 
-function applyHomeworkAdvance(
-  homeworkId: string | undefined,
+function applyAssignmentAdvance(
+  assignmentMode: boolean,
   index: number,
   total: number,
   setIndex: React.Dispatch<React.SetStateAction<number>>,
   finish: () => void,
 ): boolean {
-  if (!homeworkId) return false
+  if (!assignmentMode) return false
   if (index + 1 >= total) finish()
   else setIndex((i) => i + 1)
   return true
@@ -180,7 +184,9 @@ function ExerciseScreenFrame({
     questionPrompt,
   })
 
-  if (homeworkId) {
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
+
+  if (assignmentMode) {
     return (
       <HomeworkExerciseLayout
         index={index}
@@ -189,7 +195,7 @@ function ExerciseScreenFrame({
         footer={footer}
         reportIssue={reportIssue}
       >
-        <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+        <HomeworkInstructions visible={assignmentMode} instructions={exercise.instructions} />
         {children}
       </HomeworkExerciseLayout>
     )
@@ -203,7 +209,7 @@ function ExerciseScreenFrame({
         homeworkMode={false}
       />
       <ProgressBar index={index} total={total} correctCount={correctCount} />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+      <HomeworkInstructions visible={assignmentMode} instructions={exercise.instructions} />
       <QuestionCard>
         {children}
         {footer}
@@ -227,6 +233,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
     lockNavigation,
     onSessionEnd,
   } = props
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
   const [index, setIndex] = useState(0)
   const [inputs, setInputs] = useState<string[]>([])
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -287,7 +294,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       ])
     }
     if (
-      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
         setFinished(true)
         setFinishedAt(Date.now())
       })
@@ -336,14 +343,14 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       isLast={index + 1 >= questions.length}
       onCheck={handleCheck}
       onNext={handleNext}
-      variant={homeworkId ? "homework" : "default"}
+      variant={assignmentMode ? "homework" : "default"}
     />
   )
 
   const questionBody = (
     <>
-      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
-      {homeworkId ? (
+      {!assignmentMode ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {assignmentMode ? (
         <HomeworkSourceCard>
           <View style={styles.homeworkBlankRow}>
             {segments.map((seg, i) => (
@@ -405,7 +412,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
         </View>
       )}
       <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
-      {result !== "idle" && !homeworkId && (
+      {result !== "idle" && !assignmentMode && (
         <FeedbackBox
           correct={result === "correct"}
           correctAnswer={formatFillBlankCorrectAnswer(question)}
@@ -450,6 +457,7 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
     lockNavigation,
     onSessionEnd,
   } = props
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
   const [index, setIndex] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -498,7 +506,7 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
       ])
     }
     if (
-      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
         setFinished(true)
         setFinishedAt(Date.now())
       })
@@ -549,12 +557,12 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
       isLast={index + 1 >= questions.length}
       onCheck={handleCheck}
       onNext={handleNext}
-      variant={homeworkId ? "homework" : "default"}
+      variant={assignmentMode ? "homework" : "default"}
     />
   )
 
   const optionsBlock = (
-    <View style={homeworkId ? styles.homeworkMcOptions : styles.options}>
+    <View style={assignmentMode ? styles.homeworkMcOptions : styles.options}>
       {options.map((opt, optIndex) => {
         const isChosen = selected === opt
         const isCorrectOpt = opt === question.correctAnswer
@@ -565,13 +573,13 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
             disabled={checked}
             onPress={() => setSelected(opt)}
             style={[
-              homeworkId ? styles.homeworkMcOption : styles.option,
-              !checked && isChosen && (homeworkId ? styles.homeworkOptionSelected : styles.optionSelected),
+              assignmentMode ? styles.homeworkMcOption : styles.option,
+              !checked && isChosen && (assignmentMode ? styles.homeworkOptionSelected : styles.optionSelected),
               checked && isCorrectOpt && styles.optionCorrect,
               checked && isChosen && !isCorrectOpt && styles.optionWrong,
             ]}
           >
-            <Text style={homeworkId ? styles.homeworkMcOptionText : styles.optionText}>{opt}</Text>
+            <Text style={assignmentMode ? styles.homeworkMcOptionText : styles.optionText}>{opt}</Text>
           </Pressable>
         )
       })}
@@ -580,8 +588,8 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
 
   const questionBody = (
     <>
-      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
-      {homeworkId ? (
+      {!assignmentMode ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {assignmentMode ? (
         <>
           <HomeworkSourceCard source={renderedText} />
           {optionsBlock}
@@ -593,7 +601,7 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
         </>
       )}
       <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
-      {result !== "idle" && !homeworkId && (
+      {result !== "idle" && !assignmentMode && (
         <FeedbackBox
           correct={result === "correct"}
           correctAnswer={question.correctAnswer ?? ""}
@@ -638,6 +646,7 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
     lockNavigation,
     onSessionEnd,
   } = props
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
   const [index, setIndex] = useState(0)
   const [selected, setSelected] = useState<boolean | null>(null)
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -684,7 +693,7 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
       ])
     }
     if (
-      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
         setFinished(true)
         setFinishedAt(Date.now())
       })
@@ -732,25 +741,25 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
       isLast={index + 1 >= questions.length}
       onCheck={handleCheck}
       onNext={handleNext}
-      variant={homeworkId ? "homework" : "default"}
+      variant={assignmentMode ? "homework" : "default"}
     />
   )
 
   const tfButtons = (
-    <View style={homeworkId ? styles.homeworkTfRow : styles.tfRow}>
+    <View style={assignmentMode ? styles.homeworkTfRow : styles.tfRow}>
       {[true, false].map((val) => (
         <Pressable
           key={String(val)}
           disabled={result !== "idle"}
           onPress={() => setSelected(val)}
           style={[
-            homeworkId ? styles.homeworkTfBtn : styles.tfBtn,
-            selected === val && result === "idle" && (homeworkId ? styles.homeworkOptionSelected : styles.optionSelected),
+            assignmentMode ? styles.homeworkTfBtn : styles.tfBtn,
+            selected === val && result === "idle" && (assignmentMode ? styles.homeworkOptionSelected : styles.optionSelected),
             result !== "idle" && val === question.correctBool && styles.optionCorrect,
             result !== "idle" && selected === val && val !== question.correctBool && styles.optionWrong,
           ]}
         >
-          <Text style={homeworkId ? styles.homeworkOptionText : styles.tfText}>
+          <Text style={assignmentMode ? styles.homeworkOptionText : styles.tfText}>
             {val ? "Correct" : "Incorrect"}
           </Text>
         </Pressable>
@@ -773,8 +782,8 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
       questionId={question.id}
       footer={actionRow}
     >
-      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
-      {homeworkId ? (
+      {!assignmentMode ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {assignmentMode ? (
         <>
           <HomeworkSourceCard source={question.text} />
           {tfButtons}
@@ -785,7 +794,7 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
           {tfButtons}
         </>
       )}
-      {result !== "idle" && !homeworkId && (
+      {result !== "idle" && !assignmentMode && (
         <FeedbackBox
           correct={result === "correct"}
           correctAnswer={question.correctBool ? "Correct" : "Incorrect"}
@@ -811,6 +820,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
     lockNavigation,
     onSessionEnd,
   } = props
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
   const [index, setIndex] = useState(0)
   const [input, setInput] = useState("")
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
@@ -865,7 +875,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
       ])
     }
     if (
-      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
         setFinished(true)
         setFinishedAt(Date.now())
       })
@@ -913,7 +923,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
       isLast={index + 1 >= questions.length}
       onCheck={handleCheck}
       onNext={handleNext}
-      variant={homeworkId ? "homework" : "default"}
+      variant={assignmentMode ? "homework" : "default"}
     />
   )
 
@@ -932,8 +942,8 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
       questionId={question.id}
       footer={actionRow}
     >
-      {!homeworkId ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
-      {homeworkId ? (
+      {!assignmentMode ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+      {assignmentMode ? (
         <>
           <HomeworkSourceCard source={question.text} />
           <TextInput
@@ -964,7 +974,7 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
         </>
       )}
       <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
-      {result !== "idle" && !homeworkId && (
+      {result !== "idle" && !assignmentMode && (
         <FeedbackBox
           correct={result === "correct"}
           correctAnswer={question.answer ?? ""}
@@ -990,6 +1000,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
     lockNavigation,
     onSessionEnd,
   } = props
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
 
   const pairs = exercise.content.pairs ?? []
   const [picks, setPicks] = useState<(string | null)[]>(() => pairs.map(() => null))
@@ -1073,7 +1084,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
   const matchFooter = !checked ? (
     <Pressable
       onPress={() => {
-        if (homeworkId) {
+        if (assignmentMode) {
           setFinished(true)
           setFinishedAt(Date.now())
           return
@@ -1099,7 +1110,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
 
   const matchContent = (
     <>
-      {!homeworkId ? (
+      {!assignmentMode ? (
         <View style={styles.matchStatusRow}>
           <Text style={styles.matchStatusLabel}>Match all {total} pairs</Text>
           {checked ? (
@@ -1110,7 +1121,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
         </View>
       ) : null}
 
-      <View style={homeworkId ? undefined : styles.card}>
+      <View style={assignmentMode ? undefined : styles.card}>
         {pairs.map((pair, rowIndex) => {
           const pick = picks[rowIndex]
           const isRowCorrect = pick === pair.right
@@ -1143,8 +1154,8 @@ function MatchingRunner(props: ExerciseRunnerProps) {
                           })
                         }
                         style={[
-                          homeworkId ? styles.homeworkMatchOption : styles.matchOption,
-                          !checked && isChosen && (homeworkId ? styles.homeworkOptionSelected : styles.matchOptionSelected),
+                          assignmentMode ? styles.homeworkMatchOption : styles.matchOption,
+                          !checked && isChosen && (assignmentMode ? styles.homeworkOptionSelected : styles.matchOptionSelected),
                           checked && isChosen && isCorrectOpt && styles.matchOptionCorrect,
                           checked && isChosen && !isCorrectOpt && styles.matchOptionWrong,
                           checked && !isChosen && isCorrectOpt && styles.matchOptionReveal,
@@ -1153,7 +1164,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
                       >
                         <Text
                           style={[
-                            homeworkId ? styles.homeworkOptionText : styles.matchOptionText,
+                            assignmentMode ? styles.homeworkOptionText : styles.matchOptionText,
                             checked && isChosen && !isCorrectOpt && styles.matchOptionTextWrong,
                           ]}
                         >
@@ -1176,7 +1187,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
           )
         })}
 
-        {!homeworkId ? (
+        {!assignmentMode ? (
           !checked ? (
             <Pressable
               onPress={() => setChecked(true)}
@@ -1201,9 +1212,11 @@ function MatchingRunner(props: ExerciseRunnerProps) {
     </>
   )
 
-  if (homeworkId) {
+  if (assignmentMode) {
     const reportIssue = grammarIssueReport(exercise, {
       homeworkId,
+      controlWorkId,
+      stepIndex,
       questionIndex: answeredCount,
     })
     return (
@@ -1214,7 +1227,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
         footer={matchFooter}
         reportIssue={reportIssue}
       >
-        <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+        <HomeworkInstructions visible={assignmentMode} instructions={exercise.instructions} />
         {matchContent}
       </HomeworkExerciseLayout>
     )
@@ -1227,7 +1240,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
         secondsLeft={secondsLeft}
         homeworkMode={false}
       />
-      <HomeworkInstructions homeworkId={homeworkId} instructions={exercise.instructions} />
+      <HomeworkInstructions visible={assignmentMode} instructions={exercise.instructions} />
       {matchContent}
     </ScrollView>
   )
@@ -1248,6 +1261,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
     lockNavigation,
     onSessionEnd,
   } = props
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
   const [index, setIndex] = useState(0)
   const [picked, setPicked] = useState<{ word: string; bankIndex: number }[]>([])
   const [bankUsed, setBankUsed] = useState<boolean[]>([])
@@ -1329,7 +1343,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
       ])
     }
     if (
-      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
         setFinished(true)
         setFinishedAt(Date.now())
       })
@@ -1385,7 +1399,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
       isLast={index + 1 >= questions.length}
       onCheck={handleCheck}
       onNext={handleNext}
-      variant={homeworkId ? "homework" : "default"}
+      variant={assignmentMode ? "homework" : "default"}
     />
   )
 
@@ -1419,7 +1433,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
         )}
       </View>
 
-      {result !== "idle" && !homeworkId ? (
+      {result !== "idle" && !assignmentMode ? (
         <FeedbackBox
           correct={result === "correct"}
           correctAnswer={(question.correct ?? []).join(" ")}
@@ -1466,7 +1480,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
           ),
         )}
       </View>
-      {result !== "idle" && !homeworkId && (
+      {result !== "idle" && !assignmentMode && (
         <FeedbackBox
           correct={result === "correct"}
           correctAnswer={(question.correct ?? []).join(" ")}
@@ -1491,7 +1505,7 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
       questionId={question.id}
       footer={actionRow}
     >
-      {homeworkId ? homeworkContent : defaultContent}
+      {assignmentMode ? homeworkContent : defaultContent}
     </ExerciseScreenFrame>
   )
 }
@@ -1511,6 +1525,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
     lockNavigation,
     onSessionEnd,
   } = props
+  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
   const [index, setIndex] = useState(0)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -1566,7 +1581,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
       ])
     }
     if (
-      applyHomeworkAdvance(homeworkId, index, questions.length, setIndex, () => {
+      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
         setFinished(true)
         setFinishedAt(Date.now())
       })
@@ -1616,19 +1631,19 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
       isLast={index + 1 >= questions.length}
       onCheck={handleCheck}
       onNext={handleNext}
-      variant={homeworkId ? "homework" : "default"}
+      variant={assignmentMode ? "homework" : "default"}
     />
   )
 
   const errorContent = (
     <>
-      {!homeworkId ? (
+      {!assignmentMode ? (
         <>
           <Text style={styles.qLabel}>Question {index + 1} — Fix the errors</Text>
           <Text style={styles.instructionHint}>Tap highlighted words to edit them</Text>
         </>
       ) : null}
-      {homeworkId ? (
+      {assignmentMode ? (
         <HomeworkSourceCard source="Fix the highlighted words">
           <View style={styles.homeworkErrorRow}>
             {segments.map((seg) => {
@@ -1691,7 +1706,7 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
           })}
         </View>
       )}
-      {result !== "idle" && !homeworkId && (
+      {result !== "idle" && !assignmentMode && (
         <FeedbackBox
           correct={result === "correct"}
           correctAnswer=""
