@@ -10,7 +10,7 @@ import {
   type LayoutChangeEvent,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import { notificationsApi, type NotificationItem } from "../lib/api"
+import { filterMobileNotifications, notificationsApi, type NotificationItem } from "../lib/api"
 import { cacheKey, peekStale } from "../lib/api-cache"
 import { getNotificationBannerColor } from "../lib/notification-colors"
 import { requestNotificationsRefresh, subscribeNotificationsRefresh } from "../lib/notifications-refresh"
@@ -543,7 +543,7 @@ export function NotificationBanner({
   useEffect(() => {
     const cached = peekStale<NotificationItem[]>(cacheKey("GET", "/notifications"))
     if (cached) {
-      setItems(cached)
+      setItems(filterMobileNotifications(cached))
       setLoaded(true)
     }
     void refresh({ silent: true })

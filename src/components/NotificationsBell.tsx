@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import { notificationsApi, type NotificationItem } from "../lib/api"
+import { filterMobileNotifications, notificationsApi, type NotificationItem } from "../lib/api"
 import { cacheKey, peekStale } from "../lib/api-cache"
 import { subscribeNotificationsRefresh } from "../lib/notifications-refresh"
 import { BottomSheet } from "./ui/BottomSheet"
@@ -20,6 +20,8 @@ const TYPE_META: Record<
   system: { icon: "sparkles-outline", bg: "#E0F2FE", fg: "#0369A1" },
   entry_test: { icon: "checkmark-circle-outline", bg: colors.errorBg, fg: colors.error },
 }
+
+const DEFAULT_TYPE_META = TYPE_META.system
 
 export function NotificationsBell() {
   const [items, setItems] = useState<NotificationItem[]>([])
@@ -41,7 +43,7 @@ export function NotificationsBell() {
   useEffect(() => {
     const cached = peekStale<NotificationItem[]>(cacheKey("GET", "/notifications"))
     if (cached) {
-      setItems(cached)
+      setItems(filterMobileNotifications(cached))
       setLoaded(true)
     }
     void refresh({ silent: true })
@@ -129,7 +131,7 @@ export function NotificationsBell() {
                 <View key={section}>
                   <Text style={styles.sectionLabel}>{section}</Text>
                   {sectionItems.map((item) => {
-                    const meta = TYPE_META[item.type]
+                    const meta = TYPE_META[item.type] ?? DEFAULT_TYPE_META
                     return (
                       <Pressable
                         key={item.id}

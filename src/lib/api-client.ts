@@ -118,7 +118,7 @@ export async function apiFetch<T = unknown>(
   path: string,
   { method = "GET", body, auth = true, _retry = false }: RequestOptions = {},
 ): Promise<T> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { "X-Learnix-Client": "mobile" }
   if (body !== undefined) headers["Content-Type"] = "application/json"
   if (auth) {
     const token = await getAccessToken()
@@ -164,7 +164,7 @@ export async function apiUpload<T = unknown>(
   formData: FormData,
   auth = true,
 ): Promise<T> {
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { "X-Learnix-Client": "mobile" }
   if (auth) {
     const token = await getAccessToken()
     if (token) headers.Authorization = `Bearer ${token}`

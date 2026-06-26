@@ -280,15 +280,25 @@ export interface NotificationItem {
   createdAt: string
 }
 
+const MOBILE_HIDDEN_NOTIFICATION_TYPES = new Set(["attendance"])
+
+/** Attendance alerts go to parents via Telegram, not the student mobile app. */
+export function filterMobileNotifications<T extends { type: string }>(items: T[]): T[] {
+  return items.filter((item) => !MOBILE_HIDDEN_NOTIFICATION_TYPES.has(item.type))
+}
+
 export const notificationsApi = {
   list: (opts?: { force?: boolean }) => {
     const key = cacheKey("GET", "/notifications")
     return cachedFetch(
       key,
       TTL.notifications,
-      () => api.get<NotificationItem[]>("/notifications"),
+      () =>
+        api
+          .get<NotificationItem[]>("/notifications")
+          .then((items) => filterMobileNotifications(items)),
       { staleWhileRevalidate: true, force: opts?.force },
-    )
+    ).then(filterMobileNotifications)
   },
   markRead: async (id: string, read = true) => {
     const item = await api.patch<NotificationItem>(`/notifications/${id}/read`, { read })
