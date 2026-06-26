@@ -407,6 +407,7 @@ export const testResultsApi = {
 
 export interface OrgSettings {
   allowScreenshots: boolean
+  entryTestAutocomplete?: boolean
 }
 
 export const orgApi = {
