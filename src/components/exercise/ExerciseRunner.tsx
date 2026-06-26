@@ -194,6 +194,7 @@ function ExerciseScreenFrame({
         instruction={instruction}
         footer={footer}
         reportIssue={reportIssue}
+        secondsLeft={secondsLeft}
       >
         <HomeworkInstructions visible={assignmentMode} instructions={exercise.instructions} />
         {children}
@@ -1226,6 +1227,7 @@ function MatchingRunner(props: ExerciseRunnerProps) {
         instruction={homeworkInstructionForType("matching")}
         footer={matchFooter}
         reportIssue={reportIssue}
+        secondsLeft={secondsLeft}
       >
         <HomeworkInstructions visible={assignmentMode} instructions={exercise.instructions} />
         {matchContent}

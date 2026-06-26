@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight"
+import { formatTimer } from "../../hooks/useCountdown"
 import { HomeworkSessionContext } from "./HomeworkSessionShell"
 import { HomeworkReportIssueButton } from "./HomeworkReportIssue"
 import { GRAMMAR_BLANK_TOKEN } from "../../types/grammar"
@@ -60,14 +61,47 @@ function useHomeworkShell() {
   return { confirmPause, pauseAvailable, showProtectedInfo }
 }
 
+function HomeworkTimerBadge({ secondsLeft }: { secondsLeft: number }) {
+  const urgent = secondsLeft <= 60
+  const expired = secondsLeft <= 0
+
+  return (
+    <View
+      style={[
+        styles.timerBadge,
+        urgent && styles.timerBadgeUrgent,
+        expired && styles.timerBadgeExpired,
+      ]}
+      accessibilityLabel={expired ? "Time is up" : `Time remaining ${formatTimer(secondsLeft)}`}
+    >
+      <Ionicons
+        name="time-outline"
+        size={16}
+        color={expired ? colors.error : urgent ? "#B45309" : colors.text}
+      />
+      <Text
+        style={[
+          styles.timerText,
+          urgent && styles.timerTextUrgent,
+          expired && styles.timerTextExpired,
+        ]}
+      >
+        {expired ? "0:00" : formatTimer(secondsLeft)}
+      </Text>
+    </View>
+  )
+}
+
 function HomeworkTopBar({
   progress,
   reportIssue,
   protectedSession = true,
+  secondsLeft,
 }: {
   progress: number
   reportIssue?: IssueReportPayload
   protectedSession?: boolean
+  secondsLeft?: number | null
 }) {
   const { confirmPause, pauseAvailable, showProtectedInfo } = useHomeworkShell()
 
@@ -90,6 +124,8 @@ function HomeworkTopBar({
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${progress}%` }]} />
       </View>
+
+      {secondsLeft != null ? <HomeworkTimerBadge secondsLeft={secondsLeft} /> : null}
 
       {reportIssue ? <HomeworkReportIssueButton report={reportIssue} /> : null}
 
@@ -202,6 +238,7 @@ interface HomeworkExerciseLayoutBaseProps {
   showTopBar?: boolean
   protectedSession?: boolean
   reportIssue?: IssueReportPayload
+  secondsLeft?: number | null
 }
 
 interface HomeworkExerciseLayoutIndexedProps extends HomeworkExerciseLayoutBaseProps {
@@ -244,6 +281,7 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
     showTopBar = true,
     protectedSession = true,
     reportIssue,
+    secondsLeft,
   } = props
 
   const insets = useSafeAreaInsets()
@@ -266,6 +304,7 @@ export function HomeworkExerciseLayout(props: HomeworkExerciseLayoutProps) {
           progress={progress}
           reportIssue={reportIssue}
           protectedSession={protectedSession}
+          secondsLeft={secondsLeft}
         />
       ) : null}
 
@@ -411,6 +450,33 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#FFC800",
     borderRadius: radius.pill,
+  },
+  timerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.sm,
+  },
+  timerBadgeUrgent: {
+    backgroundColor: "#FEF3C7",
+  },
+  timerBadgeExpired: {
+    backgroundColor: colors.errorBg,
+  },
+  timerText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  timerTextUrgent: {
+    color: "#B45309",
+  },
+  timerTextExpired: {
+    color: colors.error,
   },
   instructionRow: {
     flexDirection: "row",
