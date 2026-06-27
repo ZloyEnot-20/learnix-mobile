@@ -17,15 +17,15 @@ export default function IeltsReadingListScreen() {
 
   useEffect(() => {
     let cancelled = false
-    const timer = setTimeout(() => {
-      if (!cancelled) {
-        setTasks(listIeltsReadingTasks())
-        setLoading(false)
-      }
-    }, 0)
+    void listIeltsReadingTasks()
+      .then((items) => {
+        if (!cancelled) setTasks(items)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
-      clearTimeout(timer)
     }
   }, [])
 

@@ -155,9 +155,15 @@ function ResultsView({
 export function IeltsReadingRunner({
   test,
   onExit,
+  homeworkId,
+  studentId,
+  sessionStartedAt: externalSessionStart,
 }: {
   test: IeltsReadingTest
   onExit: () => void
+  homeworkId?: string
+  studentId?: string
+  sessionStartedAt?: number
 }) {
   const [panel, setPanel] = useState<Panel>("questions")
   const [partIndex, setPartIndex] = useState(0)
@@ -165,7 +171,8 @@ export function IeltsReadingRunner({
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [passageOpen, setPassageOpen] = useState(false)
   const [finished, setFinished] = useState(false)
-  const [sessionStartedAt] = useState(() => Date.now())
+  const [sessionStartedAt] = useState(() => externalSessionStart ?? Date.now())
+  const submittedRef = React.useRef(false)
 
   const part = test.parts[partIndex]
   const questions = part.questions
@@ -217,6 +224,28 @@ export function IeltsReadingRunner({
   }
 
   const submit = () => setFinished(true)
+
+  React.useEffect(() => {
+    if (!finished || !homeworkId || !studentId || submittedRef.current) return
+    submittedRef.current = true
+    const { correct, total } = scoreReadingTest(test, answers)
+    const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
+    void import("../../lib/api")
+      .then(({ homeworkApi }) =>
+        homeworkApi.recordAttempt(homeworkId, {
+          totalQuestions: total,
+          correctCount: correct,
+          durationSeconds,
+          answeredCount: Object.values(answers).filter((a) => a.trim()).length,
+        }),
+      )
+      .then(() =>
+        import("../../lib/home-screen-sync").then(({ refreshHomeContinueLearning }) =>
+          refreshHomeContinueLearning(studentId),
+        ),
+      )
+      .catch(() => {})
+  }, [finished, homeworkId, studentId, test, answers, sessionStartedAt])
 
   const retry = () => {
     setAnswers({})

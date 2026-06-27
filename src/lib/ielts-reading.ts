@@ -2,18 +2,43 @@ import type { IeltsReadingCatalogItem, IeltsReadingTest } from "../types/ielts"
 
 import readingIndex from "../../../exercises/ielts/reading/index.json"
 import marieCuriePart1 from "../../../exercises/ielts/reading/marie-curie-part1.json"
+import { exercisesApi } from "./api"
 
-const READING_TESTS: Record<string, IeltsReadingTest> = {
+const LOCAL_TESTS: Record<string, IeltsReadingTest> = {
   "marie-curie-part1": marieCuriePart1 as IeltsReadingTest,
 }
 
-export function listIeltsReadingTasks(): IeltsReadingCatalogItem[] {
+export async function listIeltsReadingTasks(): Promise<IeltsReadingCatalogItem[]> {
+  try {
+    const remote = await exercisesApi.readingSummaries()
+    if (remote.length > 0) {
+      return remote
+        .map((item) => ({
+          id: item.slug,
+          title: item.title,
+          subtitle: item.subtitle,
+          estimatedMinutes: item.totalTimeMinutes,
+          questionCount: item.questionCount,
+          file: `${item.slug}.json`,
+        }))
+        .sort((a, b) => a.title.localeCompare(b.title))
+    }
+  } catch {
+    // fall back to bundled catalogue
+  }
+
   const items = (readingIndex as { items: IeltsReadingCatalogItem[] }).items
   return items.slice().sort((a, b) => a.title.localeCompare(b.title))
 }
 
-export function getIeltsReadingTest(id: string): IeltsReadingTest | null {
-  return READING_TESTS[id] ?? null
+export async function getIeltsReadingTest(id: string): Promise<IeltsReadingTest | null> {
+  try {
+    const doc = await exercisesApi.reading(id)
+    if (doc?.data) return doc.data
+  } catch {
+    // fall back to bundled test
+  }
+  return LOCAL_TESTS[id] ?? null
 }
 
 export function countReadingQuestions(test: IeltsReadingTest): number {
@@ -44,7 +69,8 @@ export function isReadingAnswerCorrect(
       typeof question.correctAnswer === "number"
         ? String(question.correctAnswer)
         : String(question.correctAnswer).trim().toUpperCase()
-    return user === correct
+    if (user.length === 1 && correct.length === 1) return user === correct
+    return user === correct || user.startsWith(`${correct}.`) || user.startsWith(`${correct} `)
   }
 
   if (Array.isArray(question.correctAnswer)) {

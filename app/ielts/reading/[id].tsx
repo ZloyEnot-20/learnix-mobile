@@ -19,16 +19,17 @@ export default function IeltsReadingTaskScreen() {
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    const timer = setTimeout(() => {
-      if (cancelled) return
-      const data = getIeltsReadingTest(id)
-      if (!data) setError(true)
-      else setTest(data)
-      setLoading(false)
-    }, 0)
+    void getIeltsReadingTest(id)
+      .then((data) => {
+        if (cancelled) return
+        if (!data) setError(true)
+        else setTest(data)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
-      clearTimeout(timer)
     }
   }, [id])
 

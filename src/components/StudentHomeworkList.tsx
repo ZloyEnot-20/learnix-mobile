@@ -11,6 +11,7 @@ import { HomeworkSection, type HomeworkItem } from "./HomeworkSection"
 import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
 import { parsePodcastHomeworkSlug } from "../types/podcast"
+import { parseReadingHomeworkSlug } from "../types/reading"
 import type {
   StudentControlWorkEntry,
   StudentHomeworkSummaryEntry,
@@ -56,6 +57,9 @@ function mapHomeworkItems(entries: StudentHomeworkSummaryEntry[]): HomeworkItem[
           route = `/homework/podcast/${podcastSlug}?hw=${homework.id}`
         }
         kind = "podcast"
+      } else if (homework.subject === "reading") {
+        const readingSlug = parseReadingHomeworkSlug(homework.exerciseSlug)
+        if (readingSlug) route = `/homework/reading/${readingSlug}?hw=${homework.id}`
       }
     }
 
