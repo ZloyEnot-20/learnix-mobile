@@ -34,6 +34,7 @@ export interface TierMeta {
   perks: string[]
 }
 
+/** Tier transitions (~homework-only baseline): Silver L6 ≈ 50, Gold L11 ≈ 250, Diamond L21 ≈ 750. */
 export const MAX_LEVEL = 30
 
 export const TIERS: TierMeta[] = [
