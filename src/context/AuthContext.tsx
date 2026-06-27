@@ -18,6 +18,7 @@ import { clearHomeScreenSnapshot } from "../lib/home-screen-cache"
 import { clearProfileScreenSnapshot } from "../lib/profile-screen-cache"
 import { clearHomeworkListSnapshot } from "../lib/homework-list-cache"
 import { clearLastActivity } from "../lib/last-activity"
+import { prefetchAppMediaAssets } from "../lib/app-cache"
 import { GUEST_USER_ID, isGuestUser } from "../lib/guest"
 
 interface AuthContextValue {
@@ -71,6 +72,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     refreshUser().finally(() => setIsLoading(false))
   }, [refreshUser])
+
+  useEffect(() => {
+    if (!user?.avatarUrl || isGuestUser(user)) return
+    prefetchAppMediaAssets({ imageUrls: [user.avatarUrl] })
+  }, [user?.id, user?.avatarUrl])
 
   const login = useCallback(async (loginStr: string, password: string) => {
     clearApiCache()

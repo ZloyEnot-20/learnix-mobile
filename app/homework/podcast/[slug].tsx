@@ -5,7 +5,6 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { useAuth } from "../../../src/context/AuthContext"
 import { exercisesApi, homeworkApi, peekStale } from "../../../src/lib/api"
 import { cacheKey } from "../../../src/lib/api-cache"
-import { BackButton } from "../../../src/components/ui/BackButton"
 import { PodcastRunner } from "../../../src/components/podcast/PodcastRunner"
 import { HomeworkCheatingFailed } from "../../../src/components/homework/HomeworkCheatingFailed"
 import { HomeworkPodcastReview } from "../../../src/components/homework/HomeworkPodcastReview"
@@ -174,7 +173,7 @@ export default function HomeworkPodcastScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ headerShown: false }} />
+      <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <ScreenErrorBoundary
           title="Couldn't open podcast"
@@ -211,21 +210,16 @@ export default function HomeworkPodcastScreen() {
               subject={homeworkSubject}
               completedAt={completedAt}
             />
+          ) : sessionReady && sessionStartedAt != null ? (
+            <PodcastRunner
+              episode={episode}
+              homeworkId={homeworkId}
+              studentId={isStudent ? user?.id : undefined}
+              sessionStartedAt={sessionStartedAt}
+              elapsedSeconds={elapsedSeconds}
+            />
           ) : (
-            <>
-              <BackButton onPress={() => router.back()} style={styles.back} />
-              {sessionReady && sessionStartedAt != null ? (
-                <PodcastRunner
-                  episode={episode}
-                  homeworkId={homeworkId}
-                  studentId={isStudent ? user?.id : undefined}
-                  sessionStartedAt={sessionStartedAt}
-                  elapsedSeconds={elapsedSeconds}
-                />
-              ) : (
-                <PodcastScreenSkeleton />
-              )}
-            </>
+            <PodcastScreenSkeleton />
           )}
         </ScreenErrorBoundary>
       </SafeAreaView>
@@ -236,5 +230,4 @@ export default function HomeworkPodcastScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#FFFFFF" },
   fill: { flex: 1 },
-  back: { marginLeft: 16, marginBottom: 4 },
 })

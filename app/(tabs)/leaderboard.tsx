@@ -137,6 +137,9 @@ export default function LeaderboardScreen() {
     if (!user || isGuestUser(user)) return
     try {
       const data = await orgApi.leaderboard({ force })
+      void prefetchAppMediaAssets({
+        imageUrls: [...data.map((entry) => entry.avatarUrl), user.avatarUrl],
+      })
       setEntries(data)
 
       const meInList = data.some((entry) => entry.studentId === user.id)
@@ -151,11 +154,6 @@ export default function LeaderboardScreen() {
       setMyLevel(null)
     }
   }, [user])
-
-  useEffect(() => {
-    if (entries.length === 0) return
-    void prefetchAppMediaAssets({ imageUrls: entries.map((entry) => entry.avatarUrl) })
-  }, [entries])
 
   useEffect(() => {
     if (guest) {

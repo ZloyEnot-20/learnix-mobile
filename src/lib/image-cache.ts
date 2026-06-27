@@ -8,7 +8,7 @@ export async function prefetchRemoteImages(
   )
   if (remote.length === 0) return
   await Promise.allSettled(
-    remote.map((url) => Image.prefetch(url, { cachePolicy: "disk" })),
+    remote.map((url) => Image.prefetch(url, { cachePolicy: "memory-disk" })),
   )
 }
 

@@ -1,10 +1,8 @@
 import React from "react"
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native"
+import { Pressable, StyleSheet, Text, View } from "react-native"
+import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { colors, radius, spacing, typography, subjectColors } from "../theme/tokens"
-
-const UNAVAILABLE_MESSAGE =
-  "IELTS mock test will be available when your teacher assigns it to you."
 
 const IELTS_SECTIONS = [
   { id: "reading", label: "Reading", icon: "book-outline" as const },
@@ -14,15 +12,13 @@ const IELTS_SECTIONS = [
 ]
 
 export function IeltsMockTestBanner() {
-  const showInfo = () => {
-    Alert.alert("IELTS Mock Test", UNAVAILABLE_MESSAGE)
-  }
+  const router = useRouter()
 
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>IELTS Mock Test</Text>
+      <Text style={styles.sectionTitle}>IELTS Practice</Text>
       <Pressable
-        onPress={showInfo}
+        onPress={() => router.push("/ielts" as never)}
         style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       >
         <View style={styles.headerRow}>
@@ -30,8 +26,8 @@ export function IeltsMockTestBanner() {
             <Ionicons name="clipboard-outline" size={22} color="#93C5FD" />
           </View>
           <View style={styles.headerText}>
-            <Text style={styles.headline}>Full practice exam</Text>
-            <Text style={styles.subline}>All four sections · timed format</Text>
+            <Text style={styles.headline}>Reading & exam skills</Text>
+            <Text style={styles.subline}>Passages, timing, IELTS question types</Text>
           </View>
         </View>
 
@@ -56,15 +52,11 @@ export function IeltsMockTestBanner() {
         </View>
 
         <View style={styles.footer}>
-          <View style={styles.unavailableBadge}>
-            <Ionicons name="lock-closed" size={12} color="rgba(226, 232, 240, 0.85)" />
-            <Text style={styles.unavailableText}>Unavailable</Text>
+          <View style={styles.openBadge}>
+            <Ionicons name="arrow-forward" size={12} color="#F8FAFC" />
+            <Text style={styles.openText}>Open practice</Text>
           </View>
-          <Ionicons
-            name="information-circle-outline"
-            size={18}
-            color="rgba(226, 232, 240, 0.55)"
-          />
+          <Ionicons name="chevron-forward" size={18} color="rgba(226, 232, 240, 0.85)" />
         </View>
       </Pressable>
     </View>
@@ -141,20 +133,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  unavailableBadge: {
+  openBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(15, 23, 42, 0.35)",
+    backgroundColor: "rgba(59, 130, 246, 0.35)",
     borderWidth: 1,
-    borderColor: "rgba(148, 163, 184, 0.28)",
+    borderColor: "rgba(147, 197, 253, 0.45)",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: radius.pill,
   },
-  unavailableText: {
+  openText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "rgba(226, 232, 240, 0.85)",
+    color: "#F8FAFC",
   },
 })

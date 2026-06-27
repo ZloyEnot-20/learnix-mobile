@@ -10,7 +10,7 @@ export function CachedImage({ uri, ...props }: CachedImageProps) {
     <Image
       {...props}
       source={{ uri }}
-      cachePolicy="disk"
+      cachePolicy="memory-disk"
       recyclingKey={uri}
     />
   )

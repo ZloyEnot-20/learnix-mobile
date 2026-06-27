@@ -44,13 +44,17 @@ export function ProfileAvatar({
         style,
       ]}
     >
+      <View style={[styles.fallback, { borderRadius: radius }]}>
+        <Text style={[styles.fallbackText, { fontSize }]}>{initials(name)}</Text>
+      </View>
       {avatarUrl ? (
-        <CachedImage uri={avatarUrl} style={styles.image} contentFit="cover" />
-      ) : (
-        <View style={[styles.fallback, { borderRadius: radius }]}>
-          <Text style={[styles.fallbackText, { fontSize }]}>{initials(name)}</Text>
-        </View>
-      )}
+        <CachedImage
+          uri={avatarUrl}
+          style={[styles.image, styles.imageOverlay]}
+          contentFit="cover"
+          transition={150}
+        />
+      ) : null}
       {uploading ? (
         <View style={[styles.overlay, { borderRadius: radius }]}>
           <ActivityIndicator color="#fff" />
@@ -83,6 +87,9 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     height: "100%",
+  },
+  imageOverlay: {
+    ...StyleSheet.absoluteFillObject,
   },
   fallback: {
     flex: 1,

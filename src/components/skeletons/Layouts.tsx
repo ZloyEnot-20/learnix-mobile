@@ -273,6 +273,52 @@ export function ExerciseScreenSkeleton() {
   )
 }
 
+export function IeltsReadingListSkeleton({ count = 3 }: { count?: number }) {
+  return (
+    <View style={styles.ieltsList}>
+      {Array.from({ length: count }).map((_, i) => (
+        <SkeletonCard key={i} style={styles.ieltsListCard}>
+          <View style={styles.ieltsListRow}>
+            <Skeleton width={44} height={44} borderRadius={12} />
+            <View style={styles.flex}>
+              <Skeleton width="70%" height={16} />
+              <Skeleton width="55%" height={12} style={styles.gapSm} />
+              <View style={[styles.row, styles.gapSm]}>
+                <Skeleton width={88} height={22} borderRadius={999} />
+                <Skeleton width={64} height={22} borderRadius={999} />
+              </View>
+            </View>
+          </View>
+        </SkeletonCard>
+      ))}
+    </View>
+  )
+}
+
+export function IeltsReadingScreenSkeleton() {
+  return (
+    <View style={styles.exerciseScreen}>
+      <Skeleton width="65%" height={18} />
+      <Skeleton width="40%" height={12} style={styles.gapSm} />
+      <Skeleton height={36} borderRadius={10} style={styles.gapMd} />
+      <SkeletonCard style={styles.gapLg}>
+        <Skeleton width="30%" height={12} />
+        <Skeleton width="100%" height={16} style={styles.gapSm} />
+        <Skeleton width="95%" height={16} style={styles.gapSm} />
+        <View style={styles.optionSkeletonRow}>
+          <Skeleton height={44} borderRadius={10} style={styles.optionSkeleton} />
+          <Skeleton height={44} borderRadius={10} style={styles.optionSkeleton} />
+          <Skeleton height={44} borderRadius={10} style={styles.optionSkeleton} />
+        </View>
+      </SkeletonCard>
+      <View style={styles.row}>
+        <Skeleton height={48} borderRadius={12} style={styles.flex} />
+        <Skeleton height={48} borderRadius={12} style={styles.flex} />
+      </View>
+    </View>
+  )
+}
+
 export function VocabScreenSkeleton() {
   return (
     <View style={styles.exerciseScreen}>
@@ -509,6 +555,14 @@ const styles = StyleSheet.create({
   },
   exerciseCard: { marginBottom: 8 },
   exerciseScreen: { padding: 16 },
+  ieltsList: {
+    paddingHorizontal: spacing.screen,
+    gap: spacing.sm,
+  },
+  ieltsListCard: { padding: spacing.md },
+  ieltsListRow: { flexDirection: "row", gap: spacing.md, alignItems: "center" },
+  optionSkeletonRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  optionSkeleton: { flex: 1 },
   notifRow: {
     flexDirection: "row",
     gap: 12,
