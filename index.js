@@ -1,8 +1,8 @@
 import Constants from "expo-constants"
-import messaging from "@react-native-firebase/messaging"
 import { requestNotificationsRefresh } from "./src/lib/notifications-refresh"
 
 if (Constants.appOwnership !== "expo") {
+  const messaging = require("@react-native-firebase/messaging").default
   messaging().setBackgroundMessageHandler(async () => {
     requestNotificationsRefresh()
   })

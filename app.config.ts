@@ -4,6 +4,7 @@ const PRODUCTION_API_URL = "https://api.learnix.space/api"
 const PRIVACY_POLICY_URL = "https://learnix.space/privacy"
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? PRODUCTION_API_URL
+const isProductionBuild = process.env.EAS_BUILD_PROFILE === "production"
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -14,7 +15,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: "./assets/icon.png",
   scheme: "learnix",
   userInterfaceStyle: "light",
-  newArchEnabled: false,
   splash: {
     image: "./assets/splash-icon.png",
     resizeMode: "contain",
@@ -26,6 +26,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     bundleIdentifier: "com.learnix.uz",
     buildNumber: "1",
     googleServicesFile: "./GoogleService-Info.plist",
+    entitlements: {
+      "aps-environment": isProductionBuild ? "production" : "development",
+    },
     infoPlist: {
       NSMicrophoneUsageDescription:
         "Learnix records your voice for speaking exercises and homework.",

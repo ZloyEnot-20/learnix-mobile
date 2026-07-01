@@ -1,9 +1,18 @@
 import { Platform } from "react-native"
 import Constants from "expo-constants"
-import messaging from "@react-native-firebase/messaging"
 import { pushTokenApi, type AuthUser } from "./api"
 import { requestNotificationsRefresh } from "./notifications-refresh"
 import { isStudentUser } from "./guest"
+
+type FirebaseMessagingModule = typeof import("@react-native-firebase/messaging").default
+
+function getMessagingModule(): FirebaseMessagingModule {
+  return require("@react-native-firebase/messaging").default
+}
+
+function messaging() {
+  return getMessagingModule()()
+}
 
 export function isPushMessagingSupported(): boolean {
   return Constants.appOwnership !== "expo"
@@ -18,10 +27,11 @@ let unsubscribeTokenRefresh: (() => void) | null = null
 let unsubscribeOpenedApp: (() => void) | null = null
 
 async function requestNotificationPermission(): Promise<boolean> {
+  const module = getMessagingModule()
   const status = await messaging().requestPermission()
   return (
-    status === messaging.AuthorizationStatus.AUTHORIZED ||
-    status === messaging.AuthorizationStatus.PROVISIONAL
+    status === module.AuthorizationStatus.AUTHORIZED ||
+    status === module.AuthorizationStatus.PROVISIONAL
   )
 }
 
