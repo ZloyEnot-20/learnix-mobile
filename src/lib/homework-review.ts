@@ -1,5 +1,12 @@
 import { cacheKey, peekStale } from "./api-cache"
 import type { HomeworkAttempt, HomeworkSubmission, StudentHomeworkEntry } from "../types/domain"
+import type { IeltsReadingTest } from "../types/ielts"
+import {
+  flattenReadingQuestions,
+  formatReadingCorrectAnswer,
+  isReadingAnswerCorrect,
+  resolveReadingQuestionPrompt,
+} from "./ielts-reading"
 import {
   formatFillBlankCorrectAnswer,
   type GrammarExercise,
@@ -11,6 +18,16 @@ export type QuestionReviewStatus = "correct" | "incorrect" | "skipped"
 export interface ReviewQuestionItem {
   index: number
   question: GrammarQuestion
+  status: QuestionReviewStatus
+  userAnswer?: string
+  correctAnswer: string
+}
+
+export interface ReadingReviewItem {
+  index: number
+  questionId: number
+  partNumber: number
+  prompt: string
   status: QuestionReviewStatus
   userAnswer?: string
   correctAnswer: string
@@ -95,6 +112,92 @@ export function buildReviewQuestions(
     return {
       index,
       question,
+      status: "skipped" as const,
+      correctAnswer,
+    }
+  })
+}
+
+export function buildReadingReviewItems(
+  test: IeltsReadingTest,
+  attempt: HomeworkAttempt,
+): ReadingReviewItem[] {
+  const flat = flattenReadingQuestions(test)
+  const mistakeById = new Map(attempt.mistakes.map((m) => [m.questionId, m]))
+  const answerById = new Map(
+    (attempt.readingAnswers ?? []).map((a) => [a.questionId, a.userAnswer]),
+  )
+  const answered =
+    attempt.answeredCount ?? attempt.correctCount + attempt.mistakes.length
+  const hasStoredAnswers = answerById.size > 0
+  const hasMistakeDetails = attempt.mistakes.length > 0
+  const allCorrect = attempt.correctCount === attempt.totalQuestions
+
+  return flat.map((question, index) => {
+    const prompt =
+      resolveReadingQuestionPrompt(
+        question.question,
+        question.options,
+        question.questionInstruction,
+      ) || `Question ${question.id}`
+    const correctAnswer =
+      mistakeById.get(question.id)?.correctAnswer ??
+      formatReadingCorrectAnswer(question)
+    const mistake = mistakeById.get(question.id)
+    const storedAnswer = answerById.get(question.id)
+
+    if (mistake) {
+      return {
+        index,
+        questionId: question.id,
+        partNumber: question.partNumber,
+        prompt,
+        status: "incorrect" as const,
+        userAnswer: mistake.userAnswer,
+        correctAnswer,
+      }
+    }
+
+    if (storedAnswer) {
+      const isCorrect = isReadingAnswerCorrect(question, storedAnswer)
+      return {
+        index,
+        questionId: question.id,
+        partNumber: question.partNumber,
+        prompt,
+        status: isCorrect ? ("correct" as const) : ("incorrect" as const),
+        userAnswer: storedAnswer,
+        correctAnswer,
+      }
+    }
+
+    if (hasMistakeDetails || hasStoredAnswers || allCorrect) {
+      if (index < answered) {
+        return {
+          index,
+          questionId: question.id,
+          partNumber: question.partNumber,
+          prompt,
+          status: "correct" as const,
+          correctAnswer,
+        }
+      }
+
+      return {
+        index,
+        questionId: question.id,
+        partNumber: question.partNumber,
+        prompt,
+        status: "skipped" as const,
+        correctAnswer,
+      }
+    }
+
+    return {
+      index,
+      questionId: question.id,
+      partNumber: question.partNumber,
+      prompt,
       status: "skipped" as const,
       correctAnswer,
     }

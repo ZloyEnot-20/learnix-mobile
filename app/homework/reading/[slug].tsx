@@ -8,6 +8,7 @@ import { cacheKey } from "../../../src/lib/api-cache"
 import { IeltsReadingRunner } from "../../../src/components/ielts/IeltsReadingRunner"
 import { IeltsReadingScreenSkeleton } from "../../../src/components/skeletons/Layouts"
 import { HomeworkCheatingFailed } from "../../../src/components/homework/HomeworkCheatingFailed"
+import { HomeworkReadingReview } from "../../../src/components/homework/HomeworkReadingReview"
 import { HomeworkStatusScreen } from "../../../src/components/homework/HomeworkStatusScreen"
 import { ScreenErrorBoundary } from "../../../src/components/ui/ScreenErrorBoundary"
 import { isCompletedSubmission, resolveHomeworkSubmission } from "../../../src/lib/homework-review"
@@ -17,7 +18,7 @@ import {
   useHomeworkEntryOnFocus,
 } from "../../../src/hooks/useHomeworkEntryOnFocus"
 import { useRetryWhenOffline } from "../../../src/hooks/useRetryWhenOffline"
-import type { HomeworkSubmission } from "../../../src/types/domain"
+import type { HomeworkSubmission, Subject } from "../../../src/types/domain"
 import type { IeltsReadingTest } from "../../../src/types/ielts"
 import { colors } from "../../../src/theme/colors"
 
@@ -44,13 +45,20 @@ export default function HomeworkReadingScreen() {
   })
 
   const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null)
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | undefined>()
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [alreadyFailed, setAlreadyFailed] = useState(false)
   const [awaitingNetwork, setAwaitingNetwork] = useState(false)
   const [loadError, setLoadError] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
-  const [reviewDone, setReviewDone] = useState(() => {
+  const [reviewSubmission, setReviewSubmission] = useState<HomeworkSubmission | null>(() => {
     const sub = submissionKey ? peekStale<HomeworkSubmission>(submissionKey) : null
-    return sub != null && isCompletedSubmission(sub.status, sub.attempt)
+    return sub && isCompletedSubmission(sub.status, sub.attempt) ? sub : null
+  })
+  const [homeworkSubject, setHomeworkSubject] = useState<Subject>("reading")
+  const [completedAt, setCompletedAt] = useState<string | undefined>(() => {
+    const sub = submissionKey ? peekStale<HomeworkSubmission>(submissionKey) : null
+    return sub?.submittedAt ?? undefined
   })
 
   const retryLoad = useCallback(() => {
@@ -68,20 +76,25 @@ export default function HomeworkReadingScreen() {
   useEffect(() => {
     if (!readingSlug || !homeworkId) return
     let cancelled = false
-    const hasCachedView = test !== null || reviewDone
+    const hasCachedView = test !== null || reviewSubmission !== null
 
     async function load() {
       if (!hasCachedView) setLoading(true)
       setLoadError(false)
       try {
-        const [doc, sessionStart] = await Promise.all([
+        const [doc, sessionStart, hwData] = await Promise.all([
           exercisesApi.reading(readingSlug),
           isStudent ? resolveHomeworkSessionStart(homeworkId) : Promise.resolve(null),
+          homeworkApi.get(homeworkId).catch(() => null),
         ])
         if (cancelled) return
 
         setTest(doc?.data ?? null)
+        setTimeLimitMinutes(hwData?.timeLimitMinutes)
+        if (hwData?.subject) setHomeworkSubject(hwData.subject)
+
         const sub = isStudent ? sessionStart?.sub ?? null : null
+        if (sub?.elapsedSeconds != null) setElapsedSeconds(sub.elapsedSeconds)
 
         if (sub?.integrityStatus === "cheating_detected" || sub?.attempt?.failedDueToCheating) {
           setAlreadyFailed(true)
@@ -90,8 +103,14 @@ export default function HomeworkReadingScreen() {
         }
 
         if (isCompletedSubmission(sub?.status, sub?.attempt)) {
-          setReviewDone(true)
+          setReviewSubmission(sub)
+          setCompletedAt(sub?.submittedAt ?? undefined)
           setAwaitingNetwork(false)
+          if (user?.id) {
+            void import("../../../src/lib/home-screen-sync").then(({ refreshHomeContinueLearning }) =>
+              refreshHomeContinueLearning(user.id),
+            )
+          }
           return
         }
 
@@ -114,10 +133,10 @@ export default function HomeworkReadingScreen() {
     return () => {
       cancelled = true
     }
-  }, [readingSlug, homeworkId, isStudent, reloadKey])
+  }, [readingSlug, homeworkId, isStudent, reloadKey, user?.id])
 
   useEffect(() => {
-    if (reviewDone || !isStudent || !homeworkId || sessionStartedAt != null) return
+    if (reviewSubmission || !isStudent || !homeworkId || sessionStartedAt != null) return
     let cancelled = false
 
     async function beginSession() {
@@ -133,7 +152,8 @@ export default function HomeworkReadingScreen() {
       }
 
       if (isCompletedSubmission(sub?.status, sub?.attempt)) {
-        setReviewDone(true)
+        setReviewSubmission(sub)
+        setCompletedAt(sub?.submittedAt ?? undefined)
         return
       }
 
@@ -143,6 +163,7 @@ export default function HomeworkReadingScreen() {
       }
 
       setAwaitingNetwork(false)
+      setElapsedSeconds(sub.elapsedSeconds ?? 0)
       setSessionStartedAt(
         sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
       )
@@ -152,21 +173,21 @@ export default function HomeworkReadingScreen() {
     return () => {
       cancelled = true
     }
-  }, [isStudent, homeworkId, sessionStartedAt, reviewDone])
+  }, [isStudent, homeworkId, sessionStartedAt, reviewSubmission])
 
   const sessionReady =
-    !loading && test != null && !reviewDone && sessionStartedAt != null
+    !loading && test != null && !reviewSubmission && sessionStartedAt != null
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
-      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+      <SafeAreaView style={styles.safe} edges={["top"]}>
         <ScreenErrorBoundary
           title="Couldn't open reading task"
           description="Something went wrong while loading this homework. Please try again."
           onRetry={retryLoad}
         >
-          {loading || (awaitingNetwork && !reviewDone) ? (
+          {loading || (awaitingNetwork && !reviewSubmission) ? (
             <IeltsReadingScreenSkeleton />
           ) : alreadyFailed ? (
             <HomeworkCheatingFailed />
@@ -188,17 +209,13 @@ export default function HomeworkReadingScreen() {
               secondaryButtonLabel={loadError ? "Go back" : undefined}
               onSecondaryButtonPress={loadError ? () => router.back() : undefined}
             />
-          ) : reviewDone ? (
-            <HomeworkStatusScreen
-              style={styles.fill}
-              code="✓"
-              icon="checkmark-circle-outline"
-              iconColor={colors.success}
-              iconBg="rgba(16, 185, 129, 0.12)"
-              title="Reading homework completed"
-              description="Your answers have been submitted."
-              buttonLabel="Go back"
-              onButtonPress={() => router.back()}
+          ) : reviewSubmission?.attempt ? (
+            <HomeworkReadingReview
+              test={test}
+              attempt={reviewSubmission.attempt}
+              title={test.title}
+              subject={homeworkSubject}
+              completedAt={completedAt}
             />
           ) : sessionReady && sessionStartedAt != null ? (
             <IeltsReadingRunner
@@ -206,6 +223,8 @@ export default function HomeworkReadingScreen() {
               homeworkId={homeworkId}
               studentId={isStudent ? user?.id : undefined}
               sessionStartedAt={sessionStartedAt}
+              timeLimitMinutes={timeLimitMinutes}
+              elapsedSeconds={elapsedSeconds}
               onExit={() => router.back()}
             />
           ) : (

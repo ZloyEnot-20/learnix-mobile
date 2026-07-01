@@ -70,12 +70,6 @@ export default function IeltsReadingListScreen() {
                       <Ionicons name="help-circle-outline" size={12} color={colors.primaryDark} />
                       <Text style={styles.metaText}>{task.questionCount} questions</Text>
                     </View>
-                    <View style={[styles.metaBadge, styles.timeBadge]}>
-                      <Ionicons name="time-outline" size={12} color="#B45309" />
-                      <Text style={[styles.metaText, styles.timeText]}>
-                        {task.estimatedMinutes} min
-                      </Text>
-                    </View>
                   </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
@@ -141,9 +135,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
   },
-  timeBadge: { backgroundColor: colors.warningBg },
   metaText: { fontSize: 11, fontWeight: "700", color: colors.primaryDark },
-  timeText: { color: "#B45309" },
   empty: {
     flex: 1,
     alignItems: "center",

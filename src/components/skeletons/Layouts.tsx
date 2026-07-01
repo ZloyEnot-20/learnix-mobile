@@ -285,7 +285,6 @@ export function IeltsReadingListSkeleton({ count = 3 }: { count?: number }) {
               <Skeleton width="55%" height={12} style={styles.gapSm} />
               <View style={[styles.row, styles.gapSm]}>
                 <Skeleton width={88} height={22} borderRadius={999} />
-                <Skeleton width={64} height={22} borderRadius={999} />
               </View>
             </View>
           </View>
@@ -298,13 +297,19 @@ export function IeltsReadingListSkeleton({ count = 3 }: { count?: number }) {
 export function IeltsReadingScreenSkeleton() {
   return (
     <View style={styles.exerciseScreen}>
-      <Skeleton width="65%" height={18} />
-      <Skeleton width="40%" height={12} style={styles.gapSm} />
-      <Skeleton height={36} borderRadius={10} style={styles.gapMd} />
+      <View style={styles.readingTimerSkeletonRow}>
+        <Skeleton width={96} height={36} borderRadius={999} />
+      </View>
+      <Skeleton height={10} borderRadius={999} style={styles.gapMd} />
       <SkeletonCard style={styles.gapLg}>
-        <Skeleton width="30%" height={12} />
+        <Skeleton width="45%" height={18} />
         <Skeleton width="100%" height={16} style={styles.gapSm} />
         <Skeleton width="95%" height={16} style={styles.gapSm} />
+        <Skeleton width="88%" height={16} style={styles.gapSm} />
+      </SkeletonCard>
+      <SkeletonCard style={styles.gapLg}>
+        <Skeleton width="35%" height={12} />
+        <Skeleton width="100%" height={14} style={styles.gapSm} />
         <View style={styles.optionSkeletonRow}>
           <Skeleton height={44} borderRadius={10} style={styles.optionSkeleton} />
           <Skeleton height={44} borderRadius={10} style={styles.optionSkeleton} />
@@ -555,6 +560,7 @@ const styles = StyleSheet.create({
   },
   exerciseCard: { marginBottom: 8 },
   exerciseScreen: { padding: 16 },
+  readingTimerSkeletonRow: { alignItems: "flex-end" },
   ieltsList: {
     paddingHorizontal: spacing.screen,
     gap: spacing.sm,

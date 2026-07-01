@@ -71,6 +71,8 @@ export interface HomeworkAttempt {
   failedDueToCheating?: boolean
   cheatingReason?: string
   listeningStats?: PodcastListeningStats
+  /** Per-question answers for IELTS reading homework. */
+  readingAnswers?: Array<{ questionId: number; userAnswer: string }>
 }
 
 export interface HomeworkSubmission {

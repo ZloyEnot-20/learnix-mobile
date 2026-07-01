@@ -37,10 +37,6 @@ export default function IeltsReadingTaskScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={styles.safe} edges={["top"]}>
-        <View style={styles.topBar}>
-          <BackButton onPress={() => router.back()} />
-        </View>
-
         {loading ? (
           <IeltsReadingScreenSkeleton />
         ) : error || !test ? (
@@ -49,7 +45,11 @@ export default function IeltsReadingTaskScreen() {
             <BackButton onPress={() => router.back()} />
           </View>
         ) : (
-          <IeltsReadingRunner test={test} onExit={() => router.back()} />
+          <IeltsReadingRunner
+            test={test}
+            onExit={() => router.back()}
+            onBack={() => router.back()}
+          />
         )}
       </SafeAreaView>
     </>
@@ -58,10 +58,6 @@ export default function IeltsReadingTaskScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  topBar: {
-    paddingHorizontal: spacing.screen,
-    paddingBottom: spacing.xs,
-  },
   center: {
     flex: 1,
     alignItems: "center",

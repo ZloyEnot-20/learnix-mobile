@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  Modal,
+  Animated,
+  Dimensions,
+  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,15 +11,59 @@ import {
   View,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useCountdown, formatTimer } from "../../hooks/useCountdown"
-import type { IeltsReadingPart, IeltsReadingQuestion, IeltsReadingTest } from "../../types/ielts"
-import { scoreReadingTest } from "../../lib/ielts-reading"
+import type { IeltsReadingQuestion, IeltsReadingTest } from "../../types/ielts"
+import {
+  buildReadingAttempt,
+  cleanPartQuestionInstruction,
+  extractReadingOptionValue,
+  formatReadingChoiceLabel,
+  resolveReadingQuestionPrompt,
+  scoreReadingTest,
+} from "../../lib/ielts-reading"
 import { HomeworkFooterButton } from "../homework/HomeworkExerciseLayout"
+import { HomeworkReadingReview } from "../homework/HomeworkReadingReview"
+import { BackButton } from "../ui/BackButton"
+import { PassageText } from "./PassageText"
 import { colors, radius, spacing } from "../../theme/tokens"
 
-type Panel = "passage" | "questions"
-
+const PANEL_ANIM_MS = 280
+const SCREEN_HEIGHT = Dimensions.get("window").height
+const COLLAPSE_DIVIDER_HEIGHT = 36
 const TFNG_OPTIONS = ["TRUE", "FALSE", "NOT GIVEN"] as const
+
+function isChoiceSelected(option: string, answer: string): boolean {
+  if (!answer) return false
+  const optionKey = extractReadingOptionValue(option)
+  return answer === option || answer.toLowerCase() === optionKey.toLowerCase()
+}
+
+function CollapseDivider({
+  onPress,
+  chevronRotation,
+  collapsed,
+}: {
+  onPress: () => void
+  chevronRotation: Animated.AnimatedInterpolation<string>
+  collapsed: boolean
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={styles.splitDivider}
+      accessibilityRole="button"
+      accessibilityLabel={collapsed ? "Show questions" : "Hide questions"}
+      accessibilityState={{ expanded: !collapsed }}
+    >
+      <View style={styles.splitDividerButton}>
+        <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+          <Ionicons name="chevron-down" size={16} color="#FFFFFF" />
+        </Animated.View>
+      </View>
+    </Pressable>
+  )
+}
 
 function QuestionInput({
   question,
@@ -57,15 +103,16 @@ function QuestionInput({
     return (
       <View style={styles.choiceList}>
         {question.options.map((opt, index) => {
-          const selected = answer === opt
+          const selected = isChoiceSelected(opt, answer)
+          const optionValue = extractReadingOptionValue(opt)
           return (
             <Pressable
-              key={opt}
-              onPress={() => onChange(opt)}
+              key={`${index}-${opt}`}
+              onPress={() => onChange(optionValue)}
               style={[styles.choiceCard, selected && styles.choiceCardSelected]}
             >
               <Text style={[styles.choiceLabel, selected && styles.choiceLabelSelected]}>
-                {String.fromCharCode(65 + index)}. {opt}
+                {formatReadingChoiceLabel(opt, index)}
               </Text>
             </Pressable>
           )
@@ -87,46 +134,74 @@ function QuestionInput({
   )
 }
 
-function PassageModal({
-  visible,
-  part,
-  onClose,
+function ReadingTimer({ secondsLeft }: { secondsLeft: number | null }) {
+  if (secondsLeft == null) return null
+
+  const urgent = secondsLeft <= 60
+  const expired = secondsLeft <= 0
+
+  return (
+    <View
+      style={[
+        styles.timerBadge,
+        urgent && styles.timerBadgeUrgent,
+        expired && styles.timerBadgeExpired,
+      ]}
+    >
+      <Ionicons
+        name="time-outline"
+        size={16}
+        color={expired ? colors.error : urgent ? "#B45309" : colors.text}
+      />
+      <Text
+        style={[
+          styles.timerText,
+          urgent && styles.timerTextUrgent,
+          expired && styles.timerTextExpired,
+        ]}
+      >
+        {expired ? "0:00" : formatTimer(secondsLeft)}
+      </Text>
+    </View>
+  )
+}
+
+function CollapsibleInstruction({
+  instruction,
+  expanded,
+  onToggle,
 }: {
-  visible: boolean
-  part: IeltsReadingPart
-  onClose: () => void
+  instruction: string
+  expanded: boolean
+  onToggle: () => void
 }) {
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
-      <View style={styles.modalSafe}>
-        <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle} numberOfLines={2}>
-            {part.passageTitle ?? part.title}
-          </Text>
-          <Pressable onPress={onClose} hitSlop={12} style={styles.modalClose}>
-            <Ionicons name="close" size={22} color={colors.text} />
-          </Pressable>
-        </View>
-        <ScrollView contentContainerStyle={styles.modalScroll}>
-          {part.questionInstruction ? (
-            <Text style={styles.instruction}>{part.questionInstruction}</Text>
-          ) : null}
-          <Text style={styles.passageText}>{part.passage}</Text>
-        </ScrollView>
-      </View>
-    </Modal>
+    <View style={styles.instructionWrap}>
+      <Pressable
+        onPress={onToggle}
+        style={styles.instructionToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+      >
+        <Text style={styles.instructionToggleLabel}>Instructions</Text>
+        <Ionicons
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={16}
+          color={colors.textSecondary}
+        />
+      </Pressable>
+      {expanded ? <Text style={styles.questionInstruction}>{instruction}</Text> : null}
+    </View>
   )
 }
 
 function ResultsView({
   correct,
   total,
-  onRetry,
   onExit,
 }: {
   correct: number
   total: number
-  onRetry: () => void
   onExit: () => void
 }) {
   const pct = total > 0 ? Math.round((correct / total) * 100) : 0
@@ -142,12 +217,7 @@ function ResultsView({
           Review your answers and re-read the passage to reinforce key details.
         </Text>
       </View>
-      <View style={styles.resultsActions}>
-        <Pressable onPress={onRetry} style={styles.secondaryBtn}>
-          <Text style={styles.secondaryBtnText}>Try again</Text>
-        </Pressable>
-        <HomeworkFooterButton label="Back to list" onPress={onExit} />
-      </View>
+      <HomeworkFooterButton label="Done" onPress={onExit} />
     </View>
   )
 }
@@ -158,43 +228,99 @@ export function IeltsReadingRunner({
   homeworkId,
   studentId,
   sessionStartedAt: externalSessionStart,
+  timeLimitMinutes,
+  elapsedSeconds = 0,
+  onBack,
 }: {
   test: IeltsReadingTest
   onExit: () => void
   homeworkId?: string
   studentId?: string
   sessionStartedAt?: number
+  timeLimitMinutes?: number
+  elapsedSeconds?: number
+  onBack?: () => void
 }) {
-  const [panel, setPanel] = useState<Panel>("questions")
+  const insets = useSafeAreaInsets()
   const [partIndex, setPartIndex] = useState(0)
   const [questionIndex, setQuestionIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
-  const [passageOpen, setPassageOpen] = useState(false)
   const [finished, setFinished] = useState(false)
+  const [instructionExpanded, setInstructionExpanded] = useState(true)
+  const [questionsCollapsed, setQuestionsCollapsed] = useState(false)
+  const collapseProgress = useRef(new Animated.Value(1)).current
+  const panelAnimating = useRef(false)
   const [sessionStartedAt] = useState(() => externalSessionStart ?? Date.now())
   const submittedRef = React.useRef(false)
 
+  const timerMinutes = timeLimitMinutes ?? test.totalTimeMinutes
   const part = test.parts[partIndex]
   const questions = part.questions
   const currentQuestion = questions[questionIndex]
-  const totalQuestions = useMemo(
-    () => test.parts.reduce((sum, p) => sum + p.questions.length, 0),
-    [test],
-  )
-  const answeredCount = Object.values(answers).filter((a) => a.trim()).length
   const secondsLeft = useCountdown(
-    test.totalTimeMinutes,
+    timerMinutes,
     () => setFinished(true),
     finished,
-    0,
+    elapsedSeconds,
     sessionStartedAt,
   )
 
-  const globalQuestionIndex = useMemo(() => {
-    let offset = 0
-    for (let i = 0; i < partIndex; i++) offset += test.parts[i].questions.length
-    return offset + questionIndex + 1
-  }, [partIndex, questionIndex, test.parts])
+  const partInstruction = useMemo(
+    () => cleanPartQuestionInstruction(part.questionInstruction),
+    [part.questionInstruction],
+  )
+
+  const questionPrompt = useMemo(
+    () =>
+      resolveReadingQuestionPrompt(
+        currentQuestion.question,
+        currentQuestion.options,
+        part.questionInstruction,
+      ),
+    [currentQuestion, part.questionInstruction],
+  )
+
+  useEffect(() => {
+    setInstructionExpanded(true)
+  }, [partIndex])
+
+  const toggleQuestionsPanel = useCallback(() => {
+    if (panelAnimating.current) return
+
+    const nextCollapsed = !questionsCollapsed
+    panelAnimating.current = true
+    setQuestionsCollapsed(nextCollapsed)
+
+    Animated.timing(collapseProgress, {
+      toValue: nextCollapsed ? 0 : 1,
+      duration: PANEL_ANIM_MS,
+      easing: Easing.bezier(0.4, 0, 0.2, 1),
+      useNativeDriver: false,
+    }).start(() => {
+      panelAnimating.current = false
+    })
+  }, [collapseProgress, questionsCollapsed])
+
+  const panelFlex = collapseProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  })
+
+  const animatedPanelOpacity = collapseProgress.interpolate({
+    inputRange: [0, 0.35, 1],
+    outputRange: [0, 0.92, 1],
+  })
+
+  const chevronRotation = collapseProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["180deg", "0deg"],
+  })
+
+  const inlineDividerOpacity = collapseProgress
+  const bottomDividerOpacity = collapseProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0],
+  })
 
   const setAnswer = (questionId: number, value: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }))
@@ -228,17 +354,10 @@ export function IeltsReadingRunner({
   React.useEffect(() => {
     if (!finished || !homeworkId || !studentId || submittedRef.current) return
     submittedRef.current = true
-    const { correct, total } = scoreReadingTest(test, answers)
     const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
+    const attempt = buildReadingAttempt(test, answers, durationSeconds)
     void import("../../lib/api")
-      .then(({ homeworkApi }) =>
-        homeworkApi.recordAttempt(homeworkId, {
-          totalQuestions: total,
-          correctCount: correct,
-          durationSeconds,
-          answeredCount: Object.values(answers).filter((a) => a.trim()).length,
-        }),
-      )
+      .then(({ homeworkApi }) => homeworkApi.recordAttempt(homeworkId, attempt))
       .then(() =>
         import("../../lib/home-screen-sync").then(({ refreshHomeContinueLearning }) =>
           refreshHomeContinueLearning(studentId),
@@ -247,17 +366,23 @@ export function IeltsReadingRunner({
       .catch(() => {})
   }, [finished, homeworkId, studentId, test, answers, sessionStartedAt])
 
-  const retry = () => {
-    setAnswers({})
-    setPartIndex(0)
-    setQuestionIndex(0)
-    setFinished(false)
-    setPanel("questions")
-  }
-
   if (finished) {
+    const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
+    const attempt = buildReadingAttempt(test, answers, durationSeconds)
+
+    if (homeworkId) {
+      return (
+        <HomeworkReadingReview
+          test={test}
+          attempt={attempt}
+          title={test.title}
+          subject="reading"
+        />
+      )
+    }
+
     const { correct, total } = scoreReadingTest(test, answers)
-    return <ResultsView correct={correct} total={total} onRetry={retry} onExit={onExit} />
+    return <ResultsView correct={correct} total={total} onExit={onExit} />
   }
 
   const atStart = partIndex === 0 && questionIndex === 0
@@ -266,220 +391,303 @@ export function IeltsReadingRunner({
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {test.title}
-          </Text>
-          <View style={styles.timerBadge}>
-            <Ionicons name="time-outline" size={14} color="#B45309" />
-            <Text style={styles.timerText}>{formatTimer(secondsLeft ?? 0)}</Text>
-          </View>
-        </View>
-        <Text style={styles.progressText}>
-          Question {globalQuestionIndex}/{totalQuestions} · {answeredCount} answered
-        </Text>
-        <View style={styles.segmented}>
-          {(["passage", "questions"] as Panel[]).map((key) => {
-            const active = panel === key
-            return (
-              <Pressable
-                key={key}
-                onPress={() => setPanel(key)}
-                style={[styles.segment, active && styles.segmentActive]}
-              >
-                <Text style={[styles.segmentText, active && styles.segmentTextActive]}>
-                  {key === "passage" ? "Passage" : "Questions"}
-                </Text>
-              </Pressable>
-            )
-          })}
-        </View>
-      </View>
-
-      {panel === "passage" ? (
-        <ScrollView style={styles.flex} contentContainerStyle={styles.passageScroll}>
-          <Text style={styles.partLabel}>{part.title}</Text>
-          {part.passageTitle ? (
-            <Text style={styles.passageTitle}>{part.passageTitle}</Text>
-          ) : null}
-          {part.instruction ? <Text style={styles.instruction}>{part.instruction}</Text> : null}
-          <Text style={styles.passageText}>{part.passage}</Text>
-        </ScrollView>
-      ) : (
-        <ScrollView style={styles.flex} contentContainerStyle={styles.questionScroll}>
-          <View style={styles.questionCard}>
-            <Text style={styles.questionNumber}>Question {currentQuestion.id}</Text>
-            {part.questionInstruction ? (
-              <Text style={styles.questionInstruction}>{part.questionInstruction}</Text>
+      <View style={styles.split}>
+        <View style={styles.passagePane}>
+          <View style={styles.passageHeader}>
+            {onBack ? (
+              <View style={styles.passageHeaderSide}>
+                <BackButton onPress={onBack} />
+              </View>
             ) : null}
-            <Text style={styles.questionText}>{currentQuestion.question}</Text>
-            <QuestionInput
-              question={currentQuestion}
-              answer={answers[currentQuestion.id] ?? ""}
-              onChange={(value) => setAnswer(currentQuestion.id, value)}
-            />
+            <View style={styles.passageHeaderSpacer} />
+            <ReadingTimer secondsLeft={secondsLeft} />
           </View>
 
           <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.navRow}
+            style={styles.flex}
+            contentContainerStyle={[
+              styles.passageScroll,
+              questionsCollapsed && {
+                paddingBottom:
+                  COLLAPSE_DIVIDER_HEIGHT + Math.max(insets.bottom, spacing.xs) + spacing.sm,
+              },
+            ]}
+            showsVerticalScrollIndicator
           >
-            {test.parts.flatMap((p, pi) =>
-              p.questions.map((q, qi) => {
-                const active = pi === partIndex && qi === questionIndex
-                const done = !!(answers[q.id] ?? "").trim()
-                return (
-                  <Pressable
-                    key={q.id}
-                    onPress={() => {
-                      setPartIndex(pi)
-                      setQuestionIndex(qi)
-                    }}
-                    style={[
-                      styles.navChip,
-                      active && styles.navChipActive,
-                      done && !active && styles.navChipDone,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.navChipText,
-                        active && styles.navChipTextActive,
-                        done && !active && styles.navChipTextDone,
-                      ]}
-                    >
-                      {q.id}
-                    </Text>
-                  </Pressable>
-                )
-              }),
-            )}
+            {part.passageTitle ? (
+              <Text style={styles.passageTitle}>{part.passageTitle}</Text>
+            ) : null}
+            <PassageText text={part.passage} />
           </ScrollView>
-        </ScrollView>
-      )}
+        </View>
 
-      <Pressable style={styles.passageFab} onPress={() => setPassageOpen(true)}>
-        <Ionicons name="book-outline" size={18} color={colors.primaryDark} />
-        <Text style={styles.passageFabText}>Full passage</Text>
-      </Pressable>
-
-      <View style={styles.footer}>
-        <Pressable
-          onPress={goPrev}
-          disabled={atStart}
-          style={[styles.secondaryBtn, styles.footerBtn, atStart && styles.footerBtnDisabled]}
+        <Animated.View
+          style={{
+            opacity: inlineDividerOpacity,
+            maxHeight: collapseProgress.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, 36],
+            }),
+            overflow: "hidden",
+          }}
+          pointerEvents={questionsCollapsed ? "none" : "auto"}
         >
-          <Text style={[styles.secondaryBtnText, atStart && styles.footerBtnTextDisabled]}>
-            Previous
-          </Text>
-        </Pressable>
-        {atEnd ? (
-          <View style={styles.footerBtn}>
-            <HomeworkFooterButton label="Submit" onPress={submit} />
-          </View>
-        ) : (
-          <View style={styles.footerBtn}>
-            <HomeworkFooterButton label="Next" onPress={goNext} />
-          </View>
-        )}
+          <CollapseDivider
+            onPress={toggleQuestionsPanel}
+            chevronRotation={chevronRotation}
+            collapsed={questionsCollapsed}
+          />
+        </Animated.View>
+
+        <Animated.View
+          style={[
+            styles.bottomPanel,
+            {
+              flex: panelFlex,
+              opacity: animatedPanelOpacity,
+              maxHeight: collapseProgress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, SCREEN_HEIGHT],
+              }),
+            },
+          ]}
+          pointerEvents={questionsCollapsed ? "none" : "auto"}
+        >
+          <View style={styles.questionPane}>
+              <ScrollView
+                style={styles.flex}
+                contentContainerStyle={styles.questionScroll}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
+                <View style={styles.questionCard}>
+                  {partInstruction ? (
+                    <CollapsibleInstruction
+                      instruction={partInstruction}
+                      expanded={instructionExpanded}
+                      onToggle={() => setInstructionExpanded((open) => !open)}
+                    />
+                  ) : null}
+                  {questionPrompt ? (
+                    <Text style={styles.questionText}>{questionPrompt}</Text>
+                  ) : null}
+                  <QuestionInput
+                    question={currentQuestion}
+                    answer={answers[currentQuestion.id] ?? ""}
+                    onChange={(value) => setAnswer(currentQuestion.id, value)}
+                  />
+                </View>
+              </ScrollView>
+
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.navRow}
+                style={styles.navRowWrap}
+              >
+                {test.parts.flatMap((p, pi) =>
+                  p.questions.map((q, qi) => {
+                    const active = pi === partIndex && qi === questionIndex
+                    const done = !!(answers[q.id] ?? "").trim()
+                    return (
+                      <Pressable
+                        key={q.id}
+                        onPress={() => {
+                          setPartIndex(pi)
+                          setQuestionIndex(qi)
+                        }}
+                        style={[
+                          styles.navChip,
+                          active && styles.navChipActive,
+                          done && !active && styles.navChipDone,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.navChipText,
+                            active && styles.navChipTextActive,
+                            done && !active && styles.navChipTextDone,
+                          ]}
+                        >
+                          {q.id}
+                        </Text>
+                      </Pressable>
+                    )
+                  }),
+                )}
+              </ScrollView>
+            </View>
+
+            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+              <Pressable
+                onPress={goPrev}
+                disabled={atStart}
+                style={[styles.secondaryBtn, styles.footerBtn, atStart && styles.footerBtnDisabled]}
+              >
+                <Text style={[styles.secondaryBtnText, atStart && styles.footerBtnTextDisabled]}>
+                  Previous
+                </Text>
+              </Pressable>
+              {atEnd ? (
+                <View style={styles.footerBtn}>
+                  <HomeworkFooterButton label="Submit" onPress={submit} />
+                </View>
+              ) : (
+                <View style={styles.footerBtn}>
+                  <HomeworkFooterButton label="Next" onPress={goNext} />
+                </View>
+              )}
+            </View>
+        </Animated.View>
       </View>
 
-      <PassageModal visible={passageOpen} part={part} onClose={() => setPassageOpen(false)} />
+      <Animated.View
+        style={[
+          styles.dividerBottomDock,
+          {
+            opacity: bottomDividerOpacity,
+            paddingBottom: Math.max(insets.bottom, spacing.xs),
+          },
+        ]}
+        pointerEvents={questionsCollapsed ? "auto" : "none"}
+      >
+        <CollapseDivider
+          onPress={toggleQuestionsPanel}
+          chevronRotation={chevronRotation}
+          collapsed={questionsCollapsed}
+        />
+      </Animated.View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.background },
+  root: { flex: 1, backgroundColor: colors.background, position: "relative" },
   flex: { flex: 1 },
-  header: {
-    paddingHorizontal: spacing.screen,
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.card,
-    gap: 8,
-  },
-  headerTop: {
+  passageHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: "#FBF9F6",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
     gap: spacing.sm,
   },
-  headerTitle: {
+  passageHeaderSide: {
+    width: 44,
+    alignItems: "flex-start",
+    justifyContent: "center",
+  },
+  passageHeaderSpacer: {
     flex: 1,
-    fontSize: 17,
-    fontWeight: "700",
-    color: colors.text,
   },
   timerBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: colors.warningBg,
+    gap: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.94)",
     borderRadius: radius.pill,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  timerText: { fontSize: 12, fontWeight: "700", color: "#B45309" },
-  progressText: { fontSize: 12, color: colors.textSecondary, fontWeight: "600" },
-  segmented: {
-    flexDirection: "row",
-    backgroundColor: colors.borderLight,
-    borderRadius: 10,
-    padding: 3,
-  },
-  segment: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  segmentActive: {
-    backgroundColor: colors.card,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    flexShrink: 0,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  segmentText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
-  segmentTextActive: { color: colors.text },
+  timerBadgeUrgent: {
+    backgroundColor: colors.warningBg,
+  },
+  timerBadgeExpired: {
+    backgroundColor: colors.errorBg,
+  },
+  timerText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  timerTextUrgent: { color: "#B45309" },
+  timerTextExpired: { color: colors.error },
+  split: {
+    flex: 1,
+    minHeight: 0,
+  },
+  bottomPanel: {
+    minHeight: 0,
+    overflow: "hidden",
+  },
+  passagePane: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: "#FBF9F6",
+  },
+  splitDivider: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 2,
+    backgroundColor: colors.borderLight,
+  },
+  dividerBottomDock: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    backgroundColor: colors.background,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  splitDividerButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  questionPane: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: colors.background,
+  },
   passageScroll: {
-    padding: spacing.screen,
-    paddingBottom: 100,
-    gap: spacing.sm,
-  },
-  questionScroll: {
-    padding: spacing.screen,
-    paddingBottom: 100,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     gap: spacing.md,
   },
-  partLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.primaryDark,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
+  questionScroll: {
+    padding: spacing.md,
+    paddingBottom: spacing.xs,
   },
   passageTitle: {
     fontSize: 20,
     fontWeight: "700",
     color: colors.text,
-    lineHeight: 26,
+    lineHeight: 28,
+    marginBottom: spacing.xs,
   },
-  instruction: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 19,
+  instructionWrap: {
+    gap: spacing.xs,
   },
-  passageText: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: colors.text,
+  instructionToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  instructionToggleLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.primaryDark,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
   questionCard: {
     backgroundColor: colors.card,
@@ -489,22 +697,16 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.sm,
   },
-  questionNumber: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.primaryDark,
-    textTransform: "uppercase",
-  },
   questionInstruction: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.textSecondary,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   questionText: {
     fontSize: 16,
     fontWeight: "600",
     color: colors.text,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   optionRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   optionPill: {
@@ -548,7 +750,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
   },
-  navRow: { gap: 8, paddingVertical: 4 },
+  navRowWrap: {
+    flexGrow: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  navRow: { gap: 8, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   navChip: {
     minWidth: 36,
     height: 36,
@@ -557,7 +765,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.card,
+    backgroundColor: colors.background,
   },
   navChipActive: {
     borderColor: colors.primary,
@@ -570,53 +778,14 @@ const styles = StyleSheet.create({
   navChipText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
   navChipTextActive: { color: colors.primaryDark },
   navChipTextDone: { color: colors.success },
-  passageFab: {
-    position: "absolute",
-    right: spacing.screen,
-    bottom: 88,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  passageFabText: { fontSize: 13, fontWeight: "700", color: colors.primaryDark },
   footer: {
     flexDirection: "row",
     gap: spacing.sm,
     paddingHorizontal: spacing.screen,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
     backgroundColor: colors.background,
-  },
-  modalSafe: { flex: 1, backgroundColor: colors.background },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.screen,
-    paddingTop: spacing.md,
-    paddingBottom: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  modalTitle: { flex: 1, fontSize: 18, fontWeight: "700", color: colors.text },
-  modalClose: { padding: 4 },
-  modalScroll: {
-    padding: spacing.screen,
-    paddingBottom: spacing.xl,
-    gap: spacing.sm,
   },
   resultsWrap: {
     flex: 1,
@@ -641,7 +810,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 20,
   },
-  resultsActions: { gap: spacing.sm },
   secondaryBtn: {
     borderRadius: 12,
     borderWidth: 1,
