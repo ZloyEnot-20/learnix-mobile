@@ -25,6 +25,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     supportsTablet: true,
     bundleIdentifier: "com.learnix.uz",
     buildNumber: "1",
+    googleServicesFile: "./GoogleService-Info.plist",
     infoPlist: {
       NSMicrophoneUsageDescription:
         "Learnix records your voice for speaking exercises and homework.",
@@ -55,6 +56,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ],
   },
   plugins: [
+    "@react-native-firebase/app",
+    "@react-native-firebase/messaging",
+    [
+      "expo-build-properties",
+      {
+        ios: {
+          useFrameworks: "static",
+          forceStaticLinking: ["RNFBApp", "RNFBMessaging"],
+        },
+      },
+    ],
     "expo-router",
     "expo-font",
     [
