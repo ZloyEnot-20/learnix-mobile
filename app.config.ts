@@ -35,6 +35,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       NSPhotoLibraryUsageDescription:
         "Learnix lets you choose a profile photo from your library.",
       ITSAppUsesNonExemptEncryption: false,
+      UIBackgroundModes: ["remote-notification"],
     },
     privacyManifests: {
       NSPrivacyAccessedAPITypes: [
