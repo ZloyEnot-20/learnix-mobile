@@ -7,6 +7,12 @@ import { LocaleProvider } from "../src/context/LocaleContext"
 import { AppErrorBoundary } from "../src/components/ui/AppErrorBoundary"
 import { AppSplashScreen } from "../src/components/AppSplashScreen"
 import { OnboardingGate } from "../src/components/OnboardingGate"
+import { usePushNotifications } from "../src/hooks/usePushNotifications"
+
+function PushNotificationsBootstrap() {
+  usePushNotifications()
+  return null
+}
 
 function AppShell() {
   const { isLoading } = useAuth()
@@ -49,6 +55,7 @@ export default function RootLayout() {
     <AppErrorBoundary>
       <LocaleProvider>
         <AuthProvider>
+          <PushNotificationsBootstrap />
           <OnboardingGate>
             <AppShell />
           </OnboardingGate>

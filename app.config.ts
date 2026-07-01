@@ -49,7 +49,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     package: "com.learnix.uz",
     versionCode: 1,
-    permissions: ["RECORD_AUDIO", "READ_MEDIA_IMAGES"],
+    googleServicesFile: "./google-services.json",
+    permissions: ["RECORD_AUDIO", "READ_MEDIA_IMAGES", "POST_NOTIFICATIONS"],
     blockedPermissions: [
       "READ_EXTERNAL_STORAGE",
       "WRITE_EXTERNAL_STORAGE",

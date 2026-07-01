@@ -116,6 +116,13 @@ export const studentsApi = {
     api.post<{ ok: true; deletedAt: string }>(`/students/${id}/delete-account`),
 }
 
+export const pushTokenApi = {
+  register: (studentId: string, token: string, platform: "ios" | "android") =>
+    api.post<{ ok: true }>(`/students/${studentId}/push-token`, { token, platform }),
+  unregister: (studentId: string, token: string) =>
+    api.del<{ ok: true }>(`/students/${studentId}/push-token`, { token }),
+}
+
 export const homeworkApi = {
   mine: (opts?: { force?: boolean }) => {
     const key = cacheKey("GET", "/homework/mine")
