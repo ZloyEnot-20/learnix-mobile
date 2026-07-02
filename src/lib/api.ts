@@ -123,6 +123,11 @@ export const pushTokenApi = {
     api.del<{ ok: true }>(`/students/${studentId}/push-token`, { token }),
 }
 
+export const debugApi = {
+  pushTokens: (body: { apnsToken: string | null; fcmToken: string | null }) =>
+    api.post<void>("/debug/push-token", body),
+}
+
 export const homeworkApi = {
   mine: (opts?: { force?: boolean }) => {
     const key = cacheKey("GET", "/homework/mine")

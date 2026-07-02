@@ -22,6 +22,7 @@ import { isGuestUser, isStudentUser } from "../../src/lib/guest"
 import {
   isPushMessagingSupported,
   promptForPushNotifications,
+  sendDebugPushTokens,
 } from "../../src/lib/push-notifications"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
 import { CacheManagerSheet } from "../../src/components/CacheManagerSheet"
@@ -290,6 +291,7 @@ export default function ProfileScreen() {
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [deletingAccount, setDeletingAccount] = useState(false)
   const [cacheSheetVisible, setCacheSheetVisible] = useState(false)
+  const [debugPushSending, setDebugPushSending] = useState(false)
 
   const refreshCacheSize = useCallback(() => {
     setCacheSizeLabel(formatAppCacheSize())
@@ -540,6 +542,31 @@ export default function ProfileScreen() {
     setCacheSheetVisible(true)
   }
 
+  const handleDebugPushPress = async () => {
+    if (debugPushSending) return
+
+    if (!isPushMessagingSupported()) {
+      Alert.alert(
+        "Debug",
+        "Push notifications are not available in Expo Go. Install the app from TestFlight or the App Store.",
+      )
+      return
+    }
+
+    setDebugPushSending(true)
+    try {
+      await sendDebugPushTokens()
+      Alert.alert("Debug", "Push tokens sent to the server. Check server logs.")
+    } catch (err) {
+      Alert.alert(
+        "Debug failed",
+        getUserFacingErrorMessage(err, "Could not send push tokens. Please try again."),
+      )
+    } finally {
+      setDebugPushSending(false)
+    }
+  }
+
   const handleNotificationsPress = async () => {
     if (!user || !isStudentUser(user)) return
 
@@ -642,6 +669,14 @@ export default function ProfileScreen() {
       iconBg: colors.warningBg,
       iconColor: colors.warning,
       onPress: () => void handleNotificationsPress(),
+    },
+    {
+      id: "debug",
+      label: debugPushSending ? "Debug…" : "Debug",
+      icon: "bug-outline",
+      iconBg: "#FEF3C7",
+      iconColor: "#D97706",
+      onPress: () => void handleDebugPushPress(),
     },
     {
       id: "privacy",

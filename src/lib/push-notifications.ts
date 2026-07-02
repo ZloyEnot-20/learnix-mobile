@@ -1,6 +1,6 @@
 import { Platform } from "react-native"
 import Constants from "expo-constants"
-import { pushTokenApi, type AuthUser } from "./api"
+import { debugApi, pushTokenApi, type AuthUser } from "./api"
 import { requestNotificationsRefresh } from "./notifications-refresh"
 import { isStudentUser } from "./guest"
 
@@ -157,6 +157,19 @@ export async function unregisterPushTokenForUser(userId: string): Promise<void> 
     await removeTokenFromBackend(userId, currentToken)
   }
   activeUserId = null
+}
+
+export async function sendDebugPushTokens(): Promise<void> {
+  if (!isPushMessagingSupported()) {
+    throw new Error("Push notifications are not available in Expo Go.")
+  }
+
+  await ensureDeviceRegisteredForRemoteMessages()
+
+  const apnsToken = Platform.OS === "ios" ? await messaging().getAPNSToken() : null
+  const fcmToken = await messaging().getToken()
+
+  await debugApi.pushTokens({ apnsToken, fcmToken })
 }
 
 export function teardownPushMessaging(): void {
