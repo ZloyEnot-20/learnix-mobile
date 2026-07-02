@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "343648937383",
+    "project_id": "learnix-375a1",
+    "storage_bucket": "learnix-375a1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:343648937383:android:05ed82b80f25584aaec282",
+        "android_client_info": {
+          "package_name": "com.learnix.uz"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5kDWe6fQ2vrha-Tr2-pHxAGj9P2nVHRE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

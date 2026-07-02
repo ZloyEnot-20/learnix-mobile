@@ -13,7 +13,6 @@ google-play-service-account.json
 web-build/
 .env
 .env.local
-google-services.json
 
 ios/
 android/
