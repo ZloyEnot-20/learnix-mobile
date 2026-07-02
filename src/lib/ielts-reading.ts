@@ -4,6 +4,7 @@ import type { IeltsReadingCatalogItem, IeltsReadingQuestion, IeltsReadingTest } 
 import readingIndex from "../data/ielts-reading/index.json"
 import marieCuriePart1 from "../data/ielts-reading/marie-curie-part1.json"
 import { exercisesApi } from "./api"
+import { runPerfTrace } from "./perf"
 
 const LOCAL_TESTS: Record<string, IeltsReadingTest> = {
   "marie-curie-part1": marieCuriePart1 as IeltsReadingTest,
@@ -33,13 +34,19 @@ export async function listIeltsReadingTasks(): Promise<IeltsReadingCatalogItem[]
 }
 
 export async function getIeltsReadingTest(id: string): Promise<IeltsReadingTest | null> {
-  try {
-    const doc = await exercisesApi.reading(id)
-    if (doc?.data) return doc.data
-  } catch {
-    // fall back to bundled test
-  }
-  return LOCAL_TESTS[id] ?? null
+  return runPerfTrace(
+    "load_ielts_test",
+    async () => {
+      try {
+        const doc = await exercisesApi.reading(id)
+        if (doc?.data) return doc.data
+      } catch {
+        // fall back to bundled test
+      }
+      return LOCAL_TESTS[id] ?? null
+    },
+    { testType: "ielts" },
+  )
 }
 
 export function countReadingQuestions(test: IeltsReadingTest): number {

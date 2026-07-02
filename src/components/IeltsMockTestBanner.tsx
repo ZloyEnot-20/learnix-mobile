@@ -4,6 +4,9 @@ import { useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { colors, radius, spacing, typography, subjectColors } from "../theme/tokens"
 
+/** Toggle when IELTS Practice is ready for students. */
+const IELTS_PRACTICE_AVAILABLE = false
+
 const IELTS_SECTIONS = [
   { id: "reading", label: "Reading", icon: "book-outline" as const },
   { id: "listening", label: "Listening", icon: "headset-outline" as const },
@@ -18,8 +21,13 @@ export function IeltsMockTestBanner() {
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>IELTS Practice</Text>
       <Pressable
+        disabled={!IELTS_PRACTICE_AVAILABLE}
         onPress={() => router.push("/ielts" as never)}
-        style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+        style={({ pressed }) => [
+          styles.card,
+          !IELTS_PRACTICE_AVAILABLE && styles.cardDisabled,
+          pressed && IELTS_PRACTICE_AVAILABLE && styles.cardPressed,
+        ]}
       >
         <View style={styles.headerRow}>
           <View style={styles.iconWrap}>
@@ -27,8 +35,17 @@ export function IeltsMockTestBanner() {
           </View>
           <View style={styles.headerText}>
             <Text style={styles.headline}>Reading & exam skills</Text>
-            <Text style={styles.subline}>Passages, timing, IELTS question types</Text>
+            <Text style={styles.subline}>
+              {IELTS_PRACTICE_AVAILABLE
+                ? "Passages, timing, IELTS question types"
+                : "Coming soon — full IELTS practice is on the way"}
+            </Text>
           </View>
+          {!IELTS_PRACTICE_AVAILABLE ? (
+            <View style={styles.soonBadge}>
+              <Text style={styles.soonText}>Soon</Text>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.sectionsRow}>
@@ -51,13 +68,15 @@ export function IeltsMockTestBanner() {
           ))}
         </View>
 
-        <View style={styles.footer}>
-          <View style={styles.openBadge}>
-            <Ionicons name="arrow-forward" size={12} color="#F8FAFC" />
-            <Text style={styles.openText}>Open practice</Text>
+        {IELTS_PRACTICE_AVAILABLE ? (
+          <View style={styles.footer}>
+            <View style={styles.openBadge}>
+              <Ionicons name="arrow-forward" size={12} color="#F8FAFC" />
+              <Text style={styles.openText}>Open practice</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="rgba(226, 232, 240, 0.85)" />
           </View>
-          <Ionicons name="chevron-forward" size={18} color="rgba(226, 232, 240, 0.85)" />
-        </View>
+        ) : null}
       </Pressable>
     </View>
   )
@@ -78,6 +97,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   cardPressed: { opacity: 0.94 },
+  cardDisabled: { opacity: 0.62 },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -148,5 +168,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#F8FAFC",
+  },
+  soonBadge: {
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  soonText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "rgba(226, 232, 240, 0.72)",
   },
 })

@@ -2,6 +2,7 @@ import React, { useCallback, useRef, useState } from "react"
 import { StyleSheet, View } from "react-native"
 import { useFocusEffect } from "expo-router"
 import { homeworkApi, controlWorkApi } from "../lib/api"
+import { runPerfTrace } from "../lib/perf"
 import {
   getHomeworkListSnapshot,
   loadHomeworkListCache,
@@ -178,15 +179,17 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
       const fetchOpts = opts?.force ? { force: true as const } : undefined
 
       try {
-        const [entries, controlEntries] = await Promise.all([
-          homeworkApi.mineSummary(fetchOpts),
-          controlWorkApi.mineSummary(fetchOpts),
-        ])
+        await runPerfTrace("load_homework", async () => {
+          const [entries, controlEntries] = await Promise.all([
+            homeworkApi.mineSummary(fetchOpts),
+            controlWorkApi.mineSummary(fetchOpts),
+          ])
 
-        if (generation !== loadGenerationRef.current) return
+          if (generation !== loadGenerationRef.current) return
 
-        const mapped = mergeHomeworkItems(entries, controlEntries)
-        publishItems(mapped, { background: opts?.background })
+          const mapped = mergeHomeworkItems(entries, controlEntries)
+          publishItems(mapped, { background: opts?.background })
+        })
       } catch {
         if (generation !== loadGenerationRef.current) return
         if (!hasLoadedRef.current) setItems([])

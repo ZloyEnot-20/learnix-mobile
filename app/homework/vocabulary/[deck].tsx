@@ -23,6 +23,7 @@ import { HomeworkVocabReview } from "../../../src/components/homework/HomeworkVo
 import { VocabScreenSkeleton } from "../../../src/components/skeletons/Layouts"
 
 import { isCompletedSubmission, resolveHomeworkSubmission } from "../../../src/lib/homework-review"
+import { runHomeworkDetailLoad } from "../../../src/lib/homework-detail-perf"
 import {
   resolveHomeworkSessionStart,
   resumeHomeworkSession,
@@ -150,6 +151,11 @@ export default function HomeworkVocabularyScreen() {
 
       try {
 
+        await runHomeworkDetailLoad(
+          submissionKey || undefined,
+          reviewSubmission,
+          homeworkSubject,
+          async () => {
         const [d, sessionStart, hwData] = await Promise.all([
 
           exercisesApi.vocabDeck(deckSlug),
@@ -220,6 +226,8 @@ export default function HomeworkVocabularyScreen() {
           recordHomeworkVocabulary(user.id, d, deckSlug, homeworkId)
 
         }
+          },
+        )
 
       } catch {
 

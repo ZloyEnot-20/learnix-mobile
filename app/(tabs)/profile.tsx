@@ -27,6 +27,7 @@ import {
   buildLearningProgressSummary,
   getLearningProgress,
 } from "../../src/lib/learned-vocabulary"
+import { runPerfTrace } from "../../src/lib/perf"
 import {
   formatAppCacheSize,
   prefetchAppMediaAssets,
@@ -360,25 +361,27 @@ export default function ProfileScreen() {
     async (opts?: { force?: boolean }) => {
       if (!user || isGuestUser(user)) return
 
-      const [ctxResult, levelResult, leaderboardResult, progressResult, testResultsResult] =
-        await Promise.allSettled([
-          studentsApi.context(user.id, opts),
-          studentsApi.level(user.id, opts),
-          orgApi.leaderboard(opts),
-          getLearningProgress(user.id),
-          testResultsApi.list(opts),
-        ])
+      await runPerfTrace("load_student_profile", async () => {
+        const [ctxResult, levelResult, leaderboardResult, progressResult, testResultsResult] =
+          await Promise.allSettled([
+            studentsApi.context(user.id, opts),
+            studentsApi.level(user.id, opts),
+            orgApi.leaderboard(opts),
+            runPerfTrace("load_progress", () => getLearningProgress(user.id)),
+            testResultsApi.list(opts),
+          ])
 
-      const next = buildSnapshot(
-        ctxResult,
-        levelResult,
-        leaderboardResult,
-        progressResult,
-        testResultsResult,
-      )
-      applySnapshot(next)
-      setProfileScreenSnapshot(user.id, next)
-      refreshCacheSize()
+        const next = buildSnapshot(
+          ctxResult,
+          levelResult,
+          leaderboardResult,
+          progressResult,
+          testResultsResult,
+        )
+        applySnapshot(next)
+        setProfileScreenSnapshot(user.id, next)
+        refreshCacheSize()
+      })
     },
     [user, applySnapshot, buildSnapshot, refreshCacheSize],
   )

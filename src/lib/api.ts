@@ -29,8 +29,35 @@ import type { StudentContextResponse } from "./lesson-schedule"
 import type { VocabDeck, TopicMeta, VocabDeckSummary } from "../types/vocabulary"
 import type { PodcastEpisode, PodcastSummary } from "../types/podcast"
 import type { IssueReport, IssueReportPayload } from "../types/issue-report"
+import { runPerfTrace, type PerfAttributes } from "./perf"
 
 export { peekCached, peekStale, clearApiCache }
+
+function submitHomeworkTraceMeta(attempt: HomeworkAttempt): {
+  name: string
+  attributes: PerfAttributes
+} {
+  if (attempt.readingAnswers && attempt.readingAnswers.length > 0) {
+    return {
+      name: "submit_ielts_test",
+      attributes: { testType: "ielts", homeworkType: "reading" },
+    }
+  }
+
+  const isSpeaking = attempt.mistakes.some(
+    (mistake) =>
+      mistake.userAnswer.startsWith("http") && mistake.correctAnswer === "",
+  )
+  if (isSpeaking) {
+    return { name: "submit_speaking_homework", attributes: { homeworkType: "speaking" } }
+  }
+
+  if (attempt.listeningStats) {
+    return { name: "submit_homework", attributes: { homeworkType: "listening" } }
+  }
+
+  return { name: "submit_homework", attributes: {} }
+}
 
 const TTL = {
   homeworkMine: 45_000,
@@ -182,13 +209,20 @@ export const homeworkApi = {
     return res
   },
   recordAttempt: async (homeworkId: string, attempt: HomeworkAttempt) => {
-    const sub = await api.post<HomeworkSubmission>("/homework/attempt", {
-      homeworkId,
-      attempt,
-    })
-    setCached(cacheKey("POST", `/homework/start:${homeworkId}`), sub, submissionCacheTtl(sub))
-    invalidateHomeworkCaches(homeworkId)
-    return sub
+    const { name, attributes } = submitHomeworkTraceMeta(attempt)
+    return runPerfTrace(
+      name,
+      async () => {
+        const sub = await api.post<HomeworkSubmission>("/homework/attempt", {
+          homeworkId,
+          attempt,
+        })
+        setCached(cacheKey("POST", `/homework/start:${homeworkId}`), sub, submissionCacheTtl(sub))
+        invalidateHomeworkCaches(homeworkId)
+        return sub
+      },
+      attributes,
+    )
   },
   reportViolation: async (homeworkId: string, reason: ViolationReason) => {
     const res = await api.post<ViolationResponse>("/homework/violation", {
@@ -311,9 +345,11 @@ export const notificationsApi = {
     ).then(filterMobileNotifications)
   },
   markRead: async (id: string, read = true) => {
-    const item = await api.patch<NotificationItem>(`/notifications/${id}/read`, { read })
-    invalidateKey(cacheKey("GET", "/notifications"))
-    return item
+    return runPerfTrace("mark_notification_read", async () => {
+      const item = await api.patch<NotificationItem>(`/notifications/${id}/read`, { read })
+      invalidateKey(cacheKey("GET", "/notifications"))
+      return item
+    })
   },
   markAllRead: async () => {
     await api.post("/notifications/read-all")
@@ -483,25 +519,27 @@ export const orgApi = {
 }
 
 export const uploadsApi = {
-  speakingAudio: (uri: string) => {
-    const form = new FormData()
-    form.append("audio", {
-      uri,
-      type: "audio/m4a",
-      name: `speaking-${Date.now()}.m4a`,
-    } as unknown as Blob)
-    return apiUpload<{ url: string; key: string }>("/uploads/speaking-audio", form)
-  },
-  avatar: (uri: string, mimeType = "image/jpeg") => {
-    const ext = mimeType.includes("png") ? "png" : "jpg"
-    const form = new FormData()
-    form.append("photo", {
-      uri,
-      type: mimeType,
-      name: `avatar-${Date.now()}.${ext}`,
-    } as unknown as Blob)
-    return apiUpload<{ url: string; user: AuthUser }>("/uploads/avatar", form)
-  },
+  speakingAudio: (uri: string) =>
+    runPerfTrace("upload_audio", async () => {
+      const form = new FormData()
+      form.append("audio", {
+        uri,
+        type: "audio/m4a",
+        name: `speaking-${Date.now()}.m4a`,
+      } as unknown as Blob)
+      return apiUpload<{ url: string; key: string }>("/uploads/speaking-audio", form)
+    }),
+  avatar: (uri: string, mimeType = "image/jpeg") =>
+    runPerfTrace("upload_avatar", async () => {
+      const ext = mimeType.includes("png") ? "png" : "jpg"
+      const form = new FormData()
+      form.append("photo", {
+        uri,
+        type: mimeType,
+        name: `avatar-${Date.now()}.${ext}`,
+      } as unknown as Blob)
+      return apiUpload<{ url: string; user: AuthUser }>("/uploads/avatar", form)
+    }),
 }
 
 export const analyticsApi = {

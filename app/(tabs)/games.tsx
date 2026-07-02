@@ -18,6 +18,7 @@ import {
 } from "../../src/lib/guest"
 import { exercisesApi, studentsApi } from "../../src/lib/api"
 import { loadGamesContentCache, saveGamesContentCache } from "../../src/lib/games-content-cache"
+import { runPerfTrace } from "../../src/lib/perf"
 import { recordGamePodcast, recordGameTopic, recordGameVocabulary } from "../../src/lib/record-activity"
 import { LevelScale } from "../../src/components/LevelScale"
 import { GamesHistorySection } from "../../src/components/GamesHistorySection"
@@ -524,7 +525,7 @@ export default function GamesScreen() {
     ) => {
       if (!user || isGuestUser(user)) return
       try {
-        const progress = await getLearningProgress(user.id)
+        const progress = await runPerfTrace("load_progress", () => getLearningProgress(user.id))
         const nextTopicProgress = buildTopicProgressMap(progress.gameResults, summaries)
         const nextDeckProgress = buildDeckProgressMap(progress, decks)
         setTopicProgress(nextTopicProgress)

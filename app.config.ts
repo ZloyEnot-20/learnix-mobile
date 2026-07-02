@@ -10,7 +10,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "Learnix",
   slug: "learnix",
-  version: "2.0.0",
+  version: "2.1.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
   scheme: "learnix",
@@ -63,12 +63,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: [
     "@react-native-firebase/app",
     "@react-native-firebase/messaging",
+    "@react-native-firebase/perf",
     [
       "expo-build-properties",
       {
         ios: {
           useFrameworks: "static",
-          forceStaticLinking: ["RNFBApp", "RNFBMessaging"],
+          forceStaticLinking: ["RNFBApp", "RNFBMessaging", "RNFBPerf"],
         },
       },
     ],

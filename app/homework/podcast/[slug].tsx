@@ -12,6 +12,7 @@ import { HomeworkStatusScreen } from "../../../src/components/homework/HomeworkS
 import { PodcastScreenSkeleton } from "../../../src/components/skeletons/Layouts"
 import { ScreenErrorBoundary } from "../../../src/components/ui/ScreenErrorBoundary"
 import { isCompletedSubmission, resolveHomeworkSubmission } from "../../../src/lib/homework-review"
+import { runHomeworkDetailLoad } from "../../../src/lib/homework-detail-perf"
 import { resolveHomeworkSessionStart } from "../../../src/lib/homework-session-start"
 import {
   isHomeworkEntryFailed,
@@ -81,6 +82,11 @@ export default function HomeworkPodcastScreen() {
       if (!hasCachedView) setLoading(true)
       setLoadError(false)
       try {
+        await runHomeworkDetailLoad(
+          submissionKey || undefined,
+          reviewSubmission,
+          homeworkSubject,
+          async () => {
         const [ep, sessionStart, hwData] = await Promise.all([
           exercisesApi.podcast(podcastSlug),
           isStudent ? resolveHomeworkSessionStart(homeworkId) : Promise.resolve(null),
@@ -113,6 +119,8 @@ export default function HomeworkPodcastScreen() {
         } else if (ep && isStudent) {
           setAwaitingNetwork(false)
         }
+          },
+        )
       } catch {
         if (!cancelled) {
           setEpisode(null)

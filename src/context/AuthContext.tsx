@@ -20,6 +20,7 @@ import { clearHomeworkListSnapshot } from "../lib/homework-list-cache"
 import { clearLastActivity } from "../lib/last-activity"
 import { prefetchAppMediaAssets } from "../lib/app-cache"
 import { GUEST_USER_ID, isGuestUser } from "../lib/guest"
+import { runPerfTrace } from "../lib/perf"
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -85,9 +86,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearProfileScreenSnapshot()
     await clearLastActivity()
     await setGuestMode(false)
-    const res = await authApi.login(loginStr, password)
-    await setTokens(res.accessToken, res.refreshToken)
-    setUser(res.user)
+    await runPerfTrace("user_login", async () => {
+      const res = await authApi.login(loginStr, password)
+      await setTokens(res.accessToken, res.refreshToken)
+      setUser(res.user)
+    })
   }, [])
 
   const loginAsGuest = useCallback(async () => {

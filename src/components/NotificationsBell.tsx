@@ -4,6 +4,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { filterMobileNotifications, notificationsApi, type NotificationItem } from "../lib/api"
 import { cacheKey, peekStale } from "../lib/api-cache"
 import { subscribeNotificationsRefresh } from "../lib/notifications-refresh"
+import { runPerfTrace } from "../lib/perf"
 import { BottomSheet } from "./ui/BottomSheet"
 import { NotificationListSkeleton } from "./skeletons/Layouts"
 import { formatRelative, groupKey } from "../lib/utils"
@@ -30,9 +31,16 @@ export function NotificationsBell() {
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoaded(false)
-    try {
+    const fetchNotifications = async () => {
       const data = await notificationsApi.list(opts?.silent ? { force: true } : undefined)
       setItems(data)
+    }
+    try {
+      if (opts?.silent) {
+        await fetchNotifications()
+      } else {
+        await runPerfTrace("load_notifications", fetchNotifications)
+      }
     } catch {
       if (!opts?.silent) setItems([])
     } finally {

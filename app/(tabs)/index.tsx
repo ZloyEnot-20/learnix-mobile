@@ -36,6 +36,7 @@ import {
   type HomeScreenSnapshot,
 } from "../../src/lib/home-screen-cache"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
+import { runPerfTrace } from "../../src/lib/perf"
 import { useLessonCountdown } from "../../src/hooks/useLessonCountdown"
 import { LessonCountdownText } from "../../src/components/LessonCountdownText"
 import type { TestResult } from "../../src/types/domain"
@@ -184,28 +185,30 @@ export default function HomeScreen() {
   const load = useCallback(async (): Promise<HomeScreenSnapshot | null> => {
     if (!user) return null
 
-    setScheduleLoading(true)
-    const scheduleTask = fetchLessonSchedule(user.id)
+    return runPerfTrace("load_dashboard", async () => {
+      setScheduleLoading(true)
+      const scheduleTask = fetchLessonSchedule(user.id)
 
-    const [dataResult, contResult, reviewResult, scheduleResult] = await Promise.allSettled([
-      testResultsApi.list(),
-      resolveContinueLearning(user.id),
-      getVocabularyReviewPreview(user.id),
-      scheduleTask,
-    ])
+      const [dataResult, contResult, reviewResult, scheduleResult] = await Promise.allSettled([
+        testResultsApi.list(),
+        resolveContinueLearning(user.id),
+        getVocabularyReviewPreview(user.id),
+        scheduleTask,
+      ])
 
-    const next: HomeScreenSnapshot = {
-      results: dataResult.status === "fulfilled" ? dataResult.value : [],
-      continueItem: contResult.status === "fulfilled" ? contResult.value : null,
-      vocabPreview: reviewResult.status === "fulfilled" ? reviewResult.value : null,
-      lessonSchedule: scheduleResult.status === "fulfilled" ? scheduleResult.value : null,
-      scheduleChecked: scheduleResult.status === "fulfilled",
-    }
+      const next: HomeScreenSnapshot = {
+        results: dataResult.status === "fulfilled" ? dataResult.value : [],
+        continueItem: contResult.status === "fulfilled" ? contResult.value : null,
+        vocabPreview: reviewResult.status === "fulfilled" ? reviewResult.value : null,
+        lessonSchedule: scheduleResult.status === "fulfilled" ? scheduleResult.value : null,
+        scheduleChecked: scheduleResult.status === "fulfilled",
+      }
 
-    applySnapshot(next)
-    setScheduleLoading(false)
-    setHomeScreenSnapshot(user.id, next)
-    return next
+      applySnapshot(next)
+      setScheduleLoading(false)
+      setHomeScreenSnapshot(user.id, next)
+      return next
+    })
   }, [user, applySnapshot, fetchLessonSchedule])
 
   const refreshLessonSchedule = useCallback(

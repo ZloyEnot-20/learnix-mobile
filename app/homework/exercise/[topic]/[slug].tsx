@@ -24,6 +24,7 @@ import { HomeworkSessionShell } from "../../../../src/components/homework/Homewo
 import { ExerciseScreenSkeleton } from "../../../../src/components/skeletons/Layouts"
 
 import { isCompletedSubmission } from "../../../../src/lib/homework-review"
+import { runHomeworkDetailLoad } from "../../../../src/lib/homework-detail-perf"
 import {
   resolveHomeworkSessionStart,
   resumeHomeworkSession,
@@ -154,6 +155,11 @@ export default function HomeworkExerciseScreen() {
 
       try {
 
+        await runHomeworkDetailLoad(
+          submissionKey || undefined,
+          reviewSubmission,
+          homeworkSubject,
+          async () => {
         const [ex, hwData, sessionStart] = await Promise.all([
 
           exercisesApi.get(slug),
@@ -255,6 +261,8 @@ export default function HomeworkExerciseScreen() {
         )
 
         recordHomeworkExercise(studentId, ex, homeworkId, hwData?.subject ?? "grammar")
+          },
+        )
 
       } catch {
 

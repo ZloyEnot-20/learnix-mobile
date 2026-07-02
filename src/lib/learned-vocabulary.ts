@@ -3,6 +3,7 @@ import type { VocabDeck, VocabWord, TranslationLang } from "../types/vocabulary"
 import { wordTranslation } from "../types/vocabulary"
 import { clampToFixedLevel, primaryLevel } from "./utils"
 import { analyticsApi } from "./api"
+import { runPerfTrace } from "./perf"
 
 const KEY_PREFIX = "learnix_learning_progress:"
 export const CORRECT_TO_MASTER = 5
@@ -141,27 +142,29 @@ function scheduleLearnSync(userId: string): void {
 }
 
 async function syncLearnProgressToServer(userId: string): Promise<void> {
-  const progress = await loadProgress(userId)
-  await analyticsApi
-    .syncLearn({
-      studyWords: progress.studyWords.map((w) => ({
-        term: w.term,
-        deckSlug: w.deckSlug ?? "general",
-        correctCount: w.correctCount,
-        totalAttempts: w.correctCount,
-        masteredAt: w.masteredAt,
-        wantToLearn: w.wantToLearn,
-        lastReviewedAt: w.lastReviewedAt,
-      })),
-      vocabResults: progress.vocabResults.map((r) => ({
-        deckSlug: r.deckSlug,
-        deckTitle: r.deckTitle,
-        correct: r.correct,
-        total: r.total,
-        completedAt: r.completedAt,
-      })),
-    })
-    .catch(() => {})
+  await runPerfTrace("sync_progress", async () => {
+    const progress = await loadProgress(userId)
+    await analyticsApi
+      .syncLearn({
+        studyWords: progress.studyWords.map((w) => ({
+          term: w.term,
+          deckSlug: w.deckSlug ?? "general",
+          correctCount: w.correctCount,
+          totalAttempts: w.correctCount,
+          masteredAt: w.masteredAt,
+          wantToLearn: w.wantToLearn,
+          lastReviewedAt: w.lastReviewedAt,
+        })),
+        vocabResults: progress.vocabResults.map((r) => ({
+          deckSlug: r.deckSlug,
+          deckTitle: r.deckTitle,
+          correct: r.correct,
+          total: r.total,
+          completedAt: r.completedAt,
+        })),
+      })
+      .catch(() => {})
+  })
 }
 
 function storageKey(userId: string): string {
