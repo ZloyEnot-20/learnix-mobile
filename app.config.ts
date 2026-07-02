@@ -10,7 +10,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "Learnix",
   slug: "learnix",
-  version: "1.1.2",
+  version: "2.0.0",
   orientation: "portrait",
   icon: "./assets/icon.png",
   scheme: "learnix",
