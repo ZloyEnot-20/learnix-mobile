@@ -18,9 +18,12 @@ export function isPushMessagingSupported(): boolean {
   return Constants.appOwnership !== "expo"
 }
 
+export type PushPermissionResult = "granted" | "denied" | "unsupported"
+
 let currentToken: string | null = null
 let activeUserId: string | null = null
 let listenersAttached = false
+let readyPromise: Promise<string | null> | null = null
 
 let unsubscribeForeground: (() => void) | null = null
 let unsubscribeTokenRefresh: (() => void) | null = null
@@ -33,6 +36,12 @@ async function requestNotificationPermission(): Promise<boolean> {
     status === module.AuthorizationStatus.AUTHORIZED ||
     status === module.AuthorizationStatus.PROVISIONAL
   )
+}
+
+async function ensureDeviceRegisteredForRemoteMessages(): Promise<void> {
+  if (Platform.OS !== "ios") return
+  if (messaging().isDeviceRegisteredForRemoteMessages) return
+  await messaging().registerDeviceForRemoteMessages()
 }
 
 async function syncTokenWithBackend(userId: string, token: string): Promise<void> {
@@ -79,23 +88,63 @@ function attachMessageListeners(): void {
   })
 }
 
+function startPushMessagingSetup(): Promise<string | null> {
+  if (!isPushMessagingSupported()) return Promise.resolve(null)
+  if (currentToken) return Promise.resolve(currentToken)
+  if (readyPromise) return readyPromise
+
+  readyPromise = (async () => {
+    const granted = await requestNotificationPermission()
+    if (!granted) return null
+
+    await ensureDeviceRegisteredForRemoteMessages()
+
+    const token = await messaging().getToken()
+    if (!token) return null
+
+    currentToken = token
+    attachMessageListeners()
+
+    if (activeUserId) {
+      await syncTokenWithBackend(activeUserId, token)
+    }
+
+    return token
+  })()
+
+  return readyPromise
+}
+
 export async function initializePushMessaging(): Promise<void> {
-  if (!isPushMessagingSupported()) return
-
-  const granted = await requestNotificationPermission()
-  if (!granted) return
-
-  currentToken = await messaging().getToken()
-  attachMessageListeners()
+  await startPushMessagingSetup()
 }
 
 export async function syncPushTokenForStudent(user: AuthUser): Promise<void> {
   if (!isPushMessagingSupported() || !isStudentUser(user)) return
 
   activeUserId = user.id
-  if (currentToken) {
-    await syncTokenWithBackend(user.id, currentToken)
+  const token = await startPushMessagingSetup()
+  if (token) {
+    await syncTokenWithBackend(user.id, token)
   }
+}
+
+export async function promptForPushNotifications(user: AuthUser): Promise<PushPermissionResult> {
+  if (!isPushMessagingSupported()) return "unsupported"
+  if (!isStudentUser(user)) return "unsupported"
+
+  activeUserId = user.id
+  readyPromise = null
+
+  const granted = await requestNotificationPermission()
+  if (!granted) return "denied"
+
+  readyPromise = null
+  const token = await startPushMessagingSetup()
+  if (!token) return "denied"
+
+  await syncTokenWithBackend(user.id, token)
+  return "granted"
 }
 
 export async function unregisterPushTokenForUser(userId: string): Promise<void> {
@@ -118,4 +167,6 @@ export function teardownPushMessaging(): void {
   unsubscribeOpenedApp?.()
   unsubscribeOpenedApp = null
   listenersAttached = false
+  readyPromise = null
+  currentToken = null
 }

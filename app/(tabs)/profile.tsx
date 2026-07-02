@@ -3,6 +3,7 @@ import {
   Alert,
   Animated,
   Dimensions,
+  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -17,7 +18,11 @@ import * as ImagePicker from "expo-image-picker"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { useAuth } from "../../src/context/AuthContext"
 import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
-import { isGuestUser } from "../../src/lib/guest"
+import { isGuestUser, isStudentUser } from "../../src/lib/guest"
+import {
+  isPushMessagingSupported,
+  promptForPushNotifications,
+} from "../../src/lib/push-notifications"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
 import { CacheManagerSheet } from "../../src/components/CacheManagerSheet"
 import { ProfileSkeleton } from "../../src/components/skeletons/Layouts"
@@ -535,6 +540,37 @@ export default function ProfileScreen() {
     setCacheSheetVisible(true)
   }
 
+  const handleNotificationsPress = async () => {
+    if (!user || !isStudentUser(user)) return
+
+    if (!isPushMessagingSupported()) {
+      Alert.alert(
+        "Notifications",
+        "Push notifications are not available in Expo Go. Install the app from TestFlight or the App Store.",
+      )
+      return
+    }
+
+    const result = await promptForPushNotifications(user)
+
+    if (result === "granted") {
+      requestNotificationsRefresh()
+      Alert.alert("Notifications", "Push notifications are enabled.")
+      return
+    }
+
+    if (result === "denied") {
+      Alert.alert(
+        "Notifications disabled",
+        "Enable notifications in your device settings to receive homework reminders and updates.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => void Linking.openSettings() },
+        ],
+      )
+    }
+  }
+
   const showSkeleton = loading
 
   useLayoutEffect(() => {
@@ -605,8 +641,7 @@ export default function ProfileScreen() {
       icon: "notifications-outline",
       iconBg: colors.warningBg,
       iconColor: colors.warning,
-      onPress: () =>
-        Alert.alert("Notifications", "Open the bell icon in the top-right corner of any tab."),
+      onPress: () => void handleNotificationsPress(),
     },
     {
       id: "privacy",
