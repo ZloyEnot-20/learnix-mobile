@@ -292,9 +292,7 @@ export interface NotificationItem {
   createdAt: string
 }
 
-const MOBILE_HIDDEN_NOTIFICATION_TYPES = new Set(["attendance"])
-
-/** Attendance alerts go to parents via Telegram, not the student mobile app. */
+const MOBILE_HIDDEN_NOTIFICATION_TYPES = new Set<string>([])
 export function filterMobileNotifications<T extends { type: string }>(items: T[]): T[] {
   return items.filter((item) => !MOBILE_HIDDEN_NOTIFICATION_TYPES.has(item.type))
 }

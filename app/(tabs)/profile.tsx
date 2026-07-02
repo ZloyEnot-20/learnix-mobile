@@ -3,7 +3,6 @@ import {
   Alert,
   Animated,
   Dimensions,
-  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -18,12 +17,7 @@ import * as ImagePicker from "expo-image-picker"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { useAuth } from "../../src/context/AuthContext"
 import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
-import { isGuestUser, isStudentUser } from "../../src/lib/guest"
-import {
-  isPushMessagingSupported,
-  promptForPushNotifications,
-  sendDebugPushTokens,
-} from "../../src/lib/push-notifications"
+import { isGuestUser } from "../../src/lib/guest"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
 import { CacheManagerSheet } from "../../src/components/CacheManagerSheet"
 import { ProfileSkeleton } from "../../src/components/skeletons/Layouts"
@@ -291,7 +285,6 @@ export default function ProfileScreen() {
   const [avatarUploading, setAvatarUploading] = useState(false)
   const [deletingAccount, setDeletingAccount] = useState(false)
   const [cacheSheetVisible, setCacheSheetVisible] = useState(false)
-  const [debugPushSending, setDebugPushSending] = useState(false)
 
   const refreshCacheSize = useCallback(() => {
     setCacheSizeLabel(formatAppCacheSize())
@@ -542,62 +535,6 @@ export default function ProfileScreen() {
     setCacheSheetVisible(true)
   }
 
-  const handleDebugPushPress = async () => {
-    if (debugPushSending) return
-
-    if (!isPushMessagingSupported()) {
-      Alert.alert(
-        "Debug",
-        "Push notifications are not available in Expo Go. Install the app from TestFlight or the App Store.",
-      )
-      return
-    }
-
-    setDebugPushSending(true)
-    try {
-      await sendDebugPushTokens()
-      Alert.alert("Debug", "Push tokens sent to the server. Check server logs.")
-    } catch (err) {
-      Alert.alert(
-        "Debug failed",
-        getUserFacingErrorMessage(err, "Could not send push tokens. Please try again."),
-      )
-    } finally {
-      setDebugPushSending(false)
-    }
-  }
-
-  const handleNotificationsPress = async () => {
-    if (!user || !isStudentUser(user)) return
-
-    if (!isPushMessagingSupported()) {
-      Alert.alert(
-        "Notifications",
-        "Push notifications are not available in Expo Go. Install the app from TestFlight or the App Store.",
-      )
-      return
-    }
-
-    const result = await promptForPushNotifications(user)
-
-    if (result === "granted") {
-      requestNotificationsRefresh()
-      Alert.alert("Notifications", "Push notifications are enabled.")
-      return
-    }
-
-    if (result === "denied") {
-      Alert.alert(
-        "Notifications disabled",
-        "Enable notifications in your device settings to receive homework reminders and updates.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => void Linking.openSettings() },
-        ],
-      )
-    }
-  }
-
   const showSkeleton = loading
 
   useLayoutEffect(() => {
@@ -662,22 +599,6 @@ export default function ProfileScreen() {
   }
 
   const settingsItems: SettingsItem[] = [
-    {
-      id: "notifications",
-      label: "Notifications",
-      icon: "notifications-outline",
-      iconBg: colors.warningBg,
-      iconColor: colors.warning,
-      onPress: () => void handleNotificationsPress(),
-    },
-    {
-      id: "debug",
-      label: debugPushSending ? "Debug…" : "Debug",
-      icon: "bug-outline",
-      iconBg: "#FEF3C7",
-      iconColor: "#D97706",
-      onPress: () => void handleDebugPushPress(),
-    },
     {
       id: "privacy",
       label: "Privacy Policy",
