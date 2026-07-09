@@ -54,10 +54,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     package: "com.learnix.uz",
     versionCode: 1,
     googleServicesFile: "./google-services.json",
-    permissions: ["RECORD_AUDIO", "READ_MEDIA_IMAGES", "POST_NOTIFICATIONS"],
+    permissions: ["RECORD_AUDIO", "POST_NOTIFICATIONS"],
     blockedPermissions: [
       "READ_EXTERNAL_STORAGE",
       "WRITE_EXTERNAL_STORAGE",
+      "READ_MEDIA_IMAGES",
+      "READ_MEDIA_VIDEO",
+      "READ_MEDIA_VISUAL_USER_SELECTED",
     ],
   },
   plugins: [
@@ -95,6 +98,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       "expo-image-picker",
       {
         photosPermission: "Learnix lets you choose a profile photo from your library.",
+        cameraPermission: false,
       },
     ],
   ],

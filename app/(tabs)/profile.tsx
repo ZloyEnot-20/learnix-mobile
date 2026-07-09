@@ -500,15 +500,6 @@ export default function ProfileScreen() {
   const handleAvatarUpload = async () => {
     if (!user || user.avatarUrl || avatarUploading) return
 
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!permission.granted) {
-      Alert.alert(
-        "Photo access",
-        "Allow access to your photo library to set a profile photo.",
-      )
-      return
-    }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsEditing: true,
