@@ -1,4 +1,4 @@
-import { Platform } from "react-native"
+import { NativeModules, Platform } from "react-native"
 
 export type PerfAttributes = Record<string, string | undefined>
 
@@ -13,6 +13,10 @@ const noopTrace: PerfTrace = {
 }
 
 function getPerfModule(): (() => { startTrace: (name: string) => Promise<PerfTrace> }) | null {
+  // If RNFirebase native modules are not linked (Expo Go / web), importing perf will crash.
+  // Guard before `require()` so Metro can bundle but runtime won't throw.
+  if (Platform.OS !== "web" && !NativeModules?.RNFBAppModule) return null
+
   try {
     // Native module is unavailable in Expo Go / web.
     const perf = require("@react-native-firebase/perf").default as

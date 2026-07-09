@@ -254,6 +254,16 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
   )
   const blanksCount = Math.max(segments.length - 1, 0)
 
+  const renderSegmentTokens = (seg: string, variant: "default" | "homework", keyPrefix: string) => {
+    const tokens = seg.split(/(\s+)/).filter((t) => t.length > 0)
+    const style = variant === "homework" ? styles.homeworkSentenceToken : styles.sentenceToken
+    return tokens.map((token, idx) => (
+      <Text key={`${keyPrefix}-${idx}`} style={style}>
+        {token}
+      </Text>
+    ))
+  }
+
   const secondsLeft = useCountdown(
     timeLimitMinutes,
     () => {
@@ -356,14 +366,15 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
           <View style={styles.homeworkBlankRow}>
             {segments.map((seg, i) => (
               <React.Fragment key={i}>
-                {seg ? <Text style={styles.homeworkSentenceText}>{seg}</Text> : null}
+                {seg ? renderSegmentTokens(seg, "homework", `hseg-${i}`) : null}
                 {i < blanksCount && (
                   <View collapsable={false}>
                     <TextInput
                       {...exerciseTextInputProps}
                       style={[
                         styles.homeworkBlankInput,
-                        result !== "idle" && (perBlank[i] ? styles.inputOk : styles.inputBad),
+                        result !== "idle" &&
+                          (perBlank[i] ? styles.blankUnderlineOk : styles.blankUnderlineBad),
                       ]}
                       value={inputs[i] ?? ""}
                       onChangeText={(val) => {
@@ -374,7 +385,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
                         })
                       }}
                       editable={result === "idle"}
-                      placeholder="..."
+                      placeholder=""
                       autoCapitalize="none"
                     />
                   </View>
@@ -387,13 +398,14 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
         <View style={styles.blankRow}>
           {segments.map((seg, i) => (
             <React.Fragment key={i}>
-              {seg ? <Text style={styles.sentenceText}>{seg}</Text> : null}
+              {seg ? renderSegmentTokens(seg, "default", `seg-${i}`) : null}
               {i < blanksCount && (
                 <TextInput
                   {...exerciseTextInputProps}
                   style={[
                     styles.blankInput,
-                    result !== "idle" && (perBlank[i] ? styles.inputOk : styles.inputBad),
+                    result !== "idle" &&
+                      (perBlank[i] ? styles.blankUnderlineOk : styles.blankUnderlineBad),
                   ]}
                   value={inputs[i] ?? ""}
                   onChangeText={(val) => {
@@ -404,7 +416,7 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
                     })
                   }}
                   editable={result === "idle"}
-                  placeholder="..."
+                  placeholder=""
                   autoCapitalize="none"
                 />
               )}
@@ -1794,18 +1806,27 @@ const styles = StyleSheet.create({
   sentenceText: { fontSize: 17, lineHeight: 28, color: colors.text },
   blankRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", marginBottom: 12 },
   blankInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    minWidth: 80,
-    minHeight: 40,
-    fontSize: 16,
+    borderWidth: 0,
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#FBBF24",
+    borderRadius: 0,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    minWidth: 56,
+    minHeight: 28,
+    height: 28,
+    fontSize: 17,
+    lineHeight: 24,
     color: colors.text,
-    marginHorizontal: 4,
-    marginVertical: 4,
-    backgroundColor: "#FAFAFA",
+    marginHorizontal: 2,
+    marginVertical: 2,
+    backgroundColor: "transparent",
+    maxWidth: "55%",
+    alignSelf: "baseline",
+    textAlignVertical: "center",
+    includeFontPadding: false,
+    flexShrink: 1,
+    transform: [{ translateY: -2 }],
   },
   inputOk: { borderColor: colors.success, backgroundColor: colors.successBg },
   inputBad: { borderColor: colors.error, backgroundColor: colors.errorBg },
@@ -2010,26 +2031,48 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     alignItems: "center",
-    gap: 4,
+    gap: 2,
   },
-  homeworkSentenceText: {
+  homeworkBlankInput: {
+    borderWidth: 0,
+    borderBottomWidth: 1.75,
+    borderBottomColor: "#F59E0B",
+    borderRadius: 0,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    minWidth: 52,
+    minHeight: 28,
+    height: 28,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "600",
+    color: colors.text,
+    backgroundColor: "transparent",
+    maxWidth: "55%",
+    alignSelf: "baseline",
+    textAlignVertical: "center",
+    includeFontPadding: false,
+    flexShrink: 1,
+    transform: [{ translateY: -2 }],
+  },
+  blankUnderlineOk: {
+    borderBottomColor: colors.success,
+  },
+  blankUnderlineBad: {
+    borderBottomColor: colors.error,
+  },
+  sentenceToken: {
+    fontSize: 17,
+    lineHeight: 28,
+    color: colors.text,
+    flexShrink: 1,
+  },
+  homeworkSentenceToken: {
     fontSize: 18,
     lineHeight: 28,
     color: colors.text,
     fontWeight: "600",
-  },
-  homeworkBlankInput: {
-    borderWidth: 1.5,
-    borderColor: "#E0E0E0",
-    borderRadius: radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minWidth: 96,
-    minHeight: 40,
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
-    backgroundColor: "#FFFFFF",
+    flexShrink: 1,
   },
   homeworkTextInput: {
     alignSelf: "stretch",

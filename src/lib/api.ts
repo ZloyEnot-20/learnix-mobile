@@ -25,6 +25,7 @@ import type {
 } from "../types/domain"
 import type { GrammarExercise, GrammarExerciseSummary, ExerciseMeta } from "../types/grammar"
 import type { StudentLevel, LeaderboardEntry } from "../types/gamification"
+import type { StudentLanguageProfile } from "../types/language-profile"
 import type { StudentContextResponse } from "./lesson-schedule"
 import type { VocabDeck, TopicMeta, VocabDeckSummary } from "../types/vocabulary"
 import type { PodcastEpisode, PodcastSummary } from "../types/podcast"
@@ -70,6 +71,7 @@ const TTL = {
   topics: 300_000,
   studentLevel: 120_000,
   studentContext: 120_000,
+  languageProfile: 120_000,
   leaderboard: 120_000,
   notifications: 30_000,
   testResults: 60_000,
@@ -136,6 +138,15 @@ export const studentsApi = {
       key,
       TTL.studentContext,
       () => api.get<StudentContextResponse>(`/students/${id}/context`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  languageProfile: (id: string, opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", `/students/${id}/language-profile`)
+    return cachedFetch(
+      key,
+      TTL.languageProfile,
+      () => api.get<StudentLanguageProfile>(`/students/${id}/language-profile`),
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },

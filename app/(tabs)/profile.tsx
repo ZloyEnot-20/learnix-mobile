@@ -21,6 +21,7 @@ import { isGuestUser } from "../../src/lib/guest"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
 import { CacheManagerSheet } from "../../src/components/CacheManagerSheet"
 import { ProfileSkeleton } from "../../src/components/skeletons/Layouts"
+import { LanguageSkillsCard } from "../../src/components/LanguageSkillsCard"
 import { studentsApi, orgApi, testResultsApi, uploadsApi } from "../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../src/lib/api-client"
 import {
@@ -730,6 +731,8 @@ export default function ProfileScreen() {
               <StatCell value={formatStat(wordsLearned)} label="Words" />
               <StatCell value={rank != null ? `#${rank}` : "—"} label="Rank" />
             </View>
+
+            <LanguageSkillsCard studentId={user.id} />
 
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Achievements</Text>

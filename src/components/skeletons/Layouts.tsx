@@ -126,6 +126,27 @@ export function HomeSkeleton() {
   )
 }
 
+export function LanguageSkillsSkeleton() {
+  return (
+    <SkeletonCard style={styles.languageSkillsSkeleton}>
+      <View style={styles.languageSkillsHeader}>
+        <Skeleton width={36} height={36} borderRadius={10} />
+        <View style={styles.languageSkillsHeaderText}>
+          <Skeleton width={130} height={18} />
+          <Skeleton width={180} height={12} style={styles.gapSm} />
+        </View>
+        <Skeleton width={44} height={30} borderRadius={8} />
+      </View>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <View key={i} style={styles.languageSkillsRow}>
+          <Skeleton width={110} height={14} />
+          <Skeleton width={44} height={28} borderRadius={8} />
+        </View>
+      ))}
+    </SkeletonCard>
+  )
+}
+
 export function ProfileSkeleton() {
   return (
     <View>
@@ -144,6 +165,7 @@ export function ProfileSkeleton() {
           </View>
         ))}
       </SkeletonCard>
+      <LanguageSkillsSkeleton />
       <View style={[styles.row, styles.spaceBetween, styles.gapMd]}>
         <Skeleton width={110} height={18} />
         <Skeleton width={72} height={12} />
@@ -526,6 +548,24 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   statCellSkeleton: { flex: 1, alignItems: "center" },
+  languageSkillsSkeleton: {
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: 4,
+  },
+  languageSkillsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: spacing.sm,
+  },
+  languageSkillsHeaderText: { flex: 1 },
+  languageSkillsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 10,
+  },
   achievementsSkeletonRow: {
     flexDirection: "row",
     justifyContent: "space-between",
