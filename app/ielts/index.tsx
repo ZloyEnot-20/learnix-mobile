@@ -26,7 +26,7 @@ export default function IeltsHubScreen() {
         <ScrollView contentContainerStyle={styles.list}>
           {IELTS_SKILLS.map((skill) => {
             const accent = subjectColors[skill.id] ?? colors.primary
-            const available = skill.id === "reading"
+            const available = skill.id === "reading" || skill.id === "listening"
             return (
               <Pressable
                 key={skill.id}
@@ -62,7 +62,7 @@ export default function IeltsHubScreen() {
         <View style={[styles.note, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
           <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
           <Text style={styles.noteText}>
-            Reading practice uses real IELTS-style passages and question types.
+            Reading and listening practice use real IELTS-style tasks and question types.
           </Text>
         </View>
       </SafeAreaView>

@@ -46,6 +46,106 @@ export interface IeltsSectionCatalog {
 
 export type IeltsSkill = "reading" | "listening" | "speaking" | "writing"
 
+export type IeltsListeningQuestionType = "fill-in-blank" | "multiple-choice" | "matching"
+
+export interface IeltsListeningQuestion {
+  id: number
+  type: IeltsListeningQuestionType
+  label: string
+  correctAnswer: string
+}
+
+export interface IeltsListeningQuestionDetail extends IeltsListeningQuestion {
+  question: string
+  options: string[]
+}
+
+export type IeltsListeningMatchingRow = {
+  questionId: number
+  label: string
+}
+
+export type IeltsListeningFlowChartStep = {
+  stepLabel: string
+  questionId: number
+}
+
+export type IeltsListeningNoteLine =
+  | { kind: "text"; text: string; bullet?: boolean }
+  | { kind: "blank"; questionId: number; before?: string; after: string }
+
+export type IeltsListeningNoteSection = {
+  heading?: string
+  lines: IeltsListeningNoteLine[]
+}
+
+export type IeltsListeningContentBlock =
+  | { type: "text"; text: string }
+  | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "image"; url: string; alt?: string }
+  | {
+      type: "multi-select-group"
+      questionIds: number[]
+      label?: string
+      prompt: string
+      options: string[]
+    }
+  | {
+      type: "multiple-choice"
+      questionId: number
+      prompt: string
+      options: string[]
+      imageUrl?: string
+    }
+  | {
+      type: "matching-grid"
+      columns: string[]
+      rows: IeltsListeningMatchingRow[]
+    }
+  | {
+      type: "flow-chart"
+      title?: string
+      steps: IeltsListeningFlowChartStep[]
+      options: string[]
+    }
+  | {
+      type: "notes"
+      intro?: string
+      title?: string
+      sections: IeltsListeningNoteSection[]
+    }
+
+export interface IeltsListeningPart {
+  partNumber: number
+  title: string
+  instruction: string
+  audioUrl: string
+  content: string
+  contentBlocks?: IeltsListeningContentBlock[]
+  questions: IeltsListeningQuestion[]
+}
+
+export interface IeltsListeningTest {
+  testId: string
+  title: string
+  book?: number
+  test?: number
+  totalTime: number
+  parts: IeltsListeningPart[]
+  questionDetails?: IeltsListeningQuestionDetail[]
+}
+
+export interface IeltsListeningCatalogItem {
+  id: string
+  title: string
+  subtitle: string
+  estimatedMinutes: number
+  questionCount: number
+  file: string
+  book: number
+  test: number
+}
+
 export const IELTS_SKILLS: {
   id: IeltsSkill
   label: string
@@ -62,7 +162,7 @@ export const IELTS_SKILLS: {
     id: "listening",
     label: "Listening",
     icon: "headset-outline",
-    description: "Audio tasks — coming soon",
+    description: "Cambridge IELTS listening tests",
   },
   {
     id: "speaking",
