@@ -489,6 +489,26 @@ export const exercisesApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
+  listeningSummaries: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/exercises/listening/summary")
+    return cachedFetch(
+      key,
+      TTL.exercises,
+      () =>
+        api.get<import("../types/listening").IeltsListeningSummary[]>("/exercises/listening/summary"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  listening: (slug: string, opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", `/exercises/listening/${slug}`)
+    return cachedFetch(
+      key,
+      TTL.exercises,
+      () =>
+        api.get<import("../types/listening").IeltsListeningDocument>(`/exercises/listening/${slug}`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
 }
 
 export const testResultsApi = {

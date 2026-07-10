@@ -40,7 +40,7 @@ export interface HomeworkItem {
   listeningStats?: PodcastListeningStats
   reviewedWords?: string[]
   /** Multi-section unit test (control work). */
-  kind?: "homework" | "control_work" | "podcast"
+  kind?: "homework" | "control_work" | "podcast" | "ielts_listening"
   sectionDone?: number
   sectionTotal?: number
 }
@@ -67,26 +67,32 @@ function statusFor(hw: HomeworkItem) {
 }
 
 function isPodcastItem(hw: HomeworkItem): boolean {
-  return hw.kind === "podcast" || hw.subject === "listening" || !!hw.listeningStats
+  return hw.kind === "podcast" || (!!hw.listeningStats && hw.kind !== "ielts_listening")
+}
+
+function isIeltsListeningItem(hw: HomeworkItem): boolean {
+  return hw.kind === "ielts_listening"
 }
 
 function subjectName(hw: HomeworkItem): string {
   if (isPodcastItem(hw)) return "Podcast"
+  if (isIeltsListeningItem(hw)) return "Listening"
   return hw.subject.charAt(0).toUpperCase() + hw.subject.slice(1)
 }
 
 function homeworkIcon(hw: HomeworkItem): keyof typeof Ionicons.glyphMap {
-  if (isPodcastItem(hw)) return "headset-outline"
+  if (isPodcastItem(hw) || isIeltsListeningItem(hw)) return "headset-outline"
   return SUBJECT_ICONS[hw.subject]
 }
 
 function homeworkAccent(hw: HomeworkItem): string {
   if (isPodcastItem(hw)) return colors.success
+  if (isIeltsListeningItem(hw)) return subjectColors.listening
   return subjectColors[hw.subject] ?? colors.textSecondary
 }
 
 function homeworkScore(hw: HomeworkItem): { percent: number; correct: number; total: number } | null {
-  if (hw.subject === "listening" && hw.listeningStats) {
+  if (hw.subject === "listening" && hw.listeningStats && !isIeltsListeningItem(hw)) {
     return null
   }
   if (hw.correctCount != null && hw.totalQuestions != null && hw.totalQuestions > 0) {

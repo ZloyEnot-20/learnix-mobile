@@ -3,6 +3,9 @@ import type { LastActivity } from "./last-activity"
 import { getLastActivity, subjectLabel } from "./last-activity"
 import { findTopicMeta, topicDisplayTitle } from "./topic-meta"
 import { parseVocabHomeworkSlug, type TopicMeta, type VocabDeckSummary } from "../types/vocabulary"
+import { parsePodcastHomeworkSlug } from "../types/podcast"
+import { parseReadingHomeworkSlug } from "../types/reading"
+import { parseListeningHomeworkSlug } from "../types/listening"
 import type { ExerciseMeta } from "../types/grammar"
 import type { StudentHomeworkSummaryEntry } from "../types/domain"
 
@@ -33,6 +36,16 @@ function homeworkRoute(entry: StudentHomeworkSummaryEntry): string | undefined {
   if (homework.subject === "vocabulary") {
     const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
     if (deckSlug) return `/homework/vocabulary/${deckSlug}?hw=${homework.id}`
+  }
+  if (homework.subject === "reading") {
+    const readingSlug = parseReadingHomeworkSlug(homework.exerciseSlug)
+    if (readingSlug) return `/homework/reading/${readingSlug}?hw=${homework.id}`
+  }
+  if (homework.subject === "listening") {
+    const ieltsSlug = parseListeningHomeworkSlug(homework.exerciseSlug)
+    if (ieltsSlug) return `/homework/listening/${ieltsSlug}?hw=${homework.id}`
+    const podcastSlug = parsePodcastHomeworkSlug(homework.exerciseSlug)
+    if (podcastSlug) return `/homework/podcast/${podcastSlug}?hw=${homework.id}`
   }
   return undefined
 }

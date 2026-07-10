@@ -5,9 +5,11 @@ import type {
   IeltsListeningQuestionDetail,
   IeltsListeningTest,
 } from "../types/ielts"
+import type { HomeworkAttempt, HomeworkMistake } from "../types/domain"
 
 import listeningIndex from "../data/ielts-listening/index.json"
 import { LOCAL_LISTENING_TESTS } from "../data/ielts-listening/tests-registry.generated"
+import { exercisesApi } from "./api"
 import { runPerfTrace } from "./perf"
 
 const LOCAL_TESTS: Record<string, IeltsListeningTest> = LOCAL_LISTENING_TESTS
@@ -57,9 +59,92 @@ export async function listIeltsListeningTests(): Promise<IeltsListeningCatalogIt
 export async function getIeltsListeningTest(id: string): Promise<IeltsListeningTest | null> {
   return runPerfTrace(
     "load_ielts_listening_test",
-    async () => LOCAL_TESTS[id] ?? null,
+    async () => {
+      try {
+        const doc = await exercisesApi.listening(id)
+        if (doc?.data) return doc.data
+      } catch {
+        // fall back to bundled test
+      }
+      return LOCAL_TESTS[id] ?? null
+    },
     { testType: "ielts-listening" },
   )
+}
+
+export function flattenListeningQuestions(test: IeltsListeningTest) {
+  return test.parts.flatMap((part) =>
+    part.questions.map((question) => ({
+      ...question,
+      partNumber: part.partNumber,
+    })),
+  )
+}
+
+export function formatListeningCorrectAnswer(question: IeltsListeningQuestion): string {
+  return parseCorrectVariants(question.correctAnswer).join(" / ")
+}
+
+export function buildListeningMistakes(
+  test: IeltsListeningTest,
+  answers: Record<number, string>,
+): HomeworkMistake[] {
+  const mistakes: HomeworkMistake[] = []
+
+  for (const part of test.parts) {
+    for (const question of part.questions) {
+      const userAnswer = answers[question.id] ?? ""
+      const detail = getQuestionDetail(test, question.id)
+      if (isListeningAnswerCorrect(question, userAnswer, detail)) continue
+
+      const prompt =
+        detail?.question?.trim() ||
+        extractListeningMcPrompt(question.question ?? "", question.options ?? []) ||
+        `Question ${question.id}`
+
+      mistakes.push({
+        questionId: question.id,
+        prompt,
+        userAnswer: userAnswer.trim() || "—",
+        correctAnswer: formatListeningCorrectAnswer(question),
+      })
+    }
+  }
+
+  return mistakes
+}
+
+export function buildListeningAnswers(
+  test: IeltsListeningTest,
+  answers: Record<number, string>,
+): Array<{ questionId: number; userAnswer: string }> {
+  const result: Array<{ questionId: number; userAnswer: string }> = []
+  for (const part of test.parts) {
+    for (const question of part.questions) {
+      const userAnswer = (answers[question.id] ?? "").trim()
+      if (userAnswer) result.push({ questionId: question.id, userAnswer })
+    }
+  }
+  return result
+}
+
+export function buildListeningAttempt(
+  test: IeltsListeningTest,
+  answers: Record<number, string>,
+  durationSeconds: number,
+): HomeworkAttempt {
+  const mistakes = buildListeningMistakes(test, answers)
+  const { correct, total } = scoreListeningTest(test, answers)
+  const answeredCount = Object.values(answers).filter((a) => a.trim()).length
+
+  return {
+    totalQuestions: total,
+    correctCount: correct,
+    durationSeconds,
+    answeredCount,
+    mistakes,
+    readingAnswers: buildListeningAnswers(test, answers),
+  }
 }
 
 function collectInlineQuestionIdsFromText(text: string, ids: Set<number>) {

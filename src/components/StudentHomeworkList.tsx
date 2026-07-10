@@ -13,6 +13,7 @@ import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
 import { parsePodcastHomeworkSlug } from "../types/podcast"
 import { parseReadingHomeworkSlug } from "../types/reading"
+import { parseListeningHomeworkSlug } from "../types/listening"
 import type {
   StudentControlWorkEntry,
   StudentHomeworkSummaryEntry,
@@ -53,11 +54,17 @@ function mapHomeworkItems(entries: StudentHomeworkSummaryEntry[]): HomeworkItem[
         const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
         if (deckSlug) route = `/homework/vocabulary/${deckSlug}?hw=${homework.id}`
       } else if (homework.subject === "listening") {
-        const podcastSlug = parsePodcastHomeworkSlug(homework.exerciseSlug)
-        if (podcastSlug) {
-          route = `/homework/podcast/${podcastSlug}?hw=${homework.id}`
+        const ieltsSlug = parseListeningHomeworkSlug(homework.exerciseSlug)
+        if (ieltsSlug) {
+          route = `/homework/listening/${ieltsSlug}?hw=${homework.id}`
+          kind = "ielts_listening"
+        } else {
+          const podcastSlug = parsePodcastHomeworkSlug(homework.exerciseSlug)
+          if (podcastSlug) {
+            route = `/homework/podcast/${podcastSlug}?hw=${homework.id}`
+          }
+          kind = "podcast"
         }
-        kind = "podcast"
       } else if (homework.subject === "reading") {
         const readingSlug = parseReadingHomeworkSlug(homework.exerciseSlug)
         if (readingSlug) route = `/homework/reading/${readingSlug}?hw=${homework.id}`
@@ -79,7 +86,7 @@ function mapHomeworkItems(entries: StudentHomeworkSummaryEntry[]): HomeworkItem[
       paused: submission.status === "paused",
       pauseUsed: submission.pauseUsed,
       route,
-      kind: kind === "podcast" ? "podcast" : undefined,
+      kind: kind === "podcast" ? "podcast" : kind === "ielts_listening" ? "ielts_listening" : undefined,
       correctCount: submission.attempt?.correctCount,
       totalQuestions: submission.attempt?.totalQuestions,
       listeningStats: submission.attempt?.listeningStats,

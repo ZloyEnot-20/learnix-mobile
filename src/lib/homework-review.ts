@@ -8,6 +8,13 @@ import {
   resolveReadingQuestionPrompt,
 } from "./ielts-reading"
 import {
+  flattenListeningQuestions,
+  formatListeningCorrectAnswer,
+  getQuestionDetail,
+  isListeningAnswerCorrect,
+  extractListeningMcPrompt,
+} from "./ielts-listening"
+import {
   formatFillBlankCorrectAnswer,
   type GrammarExercise,
   type GrammarQuestion,
@@ -32,6 +39,8 @@ export interface ReadingReviewItem {
   userAnswer?: string
   correctAnswer: string
 }
+
+export type ListeningReviewItem = ReadingReviewItem
 
 export function getReviewQuestions(exercise: GrammarExercise): GrammarQuestion[] {
   if (exercise.type === "matching") {
@@ -160,6 +169,90 @@ export function buildReadingReviewItems(
 
     if (storedAnswer) {
       const isCorrect = isReadingAnswerCorrect(question, storedAnswer)
+      return {
+        index,
+        questionId: question.id,
+        partNumber: question.partNumber,
+        prompt,
+        status: isCorrect ? ("correct" as const) : ("incorrect" as const),
+        userAnswer: storedAnswer,
+        correctAnswer,
+      }
+    }
+
+    if (hasMistakeDetails || hasStoredAnswers || allCorrect) {
+      if (index < answered) {
+        return {
+          index,
+          questionId: question.id,
+          partNumber: question.partNumber,
+          prompt,
+          status: "correct" as const,
+          correctAnswer,
+        }
+      }
+
+      return {
+        index,
+        questionId: question.id,
+        partNumber: question.partNumber,
+        prompt,
+        status: "skipped" as const,
+        correctAnswer,
+      }
+    }
+
+    return {
+      index,
+      questionId: question.id,
+      partNumber: question.partNumber,
+      prompt,
+      status: "skipped" as const,
+      correctAnswer,
+    }
+  })
+}
+
+export function buildListeningReviewItems(
+  test: import("../types/ielts").IeltsListeningTest,
+  attempt: HomeworkAttempt,
+): ListeningReviewItem[] {
+  const flat = flattenListeningQuestions(test)
+  const mistakeById = new Map(attempt.mistakes.map((m) => [m.questionId, m]))
+  const answerById = new Map(
+    (attempt.readingAnswers ?? []).map((a) => [a.questionId, a.userAnswer]),
+  )
+  const answered =
+    attempt.answeredCount ?? attempt.correctCount + attempt.mistakes.length
+  const hasStoredAnswers = answerById.size > 0
+  const hasMistakeDetails = attempt.mistakes.length > 0
+  const allCorrect = attempt.correctCount === attempt.totalQuestions
+
+  return flat.map((question, index) => {
+    const detail = getQuestionDetail(test, question.id)
+    const prompt =
+      detail?.question?.trim() ||
+      extractListeningMcPrompt(question.question ?? "", question.options ?? []) ||
+      `Question ${question.id}`
+    const correctAnswer =
+      mistakeById.get(question.id)?.correctAnswer ?? formatListeningCorrectAnswer(question)
+    const mistake = mistakeById.get(question.id)
+    const storedAnswer = answerById.get(question.id)
+
+    if (mistake) {
+      return {
+        index,
+        questionId: question.id,
+        partNumber: question.partNumber,
+        prompt,
+        status: "incorrect" as const,
+        userAnswer: mistake.userAnswer,
+        correctAnswer,
+      }
+    }
+
+    if (storedAnswer) {
+      const isCorrect = isListeningAnswerCorrect(question, storedAnswer, detail)
       return {
         index,
         questionId: question.id,

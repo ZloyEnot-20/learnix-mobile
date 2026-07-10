@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Alert,
   Pressable,
@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useCountdown, formatTimer } from "../../hooks/useCountdown"
 import type { IeltsListeningQuestion, IeltsListeningTest } from "../../types/ielts"
 import {
+  buildListeningAttempt,
   extractInlineQuestionIdsFromPart,
   getQuestionDetail,
   isMultiSelectListeningQuestion,
@@ -21,11 +22,11 @@ import {
   extractListeningMcPrompt,
   scoreListeningTest,
 } from "../../lib/ielts-listening"
-import {
-  AudioWaveformPlayer,
-  type AudioWaveformPlayerHandle,
-} from "../audio/audio-waveform-player"
+import { ListeningExamAudio, type ListeningExamAudioHandle } from "./ListeningExamAudio"
+import { ListeningExamAudioSequence } from "./ListeningExamAudioSequence"
+import { resolveListeningFullAudioUri } from "../../lib/ielts-listening-audio"
 import { HomeworkFooterButton } from "../homework/HomeworkExerciseLayout"
+import { HomeworkListeningReview } from "../homework/HomeworkListeningReview"
 import { BackButton } from "../ui/BackButton"
 import { ListeningContent } from "./ListeningContent"
 import { colors, radius, spacing, subjectColors } from "../../theme/tokens"
@@ -244,20 +245,47 @@ function ResultsView({
 
 export function IeltsListeningRunner({
   test,
+  testId,
   onExit,
   onBack,
+  homeworkId,
+  studentId,
+  sessionStartedAt: externalSessionStart,
+  timeLimitMinutes,
+  elapsedSeconds = 0,
 }: {
   test: IeltsListeningTest
+  testId?: string
   onExit: () => void
   onBack?: () => void
+  homeworkId?: string
+  studentId?: string
+  sessionStartedAt?: number
+  timeLimitMinutes?: number
+  elapsedSeconds?: number
 }) {
   const insets = useSafeAreaInsets()
+  const isHomework = Boolean(homeworkId)
   const [partIndex, setPartIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [finished, setFinished] = useState(false)
-  const [testStarted, setTestStarted] = useState(false)
-  const [sessionStartedAt, setSessionStartedAt] = useState<number | null>(null)
-  const audioPlayerRef = useRef<AudioWaveformPlayerHandle>(null)
+  const [testStarted, setTestStarted] = useState(isHomework)
+  const [internalSessionStart, setInternalSessionStart] = useState<number | null>(null)
+  const sessionStartedAt = externalSessionStart ?? internalSessionStart
+  const submittedRef = useRef(false)
+  const [fullAudioUri, setFullAudioUri] = useState<string | null>(null)
+  const [usePartSequence, setUsePartSequence] = useState(false)
+  const [audioError, setAudioError] = useState<string | null>(null)
+  const audioPlayerRef = useRef<ListeningExamAudioHandle>(null)
+
+  const timerMinutes = isHomework ? timeLimitMinutes : test.totalTime
+  const secondsLeft = useCountdown(
+    timerMinutes,
+    () => setFinished(true),
+    finished || !testStarted,
+    isHomework ? elapsedSeconds : 0,
+    sessionStartedAt,
+  )
 
   const part = test.parts[partIndex]
   const totalParts = test.parts.length
@@ -270,17 +298,16 @@ export function IeltsListeningRunner({
     }
     return prompts
   }, [test.questionDetails])
+  const partAudioUrls = useMemo(
+    () =>
+      test.parts
+        .map((item) => item.audioUrl?.trim())
+        .filter((url): url is string => Boolean(url)),
+    [test.parts],
+  )
   const standaloneQuestions = useMemo(
     () => part.questions.filter((q) => !inlineIds.has(q.id)),
     [part.questions, inlineIds],
-  )
-
-  const secondsLeft = useCountdown(
-    test.totalTime,
-    () => setFinished(true),
-    finished || !testStarted,
-    0,
-    sessionStartedAt,
   )
 
   const setAnswer = useCallback((questionId: number, value: string) => {
@@ -289,13 +316,44 @@ export function IeltsListeningRunner({
 
   const submitTest = () => {
     setFinished(true)
-    void audioPlayerRef.current?.pause()
+    void audioPlayerRef.current?.stop()
   }
 
   const handleStart = () => {
-    setSessionStartedAt(Date.now())
+    setInternalSessionStart(Date.now())
     setTestStarted(true)
   }
+
+  useEffect(() => {
+    if (!isHomework || testStarted || externalSessionStart == null) return
+    setTestStarted(true)
+  }, [externalSessionStart, isHomework, testStarted])
+
+  useEffect(() => {
+    if (!testStarted) return
+    let cancelled = false
+    setAudioError(null)
+    setUsePartSequence(false)
+    setFullAudioUri(null)
+
+    void resolveListeningFullAudioUri(test, testId)
+      .then((uri) => {
+        if (!cancelled) setFullAudioUri(uri)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          if (partAudioUrls.length > 0) {
+            setUsePartSequence(true)
+          } else {
+            setAudioError("Listening audio is not available for this test.")
+          }
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [partAudioUrls.length, test, testId, testStarted])
 
   const handleNext = () => {
     if (partIndex < totalParts - 1) {
@@ -329,17 +387,55 @@ export function IeltsListeningRunner({
   }
 
   const handleRetry = () => {
+    if (isHomework) return
     setAnswers({})
     setPartIndex(0)
     setFinished(false)
     setTestStarted(false)
-    setSessionStartedAt(null)
+    setInternalSessionStart(null)
+    setFullAudioUri(null)
+    setUsePartSequence(false)
+    setAudioError(null)
   }
+
+  useEffect(() => {
+    if (!finished || !homeworkId || !studentId || submittedRef.current || sessionStartedAt == null) {
+      return
+    }
+    submittedRef.current = true
+    const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
+    const attempt = buildListeningAttempt(test, answers, durationSeconds)
+    void import("../../lib/api")
+      .then(({ homeworkApi }) => homeworkApi.recordAttempt(homeworkId, attempt))
+      .then(() =>
+        import("../../lib/home-screen-sync").then(({ refreshHomeContinueLearning }) =>
+          refreshHomeContinueLearning(studentId),
+        ),
+      )
+      .catch(() => {})
+  }, [finished, homeworkId, studentId, test, answers, sessionStartedAt])
 
   const { correct, total } = scoreListeningTest(test, answers)
   const band = listeningBandScore(correct)
 
   if (finished) {
+    const durationSeconds =
+      sessionStartedAt != null
+        ? Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
+        : 0
+    const attempt = buildListeningAttempt(test, answers, durationSeconds)
+
+    if (homeworkId) {
+      return (
+        <HomeworkListeningReview
+          test={test}
+          attempt={attempt}
+          title={test.title}
+          subject="listening"
+        />
+      )
+    }
+
     return (
       <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
         <View style={styles.resultsTopBar}>
@@ -363,14 +459,17 @@ export function IeltsListeningRunner({
         {testStarted ? <ListeningTimer secondsLeft={secondsLeft} /> : null}
       </View>
 
-      {testStarted && part.audioUrl ? (
-        <View style={styles.audioPlayerWrap}>
-          <AudioWaveformPlayer
-            key={part.audioUrl}
-            ref={audioPlayerRef}
-            audioUrl={part.audioUrl}
-            autoPlay
-          />
+      {testStarted && fullAudioUri ? (
+        <ListeningExamAudio ref={audioPlayerRef} audioUri={fullAudioUri} autoPlay />
+      ) : null}
+
+      {testStarted && !fullAudioUri && usePartSequence ? (
+        <ListeningExamAudioSequence ref={audioPlayerRef} audioUrls={partAudioUrls} autoPlay />
+      ) : null}
+
+      {testStarted && audioError ? (
+        <View style={styles.audioErrorBanner}>
+          <Text style={styles.audioErrorText}>{audioError}</Text>
         </View>
       ) : null}
 
@@ -477,12 +576,18 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: colors.card,
   },
-  audioPlayerWrap: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.card,
+  audioErrorBanner: {
+    marginHorizontal: spacing.sm,
+    marginBottom: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+    backgroundColor: colors.errorBg,
+  },
+  audioErrorText: {
+    fontSize: 13,
+    color: colors.error,
+    textAlign: "center",
   },
   scroll: { flex: 1 },
   scrollContent: {

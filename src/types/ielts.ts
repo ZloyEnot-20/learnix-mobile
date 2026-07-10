@@ -130,6 +130,8 @@ export interface IeltsListeningTest {
   title: string
   book?: number
   test?: number
+  catalogId?: string
+  fullAudioUrl?: string
   totalTime: number
   parts: IeltsListeningPart[]
   questionDetails?: IeltsListeningQuestionDetail[]

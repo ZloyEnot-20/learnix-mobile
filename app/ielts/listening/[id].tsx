@@ -47,6 +47,7 @@ export default function IeltsListeningTaskScreen() {
         ) : (
           <IeltsListeningRunner
             test={test}
+            testId={id}
             onExit={() => router.back()}
             onBack={() => router.back()}
           />
