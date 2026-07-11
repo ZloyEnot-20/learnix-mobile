@@ -19,6 +19,7 @@ interface HomeworkReviewShellProps {
   title: string
   subject?: Subject
   accentColor?: string
+  onBack?: () => void
   children: React.ReactNode
 }
 
@@ -26,6 +27,7 @@ export function HomeworkReviewShell({
   title,
   subject = "grammar",
   accentColor,
+  onBack,
   children,
 }: HomeworkReviewShellProps) {
   const router = useRouter()
@@ -36,7 +38,10 @@ export function HomeworkReviewShell({
   return (
     <View style={styles.root}>
       <View style={styles.header}>
-        <BackButton onPress={() => router.back()} style={styles.backBtn} />
+        <BackButton
+          onPress={onBack ?? (() => router.back())}
+          style={styles.backBtn}
+        />
         <View style={styles.headerText}>
           <View style={styles.subjectRow}>
             <Ionicons name={icon} size={14} color={accent} />

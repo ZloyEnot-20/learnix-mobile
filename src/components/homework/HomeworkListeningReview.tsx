@@ -14,6 +14,7 @@ interface HomeworkListeningReviewProps {
   title: string
   subject?: Subject
   completedAt?: string
+  onBack?: () => void
 }
 
 type ViewMode = "list" | "single"
@@ -23,6 +24,59 @@ const STATUS_META = {
   correct: { icon: "checkmark" as const, color: colors.success, bg: colors.successBg },
   incorrect: { icon: "close" as const, color: colors.error, bg: colors.errorBg },
   skipped: { icon: "remove" as const, color: colors.textMuted, bg: colors.borderLight },
+}
+
+function AnswerDetails({ item }: { item: ListeningReviewItem }) {
+  const isCorrect = item.status === "correct"
+
+  return (
+    <View style={styles.qDetails}>
+      {item.userAnswer ? (
+        <View style={styles.detailRow}>
+          <Ionicons
+            name={isCorrect ? "checkmark" : "close"}
+            size={14}
+            color={isCorrect ? colors.success : colors.error}
+          />
+          <Text style={isCorrect ? styles.detailRight : styles.detailWrong}>
+            You: {item.userAnswer}
+          </Text>
+        </View>
+      ) : null}
+
+      {!isCorrect ? (
+        <View style={styles.detailRow}>
+          <Ionicons name="checkmark" size={14} color={colors.success} />
+          <Text style={styles.detailRight}>Correct: {item.correctAnswer}</Text>
+        </View>
+      ) : null}
+    </View>
+  )
+}
+
+function QuestionPrompt({
+  item,
+  expanded,
+}: {
+  item: ListeningReviewItem
+  expanded?: boolean
+}) {
+  return (
+    <View style={styles.promptBlock}>
+      <Text style={styles.qPrompt} numberOfLines={expanded ? undefined : 2}>
+        {item.prompt}
+      </Text>
+      {expanded && item.options && item.options.length > 0 ? (
+        <View style={styles.optionsList}>
+          {item.options.map((option) => (
+            <Text key={option} style={styles.optionLine}>
+              {option}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  )
 }
 
 function ScoreRing({ correct, total }: { correct: number; total: number }) {
@@ -71,27 +125,9 @@ function QuestionCard({
           <Text style={styles.qLabel}>
             Q{item.questionId} · Part {item.partNumber}
           </Text>
-          <Text style={styles.qPrompt} numberOfLines={expanded ? undefined : 2}>
-            {item.prompt}
-          </Text>
+          <QuestionPrompt item={item} expanded={expanded} />
 
-          {expanded ? (
-            <View style={styles.qDetails}>
-              {item.userAnswer ? (
-                <View style={styles.detailRow}>
-                  <Ionicons name="close" size={14} color={colors.error} />
-                  <Text style={styles.detailWrong}>You: {item.userAnswer}</Text>
-                </View>
-              ) : null}
-
-              {item.status !== "correct" ? (
-                <View style={styles.detailRow}>
-                  <Ionicons name="checkmark" size={14} color={colors.success} />
-                  <Text style={styles.detailRight}>Correct: {item.correctAnswer}</Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
+          {expanded ? <AnswerDetails item={item} /> : null}
         </View>
 
         <Ionicons
@@ -129,23 +165,9 @@ function QuestionDetail({
       <Text style={styles.qLabel}>
         Q{item.questionId} · Part {item.partNumber}
       </Text>
-      <Text style={styles.singlePrompt}>{item.prompt}</Text>
+      <QuestionPrompt item={item} expanded />
 
-      <View style={styles.qDetails}>
-        {item.userAnswer ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="close" size={14} color={colors.error} />
-            <Text style={styles.detailWrong}>You: {item.userAnswer}</Text>
-          </View>
-        ) : null}
-
-        {item.status !== "correct" ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="checkmark" size={14} color={colors.success} />
-            <Text style={styles.detailRight}>Correct: {item.correctAnswer}</Text>
-          </View>
-        ) : null}
-      </View>
+      <AnswerDetails item={item} />
     </View>
   )
 }
@@ -156,6 +178,7 @@ export function HomeworkListeningReview({
   title,
   subject = "listening",
   completedAt,
+  onBack,
 }: HomeworkListeningReviewProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [filter, setFilter] = useState<FilterMode>("all")
@@ -188,7 +211,7 @@ export function HomeworkListeningReview({
     correctCount < totalQuestions
 
   return (
-    <HomeworkReviewShell title={title} subject={subject}>
+    <HomeworkReviewShell title={title} subject={subject} onBack={onBack}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -463,7 +486,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: "uppercase",
   },
+  promptBlock: { gap: 6 },
   qPrompt: { fontSize: 15, fontWeight: "600", color: colors.text, lineHeight: 22 },
+  optionsList: { gap: 3 },
+  optionLine: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   qDetails: { marginTop: spacing.sm, gap: 6 },
   detailRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
   detailWrong: { flex: 1, fontSize: 14, color: colors.error, lineHeight: 20 },
@@ -483,7 +509,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   singleCounter: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
-  singlePrompt: { fontSize: 16, fontWeight: "600", color: colors.text, lineHeight: 24 },
   singleNav: { flexDirection: "row", gap: spacing.sm },
   navBtn: {
     flex: 1,

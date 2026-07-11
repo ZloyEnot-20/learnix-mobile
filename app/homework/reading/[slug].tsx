@@ -234,6 +234,7 @@ export default function HomeworkReadingScreen() {
               timeLimitMinutes={timeLimitMinutes}
               elapsedSeconds={elapsedSeconds}
               onExit={() => router.back()}
+              onGoHome={() => router.replace("/(tabs)")}
             />
           ) : (
             <IeltsReadingScreenSkeleton />

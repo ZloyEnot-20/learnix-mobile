@@ -1,5 +1,6 @@
 import type {
   IeltsListeningCatalogItem,
+  IeltsListeningContentBlock,
   IeltsListeningPart,
   IeltsListeningQuestion,
   IeltsListeningQuestionDetail,
@@ -8,6 +9,7 @@ import type {
 import type { HomeworkAttempt, HomeworkMistake } from "../types/domain"
 
 import { exercisesApi } from "./api"
+import { normalizeInlineBlankContent } from "./inline-blanks"
 import { runPerfTrace } from "./perf"
 
 export function idFromListeningFile(file: string): string {
@@ -87,10 +89,7 @@ export function buildListeningMistakes(
       const detail = getQuestionDetail(test, question.id)
       if (isListeningAnswerCorrect(question, userAnswer, detail)) continue
 
-      const prompt =
-        detail?.question?.trim() ||
-        extractListeningMcPrompt(question.question ?? "", question.options ?? []) ||
-        `Question ${question.id}`
+      const prompt = resolveListeningReviewPrompt(test, question.id, detail)
 
       mistakes.push({
         questionId: question.id,
@@ -193,7 +192,8 @@ function normalizeInstructionParagraph(text: string): string {
 
 export function normalizeListeningDisplayText(text: string): string {
   if (!text.trim()) return text
-  const parts = text.trim().split(/\n\n+/)
+  const withInlineBlanks = normalizeInlineBlankContent(text)
+  const parts = withInlineBlanks.trim().split(/\n\n+/)
   return parts
     .map((part) => normalizeInstructionParagraph(part))
     .filter(Boolean)
@@ -222,6 +222,179 @@ export function extractListeningMcPrompt(question: string, options: string[]): s
   }
 
   return trimmed
+}
+
+function formatListeningBlankLine(before?: string, after?: string): string {
+  const left = (before ?? "").replace(/\s+/g, " ").trim()
+  const right = (after ?? "").replace(/\s+/g, " ").trim()
+  if (left && right) return `${left} ______ ${right}`
+  if (left) return `${left} ______`
+  if (right) return `______ ${right}`
+  return "______"
+}
+
+function replaceQuestionBlank(text: string, questionId: number): string {
+  return text
+    .replace(new RegExp(`\\[${questionId}\\]`, "g"), "______")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function promptFromInlineText(text: string, questionId: number): string | null {
+  const marker = `[${questionId}]`
+  if (!text.includes(marker)) return null
+
+  const lines = text.split(/\n+/)
+  for (const line of lines) {
+    if (line.includes(marker)) return replaceQuestionBlank(line, questionId)
+  }
+
+  const index = text.indexOf(marker)
+  const start = Math.max(0, index - 48)
+  const end = Math.min(text.length, index + marker.length + 48)
+  let snippet = replaceQuestionBlank(text.slice(start, end), questionId)
+  if (start > 0) snippet = `…${snippet}`
+  if (end < text.length) snippet = `${snippet}…`
+  return snippet
+}
+
+function promptFromContentBlock(
+  block: IeltsListeningContentBlock,
+  questionId: number,
+): string | null {
+  switch (block.type) {
+    case "multiple-choice":
+      return block.questionId === questionId && block.prompt.trim()
+        ? block.prompt.trim()
+        : null
+    case "multi-select-group":
+      return block.questionIds.includes(questionId) && block.prompt.trim()
+        ? block.prompt.trim()
+        : null
+    case "matching-grid": {
+      const row = block.rows.find((item) => item.questionId === questionId)
+      return row?.label.trim() || null
+    }
+    case "flow-chart": {
+      const step = block.steps.find((item) => item.questionId === questionId)
+      if (!step) return null
+      const label = step.stepLabel.trim()
+      return label ? formatListeningBlankLine(label, "") : "______"
+    }
+    case "notes":
+      for (const section of block.sections) {
+        for (let index = 0; index < section.lines.length; index++) {
+          const line = section.lines[index]
+          if (line.kind !== "blank" || line.questionId !== questionId) continue
+
+          const formatted = formatListeningBlankLine(line.before, line.after)
+          if (formatted !== "______") return formatted
+
+          const beforeParts: string[] = []
+          const afterParts: string[] = []
+
+          for (let j = index - 1; j >= 0 && beforeParts.length < 2; j--) {
+            const prev = section.lines[j]
+            if (prev.kind === "text" && prev.text.trim()) {
+              const text = prev.text.trim()
+              if (text.includes("|")) continue
+              beforeParts.unshift(text)
+            } else {
+              break
+            }
+          }
+
+          for (let j = index + 1; j < section.lines.length && afterParts.length < 2; j++) {
+            const next = section.lines[j]
+            if (next.kind === "text" && next.text.trim()) {
+              afterParts.push(next.text.trim())
+            } else {
+              break
+            }
+          }
+
+          if (!beforeParts.length) {
+            if (section.heading?.trim()) beforeParts.push(section.heading.trim())
+            else if (block.title?.trim()) beforeParts.push(block.title.trim())
+          }
+
+          return formatListeningBlankLine(beforeParts.join(" · "), afterParts.join(" · "))
+        }
+      }
+      return null
+    case "table":
+      for (const header of block.headers) {
+        const fromHeader = promptFromInlineText(header, questionId)
+        if (fromHeader) return fromHeader
+      }
+      for (const row of block.rows) {
+        for (const cell of row) {
+          const fromCell = promptFromInlineText(cell, questionId)
+          if (fromCell) return fromCell
+        }
+      }
+      return null
+    case "text":
+      return promptFromInlineText(block.text, questionId)
+    case "image":
+      return null
+  }
+}
+
+/** Human-readable prompt for review: MC stem or gap-fill line with ______. */
+export function resolveListeningReviewPrompt(
+  test: IeltsListeningTest,
+  questionId: number,
+  detail?: IeltsListeningQuestionDetail,
+): string {
+  const fromDetail =
+    detail?.question?.trim() ||
+    extractListeningMcPrompt(detail?.question ?? "", detail?.options ?? [])
+  if (fromDetail) return fromDetail
+
+  for (const part of test.parts) {
+    for (const block of part.contentBlocks ?? []) {
+      const fromBlock = promptFromContentBlock(block, questionId)
+      if (fromBlock) return fromBlock
+    }
+
+    const fromContent = promptFromInlineText(part.content ?? "", questionId)
+    if (fromContent) return fromContent
+  }
+
+  return `Question ${questionId}`
+}
+
+/** MC / multi-select options for review display. */
+export function resolveListeningReviewOptions(
+  test: IeltsListeningTest,
+  questionId: number,
+  detail?: IeltsListeningQuestionDetail,
+): string[] | undefined {
+  const fromDetail = (detail?.options ?? []).map((opt) => opt.trim()).filter(Boolean)
+  if (fromDetail.length) return fromDetail
+
+  for (const part of test.parts) {
+    for (const block of part.contentBlocks ?? []) {
+      if (block.type === "multiple-choice" && block.questionId === questionId) {
+        const options = block.options.map((opt) => opt.trim()).filter(Boolean)
+        if (options.length) return options
+      }
+      if (block.type === "multi-select-group" && block.questionIds.includes(questionId)) {
+        const options = block.options.map((opt) => opt.trim()).filter(Boolean)
+        if (options.length) return options
+      }
+      if (block.type === "flow-chart") {
+        const step = block.steps.find((item) => item.questionId === questionId)
+        if (step) {
+          const options = block.options.map((opt) => opt.trim()).filter(Boolean)
+          if (options.length) return options
+        }
+      }
+    }
+  }
+
+  return undefined
 }
 
 export function extractInlineQuestionIdsFromPart(part: IeltsListeningPart): Set<number> {

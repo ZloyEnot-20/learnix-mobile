@@ -13,6 +13,24 @@ export interface IeltsReadingQuestion {
   correctAnswer: string | number | string[]
 }
 
+/** One exam task block (Questions 8–10, etc.) — mirrors engnovate section-content. */
+export interface IeltsReadingQuestionSection {
+  id: string
+  title: string
+  /** Task instructions only (Complete the flow-chart… / Do the following…). */
+  instruction: string
+  /**
+   * Shared body for notes / flow-chart / summary with `[N]` blanks.
+   * Empty when questions are listed individually (T/F/NG, MC).
+   */
+  content?: string
+  /** Shared option bank (summary / matching). */
+  options?: string[]
+  startQuestion: number
+  endQuestion: number
+  questions: IeltsReadingQuestion[]
+}
+
 export interface IeltsReadingPart {
   partNumber: number
   title: string
@@ -21,6 +39,8 @@ export interface IeltsReadingPart {
   questionInstruction?: string
   passage: string
   totalQuestions: number
+  /** Preferred: task sections shown as scrollable pages. */
+  sections?: IeltsReadingQuestionSection[]
   questions: IeltsReadingQuestion[]
 }
 

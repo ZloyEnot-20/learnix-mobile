@@ -1,137 +1,121 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Animated,
-  Dimensions,
   Easing,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
+  type LayoutChangeEvent,
+  type GestureResponderHandlers,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useCountdown, formatTimer } from "../../hooks/useCountdown"
 import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
-import type { IeltsReadingQuestion, IeltsReadingTest } from "../../types/ielts"
+import type {
+  IeltsReadingQuestionSection,
+  IeltsReadingTest,
+} from "../../types/ielts"
 import {
   buildReadingAttempt,
-  cleanPartQuestionInstruction,
-  extractReadingOptionValue,
-  formatReadingChoiceLabel,
-  resolveReadingQuestionPrompt,
+  readingBandScore,
   scoreReadingTest,
 } from "../../lib/ielts-reading"
 import { HomeworkFooterButton } from "../homework/HomeworkExerciseLayout"
 import { HomeworkReadingReview } from "../homework/HomeworkReadingReview"
 import { BackButton } from "../ui/BackButton"
+import { IeltsBandScoreScreen } from "./IeltsBandScoreScreen"
 import { PassageText } from "./PassageText"
+import { ReadingSectionContent } from "./ReadingSectionContent"
 import { colors, radius, spacing } from "../../theme/tokens"
 
 const PANEL_ANIM_MS = 280
-const SCREEN_HEIGHT = Dimensions.get("window").height
-const COLLAPSE_DIVIDER_HEIGHT = 36
-const TFNG_OPTIONS = ["TRUE", "FALSE", "NOT GIVEN"] as const
+const DIVIDER_HEIGHT = 28
+const DEFAULT_BOTTOM_RATIO = 0.48
+const MIN_PASSAGE_HEIGHT = 120
+const MIN_QUESTIONS_HEIGHT = 160
 
-function isChoiceSelected(option: string, answer: string): boolean {
-  if (!answer) return false
-  const optionKey = extractReadingOptionValue(option)
-  return answer === option || answer.toLowerCase() === optionKey.toLowerCase()
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
 }
 
-function CollapseDivider({
-  onPress,
-  chevronRotation,
+function bottomBounds(containerHeight: number) {
+  const available = Math.max(0, containerHeight - DIVIDER_HEIGHT)
+  const minBottom = Math.min(MIN_QUESTIONS_HEIGHT, available)
+  const maxBottom = Math.max(minBottom, available - MIN_PASSAGE_HEIGHT)
+  return { available, minBottom, maxBottom }
+}
+
+type FlatSection = {
+  key: string
+  partIndex: number
+  section: IeltsReadingQuestionSection
+}
+
+function flattenSections(test: IeltsReadingTest): FlatSection[] {
+  const items: FlatSection[] = []
+  test.parts.forEach((part, partIndex) => {
+    if (part.sections?.length) {
+      part.sections.forEach((section, sectionIndex) => {
+        items.push({
+          key: `${part.partNumber}-${section.id}-${sectionIndex}`,
+          partIndex,
+          section,
+        })
+      })
+      return
+    }
+    // Legacy fallback: one synthetic section per part
+    items.push({
+      key: `part-${part.partNumber}`,
+      partIndex,
+      section: {
+        id: `part-${part.partNumber}`,
+        title: part.questionInstruction || `Part ${part.partNumber}`,
+        instruction: part.questionInstruction || "",
+        startQuestion: part.questions[0]?.id ?? 1,
+        endQuestion: part.questions[part.questions.length - 1]?.id ?? 1,
+        questions: part.questions,
+      },
+    })
+  })
+  return items
+}
+
+function SplitDivider({
+  onToggle,
   collapsed,
+  panHandlers,
+  draggable,
 }: {
-  onPress: () => void
-  chevronRotation: Animated.AnimatedInterpolation<string>
+  onToggle: () => void
   collapsed: boolean
+  panHandlers?: GestureResponderHandlers
+  draggable?: boolean
 }) {
   return (
-    <Pressable
-      onPress={onPress}
+    <View
       style={styles.splitDivider}
-      accessibilityRole="button"
-      accessibilityLabel={collapsed ? "Show questions" : "Hide questions"}
+      {...(draggable ? panHandlers : undefined)}
+      accessibilityRole="adjustable"
+      accessibilityLabel={
+        collapsed ? "Show questions" : "Drag to resize, or tap button to hide questions"
+      }
       accessibilityState={{ expanded: !collapsed }}
     >
-      <View style={styles.splitDividerButton}>
-        <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
-          <Ionicons name="chevron-down" size={16} color="#FFFFFF" />
-        </Animated.View>
-      </View>
-    </Pressable>
-  )
-}
-
-function QuestionInput({
-  question,
-  answer,
-  onChange,
-}: {
-  question: IeltsReadingQuestion
-  answer: string
-  onChange: (value: string) => void
-}) {
-  if (question.type === "true-false-not-given" || question.type === "yes-no-not-given") {
-    const options =
-      question.type === "yes-no-not-given"
-        ? (["YES", "NO", "NOT GIVEN"] as const)
-        : TFNG_OPTIONS
-    return (
-      <View style={styles.optionRow}>
-        {options.map((opt) => {
-          const selected = answer.toUpperCase() === opt
-          return (
-            <Pressable
-              key={opt}
-              onPress={() => onChange(opt)}
-              style={[styles.optionPill, selected && styles.optionPillSelected]}
-            >
-              <Text style={[styles.optionPillText, selected && styles.optionPillTextSelected]}>
-                {opt === "NOT GIVEN" ? "N/G" : opt[0] + opt.slice(1).toLowerCase()}
-              </Text>
-            </Pressable>
-          )
-        })}
-      </View>
-    )
-  }
-
-  if (question.type === "multiple-choice" && question.options?.length) {
-    return (
-      <View style={styles.choiceList}>
-        {question.options.map((opt, index) => {
-          const selected = isChoiceSelected(opt, answer)
-          const optionValue = extractReadingOptionValue(opt)
-          return (
-            <Pressable
-              key={`${index}-${opt}`}
-              onPress={() => onChange(optionValue)}
-              style={[styles.choiceCard, selected && styles.choiceCardSelected]}
-            >
-              <Text style={[styles.choiceLabel, selected && styles.choiceLabelSelected]}>
-                {formatReadingChoiceLabel(opt, index)}
-              </Text>
-            </Pressable>
-          )
-        })}
-      </View>
-    )
-  }
-
-  return (
-    <TextInput
-      value={answer}
-      onChangeText={onChange}
-      placeholder="Your answer"
-      placeholderTextColor={colors.textMuted}
-      style={styles.textInput}
-      autoCapitalize="none"
-      autoCorrect={false}
-    />
+      <Pressable
+        onPress={onToggle}
+        hitSlop={12}
+        style={styles.splitDividerHit}
+        accessibilityRole="button"
+        accessibilityLabel={collapsed ? "Show questions" : "Hide questions"}
+      >
+        <View style={styles.splitDividerBar} />
+      </Pressable>
+    </View>
   )
 }
 
@@ -167,65 +151,10 @@ function ReadingTimer({ secondsLeft }: { secondsLeft: number | null }) {
   )
 }
 
-function CollapsibleInstruction({
-  instruction,
-  expanded,
-  onToggle,
-}: {
-  instruction: string
-  expanded: boolean
-  onToggle: () => void
-}) {
-  return (
-    <View style={styles.instructionWrap}>
-      <Pressable
-        onPress={onToggle}
-        style={styles.instructionToggle}
-        accessibilityRole="button"
-        accessibilityState={{ expanded }}
-      >
-        <Text style={styles.instructionToggleLabel}>Instructions</Text>
-        <Ionicons
-          name={expanded ? "chevron-up" : "chevron-down"}
-          size={16}
-          color={colors.textSecondary}
-        />
-      </Pressable>
-      {expanded ? <Text style={styles.questionInstruction}>{instruction}</Text> : null}
-    </View>
-  )
-}
-
-function ResultsView({
-  correct,
-  total,
-  onExit,
-}: {
-  correct: number
-  total: number
-  onExit: () => void
-}) {
-  const pct = total > 0 ? Math.round((correct / total) * 100) : 0
-  return (
-    <View style={styles.resultsWrap}>
-      <View style={styles.resultsCard}>
-        <Ionicons name="checkmark-circle" size={48} color={colors.success} />
-        <Text style={styles.resultsTitle}>Practice complete</Text>
-        <Text style={styles.resultsScore}>
-          {correct}/{total} correct ({pct}%)
-        </Text>
-        <Text style={styles.resultsHint}>
-          Review your answers and re-read the passage to reinforce key details.
-        </Text>
-      </View>
-      <HomeworkFooterButton label="Done" onPress={onExit} />
-    </View>
-  )
-}
-
 export function IeltsReadingRunner({
   test,
   onExit,
+  onGoHome,
   homeworkId,
   studentId,
   sessionStartedAt: externalSessionStart,
@@ -235,6 +164,7 @@ export function IeltsReadingRunner({
 }: {
   test: IeltsReadingTest
   onExit: () => void
+  onGoHome?: () => void
   homeworkId?: string
   studentId?: string
   sessionStartedAt?: number
@@ -243,23 +173,36 @@ export function IeltsReadingRunner({
   onBack?: () => void
 }) {
   const insets = useSafeAreaInsets()
-  const [partIndex, setPartIndex] = useState(0)
-  const [questionIndex, setQuestionIndex] = useState(0)
+  const flatSections = useMemo(() => flattenSections(test), [test])
+  const [sectionIndex, setSectionIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [finished, setFinished] = useState(false)
-  const [instructionExpanded, setInstructionExpanded] = useState(true)
+  const [showReview, setShowReview] = useState(false)
   const [questionsCollapsed, setQuestionsCollapsed] = useState(false)
+  const [splitVisible, setSplitVisible] = useState(true)
   const collapseProgress = useRef(new Animated.Value(1)).current
   const panelAnimating = useRef(false)
+  const questionScrollRef = useRef<ScrollView>(null)
+  const containerHeightRef = useRef(0)
+  const containerAnim = useRef(new Animated.Value(0)).current
+  const bottomAnim = useRef(new Animated.Value(0)).current
+  const bottomHeightRef = useRef(0)
+  const savedBottomHeightRef = useRef(0)
+  const dragStartBottomRef = useRef(0)
+  const questionsCollapsedRef = useRef(false)
+  const passageHeightAnim = useRef(
+    Animated.subtract(Animated.subtract(containerAnim, bottomAnim), DIVIDER_HEIGHT),
+  ).current
   const [sessionStartedAt] = useState(() => externalSessionStart ?? Date.now())
   const submittedRef = React.useRef(false)
 
   useKeepAwakeWhile(!finished)
 
   const timerMinutes = timeLimitMinutes ?? test.totalTimeMinutes
-  const part = test.parts[partIndex]
-  const questions = part.questions
-  const currentQuestion = questions[questionIndex]
+  const current = flatSections[sectionIndex] ?? flatSections[0]
+  const part = test.parts[current?.partIndex ?? 0]
+  const section = current?.section
+
   const secondsLeft = useCountdown(
     timerMinutes,
     () => setFinished(true),
@@ -268,58 +211,145 @@ export function IeltsReadingRunner({
     sessionStartedAt,
   )
 
-  const partInstruction = useMemo(
-    () => cleanPartQuestionInstruction(part.questionInstruction),
-    [part.questionInstruction],
-  )
-
-  const questionPrompt = useMemo(
-    () =>
-      resolveReadingQuestionPrompt(
-        currentQuestion.question,
-        currentQuestion.options,
-        part.questionInstruction,
-      ),
-    [currentQuestion, part.questionInstruction],
-  )
+  useEffect(() => {
+    questionScrollRef.current?.scrollTo({ y: 0, animated: false })
+  }, [sectionIndex])
 
   useEffect(() => {
-    setInstructionExpanded(true)
-  }, [partIndex])
+    questionsCollapsedRef.current = questionsCollapsed
+  }, [questionsCollapsed])
+
+  const setBottomHeight = useCallback(
+    (next: number) => {
+      bottomHeightRef.current = next
+      bottomAnim.setValue(next)
+    },
+    [bottomAnim],
+  )
+
+  const onSplitLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const height = event.nativeEvent.layout.height
+      if (height <= 0) return
+
+      containerHeightRef.current = height
+      containerAnim.setValue(height)
+
+      const { available, minBottom, maxBottom } = bottomBounds(height)
+      if (bottomHeightRef.current <= 0 && !questionsCollapsedRef.current) {
+        const initial = clamp(available * DEFAULT_BOTTOM_RATIO, minBottom, maxBottom)
+        setBottomHeight(initial)
+        savedBottomHeightRef.current = initial
+        return
+      }
+
+      if (!questionsCollapsedRef.current) {
+        const clamped = clamp(bottomHeightRef.current, minBottom, maxBottom)
+        if (clamped !== bottomHeightRef.current) setBottomHeight(clamped)
+        savedBottomHeightRef.current = clamp(
+          savedBottomHeightRef.current || clamped,
+          minBottom,
+          maxBottom,
+        )
+      }
+    },
+    [containerAnim, setBottomHeight],
+  )
 
   const toggleQuestionsPanel = useCallback(() => {
     if (panelAnimating.current) return
 
-    const nextCollapsed = !questionsCollapsed
+    const nextCollapsed = !questionsCollapsedRef.current
     panelAnimating.current = true
-    setQuestionsCollapsed(nextCollapsed)
 
-    Animated.timing(collapseProgress, {
-      toValue: nextCollapsed ? 0 : 1,
-      duration: PANEL_ANIM_MS,
-      easing: Easing.bezier(0.4, 0, 0.2, 1),
-      useNativeDriver: false,
-    }).start(() => {
+    if (nextCollapsed) {
+      savedBottomHeightRef.current = bottomHeightRef.current
+      questionsCollapsedRef.current = true
+      setQuestionsCollapsed(true)
+
+      Animated.parallel([
+        Animated.timing(collapseProgress, {
+          toValue: 0,
+          duration: PANEL_ANIM_MS,
+          easing: Easing.bezier(0.4, 0, 0.2, 1),
+          useNativeDriver: false,
+        }),
+        Animated.timing(bottomAnim, {
+          toValue: 0,
+          duration: PANEL_ANIM_MS,
+          easing: Easing.bezier(0.4, 0, 0.2, 1),
+          useNativeDriver: false,
+        }),
+      ]).start(() => {
+        bottomHeightRef.current = 0
+        setSplitVisible(false)
+        panelAnimating.current = false
+      })
+      return
+    }
+
+    const { minBottom, maxBottom } = bottomBounds(containerHeightRef.current)
+    const expandTarget = clamp(
+      savedBottomHeightRef.current || containerHeightRef.current * DEFAULT_BOTTOM_RATIO,
+      minBottom,
+      maxBottom,
+    )
+
+    setSplitVisible(true)
+    questionsCollapsedRef.current = false
+    setQuestionsCollapsed(false)
+    bottomAnim.setValue(0)
+    bottomHeightRef.current = 0
+
+    Animated.parallel([
+      Animated.timing(collapseProgress, {
+        toValue: 1,
+        duration: PANEL_ANIM_MS,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        useNativeDriver: false,
+      }),
+      Animated.timing(bottomAnim, {
+        toValue: expandTarget,
+        duration: PANEL_ANIM_MS,
+        easing: Easing.bezier(0.4, 0, 0.2, 1),
+        useNativeDriver: false,
+      }),
+    ]).start(() => {
+      bottomHeightRef.current = expandTarget
       panelAnimating.current = false
     })
-  }, [collapseProgress, questionsCollapsed])
+  }, [bottomAnim, collapseProgress])
 
-  const panelFlex = collapseProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 1],
-  })
+  const dividerPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        !questionsCollapsedRef.current &&
+        !panelAnimating.current &&
+        Math.abs(gesture.dy) > 2,
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        !questionsCollapsedRef.current &&
+        !panelAnimating.current &&
+        Math.abs(gesture.dy) > 2,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        dragStartBottomRef.current = bottomHeightRef.current
+      },
+      onPanResponderMove: (_, gesture) => {
+        const { minBottom, maxBottom } = bottomBounds(containerHeightRef.current)
+        const next = clamp(dragStartBottomRef.current - gesture.dy, minBottom, maxBottom)
+        bottomHeightRef.current = next
+        bottomAnim.setValue(next)
+      },
+      onPanResponderRelease: () => {
+        savedBottomHeightRef.current = bottomHeightRef.current
+      },
+      onPanResponderTerminate: () => {
+        savedBottomHeightRef.current = bottomHeightRef.current
+      },
+    }),
+  ).current
 
-  const animatedPanelOpacity = collapseProgress.interpolate({
-    inputRange: [0, 0.35, 1],
-    outputRange: [0, 0.92, 1],
-  })
-
-  const chevronRotation = collapseProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["180deg", "0deg"],
-  })
-
-  const inlineDividerOpacity = collapseProgress
   const bottomDividerOpacity = collapseProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [1, 0],
@@ -330,25 +360,14 @@ export function IeltsReadingRunner({
   }
 
   const goNext = () => {
-    if (questionIndex + 1 < questions.length) {
-      setQuestionIndex((i) => i + 1)
-      return
-    }
-    if (partIndex + 1 < test.parts.length) {
-      setPartIndex((i) => i + 1)
-      setQuestionIndex(0)
+    if (sectionIndex + 1 < flatSections.length) {
+      setSectionIndex((i) => i + 1)
     }
   }
 
   const goPrev = () => {
-    if (questionIndex > 0) {
-      setQuestionIndex((i) => i - 1)
-      return
-    }
-    if (partIndex > 0) {
-      const prevPart = test.parts[partIndex - 1]
-      setPartIndex((i) => i - 1)
-      setQuestionIndex(prevPart.questions.length - 1)
+    if (sectionIndex > 0) {
+      setSectionIndex((i) => i - 1)
     }
   }
 
@@ -372,30 +391,49 @@ export function IeltsReadingRunner({
   if (finished) {
     const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
     const attempt = buildReadingAttempt(test, answers, durationSeconds)
+    const { correct, total } = scoreReadingTest(test, answers)
+    const band = readingBandScore(correct)
+    const goHome = onGoHome ?? onExit
 
-    if (homeworkId) {
+    if (showReview) {
       return (
         <HomeworkReadingReview
           test={test}
           attempt={attempt}
           title={test.title}
           subject="reading"
+          onBack={() => setShowReview(false)}
         />
       )
     }
 
-    const { correct, total } = scoreReadingTest(test, answers)
-    return <ResultsView correct={correct} total={total} onExit={onExit} />
+    return (
+      <IeltsBandScoreScreen
+        skill="reading"
+        title={test.title}
+        band={band}
+        correct={correct}
+        total={total}
+        onViewResults={() => setShowReview(true)}
+        onGoHome={goHome}
+      />
+    )
   }
 
-  const atStart = partIndex === 0 && questionIndex === 0
-  const atEnd =
-    partIndex === test.parts.length - 1 && questionIndex === questions.length - 1
+  if (!section || !part) return null
+
+  const atStart = sectionIndex === 0
+  const atEnd = sectionIndex >= flatSections.length - 1
 
   return (
     <View style={styles.root}>
-      <View style={styles.split}>
-        <View style={styles.passagePane}>
+      <View style={styles.split} onLayout={onSplitLayout}>
+        <Animated.View
+          style={[
+            styles.passagePane,
+            { height: splitVisible ? passageHeightAnim : containerAnim },
+          ]}
+        >
           <View style={styles.passageHeader}>
             {onBack ? (
               <View style={styles.passageHeaderSide}>
@@ -410,9 +448,9 @@ export function IeltsReadingRunner({
             style={styles.flex}
             contentContainerStyle={[
               styles.passageScroll,
-              questionsCollapsed && {
+              !splitVisible && {
                 paddingBottom:
-                  COLLAPSE_DIVIDER_HEIGHT + Math.max(insets.bottom, spacing.xs) + spacing.sm,
+                  DIVIDER_HEIGHT + Math.max(insets.bottom, spacing.xs) + spacing.sm,
               },
             ]}
             showsVerticalScrollIndicator
@@ -422,83 +460,50 @@ export function IeltsReadingRunner({
             ) : null}
             <PassageText text={part.passage} />
           </ScrollView>
-        </View>
-
-        <Animated.View
-          style={{
-            opacity: inlineDividerOpacity,
-            maxHeight: collapseProgress.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0, 36],
-            }),
-            overflow: "hidden",
-          }}
-          pointerEvents={questionsCollapsed ? "none" : "auto"}
-        >
-          <CollapseDivider
-            onPress={toggleQuestionsPanel}
-            chevronRotation={chevronRotation}
-            collapsed={questionsCollapsed}
-          />
         </Animated.View>
 
-        <Animated.View
-          style={[
-            styles.bottomPanel,
-            {
-              flex: panelFlex,
-              opacity: animatedPanelOpacity,
-              maxHeight: collapseProgress.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, SCREEN_HEIGHT],
-              }),
-            },
-          ]}
-          pointerEvents={questionsCollapsed ? "none" : "auto"}
-        >
-          <View style={styles.questionPane}>
-              <ScrollView
-                style={styles.flex}
-                contentContainerStyle={styles.questionScroll}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator
-              >
-                <View style={styles.questionCard}>
-                  {partInstruction ? (
-                    <CollapsibleInstruction
-                      instruction={partInstruction}
-                      expanded={instructionExpanded}
-                      onToggle={() => setInstructionExpanded((open) => !open)}
-                    />
-                  ) : null}
-                  {questionPrompt ? (
-                    <Text style={styles.questionText}>{questionPrompt}</Text>
-                  ) : null}
-                  <QuestionInput
-                    question={currentQuestion}
-                    answer={answers[currentQuestion.id] ?? ""}
-                    onChange={(value) => setAnswer(currentQuestion.id, value)}
-                  />
-                </View>
-              </ScrollView>
+        {splitVisible ? (
+          <>
+            <SplitDivider
+              onToggle={toggleQuestionsPanel}
+              collapsed={questionsCollapsed}
+              panHandlers={dividerPan.panHandlers}
+              draggable={!questionsCollapsed}
+            />
 
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.navRow}
-                style={styles.navRowWrap}
-              >
-                {test.parts.flatMap((p, pi) =>
-                  p.questions.map((q, qi) => {
-                    const active = pi === partIndex && qi === questionIndex
-                    const done = !!(answers[q.id] ?? "").trim()
+            <Animated.View style={[styles.bottomPanel, { height: bottomAnim }]}>
+              <View style={styles.questionPane}>
+                <ScrollView
+                  ref={questionScrollRef}
+                  style={styles.flex}
+                  contentContainerStyle={styles.questionScroll}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator
+                >
+                  <ReadingSectionContent
+                    section={section}
+                    answers={answers}
+                    onAnswerChange={setAnswer}
+                  />
+                </ScrollView>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.navRow}
+                  style={styles.navRowWrap}
+                >
+                  {flatSections.map((item, index) => {
+                    const active = index === sectionIndex
+                    const done = item.section.questions.every((q) => (answers[q.id] ?? "").trim())
+                    const label =
+                      item.section.startQuestion === item.section.endQuestion
+                        ? String(item.section.startQuestion)
+                        : `${item.section.startQuestion}–${item.section.endQuestion}`
                     return (
                       <Pressable
-                        key={q.id}
-                        onPress={() => {
-                          setPartIndex(pi)
-                          setQuestionIndex(qi)
-                        }}
+                        key={item.key}
+                        onPress={() => setSectionIndex(index)}
                         style={[
                           styles.navChip,
                           active && styles.navChipActive,
@@ -512,36 +517,37 @@ export function IeltsReadingRunner({
                             done && !active && styles.navChipTextDone,
                           ]}
                         >
-                          {q.id}
+                          {label}
                         </Text>
                       </Pressable>
                     )
-                  }),
-                )}
-              </ScrollView>
-            </View>
+                  })}
+                </ScrollView>
+              </View>
 
-            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
-              <Pressable
-                onPress={goPrev}
-                disabled={atStart}
-                style={[styles.secondaryBtn, styles.footerBtn, atStart && styles.footerBtnDisabled]}
-              >
-                <Text style={[styles.secondaryBtnText, atStart && styles.footerBtnTextDisabled]}>
-                  Previous
-                </Text>
-              </Pressable>
-              {atEnd ? (
-                <View style={styles.footerBtn}>
-                  <HomeworkFooterButton label="Submit" onPress={submit} />
-                </View>
-              ) : (
-                <View style={styles.footerBtn}>
-                  <HomeworkFooterButton label="Next" onPress={goNext} />
-                </View>
-              )}
-            </View>
-        </Animated.View>
+              <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+                <Pressable
+                  onPress={goPrev}
+                  disabled={atStart}
+                  style={[styles.secondaryBtn, styles.footerBtn, atStart && styles.footerBtnDisabled]}
+                >
+                  <Text style={[styles.secondaryBtnText, atStart && styles.footerBtnTextDisabled]}>
+                    Previous
+                  </Text>
+                </Pressable>
+                {atEnd ? (
+                  <View style={styles.footerBtn}>
+                    <HomeworkFooterButton label="Submit" onPress={submit} />
+                  </View>
+                ) : (
+                  <View style={styles.footerBtn}>
+                    <HomeworkFooterButton label="Next" onPress={goNext} />
+                  </View>
+                )}
+              </View>
+            </Animated.View>
+          </>
+        ) : null}
       </View>
 
       <Animated.View
@@ -552,11 +558,10 @@ export function IeltsReadingRunner({
             paddingBottom: Math.max(insets.bottom, spacing.xs),
           },
         ]}
-        pointerEvents={questionsCollapsed ? "auto" : "none"}
+        pointerEvents={!splitVisible ? "auto" : "none"}
       >
-        <CollapseDivider
-          onPress={toggleQuestionsPanel}
-          chevronRotation={chevronRotation}
+        <SplitDivider
+          onToggle={toggleQuestionsPanel}
           collapsed={questionsCollapsed}
         />
       </Animated.View>
@@ -583,9 +588,7 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "center",
   },
-  passageHeaderSpacer: {
-    flex: 1,
-  },
+  passageHeaderSpacer: { flex: 1 },
   timerBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -603,12 +606,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  timerBadgeUrgent: {
-    backgroundColor: colors.warningBg,
-  },
-  timerBadgeExpired: {
-    backgroundColor: colors.errorBg,
-  },
+  timerBadgeUrgent: { backgroundColor: colors.warningBg },
+  timerBadgeExpired: { backgroundColor: colors.errorBg },
   timerText: {
     fontSize: 14,
     fontWeight: "700",
@@ -617,24 +616,34 @@ const styles = StyleSheet.create({
   },
   timerTextUrgent: { color: "#B45309" },
   timerTextExpired: { color: colors.error },
-  split: {
-    flex: 1,
-    minHeight: 0,
-  },
-  bottomPanel: {
+  split: { flex: 1, minHeight: 0 },
+  bottomPanel: { minHeight: 0, overflow: "hidden" },
+  passagePane: {
     minHeight: 0,
     overflow: "hidden",
-  },
-  passagePane: {
-    flex: 1,
-    minHeight: 0,
     backgroundColor: "#FBF9F6",
   },
   splitDivider: {
+    height: DIVIDER_HEIGHT,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 2,
-    backgroundColor: colors.borderLight,
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: colors.border,
+  },
+  splitDividerHit: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 20,
+  },
+  splitDividerBar: {
+    width: 52,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.text,
+    opacity: 0.45,
   },
   dividerBottomDock: {
     position: "absolute",
@@ -645,14 +654,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
-  },
-  splitDividerButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
   },
   questionPane: {
     flex: 1,
@@ -666,8 +667,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   questionScroll: {
-    padding: spacing.md,
-    paddingBottom: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
   passageTitle: {
     fontSize: 20,
@@ -675,83 +677,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 28,
     marginBottom: spacing.xs,
-  },
-  instructionWrap: {
-    gap: spacing.xs,
-  },
-  instructionToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.sm,
-  },
-  instructionToggleLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.primaryDark,
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
-  questionCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  questionInstruction: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 20,
-  },
-  questionText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: colors.text,
-    lineHeight: 24,
-  },
-  optionRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  optionPill: {
-    flexGrow: 1,
-    minWidth: "30%",
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    alignItems: "center",
-  },
-  optionPillSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  optionPillText: { fontSize: 13, fontWeight: "600", color: colors.textSecondary },
-  optionPillTextSelected: { color: colors.primaryDark },
-  choiceList: { gap: 8 },
-  choiceCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-    padding: 12,
-  },
-  choiceCardSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  choiceLabel: { fontSize: 14, color: colors.text, lineHeight: 20 },
-  choiceLabelSelected: { color: colors.primaryDark, fontWeight: "600" },
-  textInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    backgroundColor: colors.background,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: colors.text,
   },
   navRowWrap: {
     flexGrow: 0,
@@ -761,9 +686,10 @@ const styles = StyleSheet.create({
   },
   navRow: { gap: 8, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   navChip: {
-    minWidth: 36,
-    height: 36,
-    borderRadius: 18,
+    minWidth: 44,
+    height: 32,
+    paddingHorizontal: 10,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: "center",
@@ -778,7 +704,7 @@ const styles = StyleSheet.create({
     borderColor: colors.success + "66",
     backgroundColor: colors.successBg,
   },
-  navChipText: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
+  navChipText: { fontSize: 12, fontWeight: "700", color: colors.textMuted },
   navChipTextActive: { color: colors.primaryDark },
   navChipTextDone: { color: colors.success },
   footer: {
@@ -790,39 +716,22 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     backgroundColor: colors.background,
   },
-  resultsWrap: {
-    flex: 1,
-    padding: spacing.screen,
-    justifyContent: "center",
-    gap: spacing.lg,
-  },
-  resultsCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  resultsTitle: { fontSize: 20, fontWeight: "800", color: colors.text },
-  resultsScore: { fontSize: 28, fontWeight: "800", color: colors.primaryDark },
-  resultsHint: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  secondaryBtn: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  secondaryBtnText: { fontSize: 15, fontWeight: "700", color: colors.text },
   footerBtn: { flex: 1 },
   footerBtnDisabled: { opacity: 0.45 },
   footerBtnTextDisabled: { color: colors.textMuted },
+  secondaryBtn: {
+    minHeight: 48,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+  },
+  secondaryBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.text,
+  },
 })

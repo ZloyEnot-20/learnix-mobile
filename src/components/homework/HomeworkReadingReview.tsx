@@ -14,6 +14,7 @@ interface HomeworkReadingReviewProps {
   title: string
   subject?: Subject
   completedAt?: string
+  onBack?: () => void
 }
 
 type ViewMode = "list" | "single"
@@ -23,6 +24,34 @@ const STATUS_META = {
   correct: { icon: "checkmark" as const, color: colors.success, bg: colors.successBg },
   incorrect: { icon: "close" as const, color: colors.error, bg: colors.errorBg },
   skipped: { icon: "remove" as const, color: colors.textMuted, bg: colors.borderLight },
+}
+
+function AnswerDetails({ item }: { item: ReadingReviewItem }) {
+  const isCorrect = item.status === "correct"
+
+  return (
+    <View style={styles.qDetails}>
+      {item.userAnswer ? (
+        <View style={styles.detailRow}>
+          <Ionicons
+            name={isCorrect ? "checkmark" : "close"}
+            size={14}
+            color={isCorrect ? colors.success : colors.error}
+          />
+          <Text style={isCorrect ? styles.detailRight : styles.detailWrong}>
+            You: {item.userAnswer}
+          </Text>
+        </View>
+      ) : null}
+
+      {!isCorrect ? (
+        <View style={styles.detailRow}>
+          <Ionicons name="checkmark" size={14} color={colors.success} />
+          <Text style={styles.detailRight}>Correct: {item.correctAnswer}</Text>
+        </View>
+      ) : null}
+    </View>
+  )
 }
 
 function ScoreRing({ correct, total }: { correct: number; total: number }) {
@@ -75,23 +104,7 @@ function QuestionCard({
             {item.prompt}
           </Text>
 
-          {expanded ? (
-            <View style={styles.qDetails}>
-              {item.userAnswer ? (
-                <View style={styles.detailRow}>
-                  <Ionicons name="close" size={14} color={colors.error} />
-                  <Text style={styles.detailWrong}>You: {item.userAnswer}</Text>
-                </View>
-              ) : null}
-
-              {item.status !== "correct" ? (
-                <View style={styles.detailRow}>
-                  <Ionicons name="checkmark" size={14} color={colors.success} />
-                  <Text style={styles.detailRight}>Correct: {item.correctAnswer}</Text>
-                </View>
-              ) : null}
-            </View>
-          ) : null}
+          {expanded ? <AnswerDetails item={item} /> : null}
         </View>
 
         <Ionicons
@@ -131,21 +144,7 @@ function QuestionDetail({
       </Text>
       <Text style={styles.singlePrompt}>{item.prompt}</Text>
 
-      <View style={styles.qDetails}>
-        {item.userAnswer ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="close" size={14} color={colors.error} />
-            <Text style={styles.detailWrong}>You: {item.userAnswer}</Text>
-          </View>
-        ) : null}
-
-        {item.status !== "correct" ? (
-          <View style={styles.detailRow}>
-            <Ionicons name="checkmark" size={14} color={colors.success} />
-            <Text style={styles.detailRight}>Correct: {item.correctAnswer}</Text>
-          </View>
-        ) : null}
-      </View>
+      <AnswerDetails item={item} />
     </View>
   )
 }
@@ -156,6 +155,7 @@ export function HomeworkReadingReview({
   title,
   subject = "reading",
   completedAt,
+  onBack,
 }: HomeworkReadingReviewProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("list")
   const [filter, setFilter] = useState<FilterMode>("all")
@@ -188,7 +188,7 @@ export function HomeworkReadingReview({
     correctCount < totalQuestions
 
   return (
-    <HomeworkReviewShell title={title} subject={subject}>
+    <HomeworkReviewShell title={title} subject={subject} onBack={onBack}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}

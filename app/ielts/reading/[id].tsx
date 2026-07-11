@@ -49,6 +49,7 @@ export default function IeltsReadingTaskScreen() {
             test={test}
             onExit={() => router.back()}
             onBack={() => router.back()}
+            onGoHome={() => router.replace("/(tabs)")}
           />
         )}
       </SafeAreaView>

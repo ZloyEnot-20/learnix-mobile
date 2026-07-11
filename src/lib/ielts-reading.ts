@@ -3,47 +3,54 @@ import type { IeltsReadingCatalogItem, IeltsReadingQuestion, IeltsReadingTest } 
 
 import readingIndex from "../data/ielts-reading/index.json"
 import marieCuriePart1 from "../data/ielts-reading/marie-curie-part1.json"
+import { LOCAL_READING_TESTS } from "../data/ielts-reading/tests-registry.generated"
 import { exercisesApi } from "./api"
 import { runPerfTrace } from "./perf"
 
 const LOCAL_TESTS: Record<string, IeltsReadingTest> = {
   "marie-curie-part1": marieCuriePart1 as IeltsReadingTest,
+  ...LOCAL_READING_TESTS,
 }
 
+type IndexEntry = IeltsReadingCatalogItem & { book?: number; test?: number }
+
 export async function listIeltsReadingTasks(): Promise<IeltsReadingCatalogItem[]> {
-  try {
-    const remote = await exercisesApi.readingSummaries()
-    if (remote.length > 0) {
-      return remote
-        .map((item) => ({
-          id: item.slug,
-          title: item.title,
-          subtitle: item.subtitle,
-          estimatedMinutes: item.totalTimeMinutes,
-          questionCount: item.questionCount,
-          file: `${item.slug}.json`,
-        }))
-        .sort((a, b) => a.title.localeCompare(b.title))
-    }
-  } catch {
-    // fall back to bundled catalogue
+  const items = (readingIndex as { items: IndexEntry[] }).items
+  if (items.length > 0) {
+    return items
+      .slice()
+      .sort((a, b) => (b.book ?? 0) - (a.book ?? 0) || (a.test ?? 0) - (b.test ?? 0))
   }
 
-  const items = (readingIndex as { items: IeltsReadingCatalogItem[] }).items
-  return items.slice().sort((a, b) => a.title.localeCompare(b.title))
+  try {
+    const remote = await exercisesApi.readingSummaries()
+    return remote
+      .map((item) => ({
+        id: item.slug,
+        title: item.title,
+        subtitle: item.subtitle,
+        estimatedMinutes: item.totalTimeMinutes,
+        questionCount: item.questionCount,
+        file: `${item.slug}.json`,
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title))
+  } catch {
+    return []
+  }
 }
 
 export async function getIeltsReadingTest(id: string): Promise<IeltsReadingTest | null> {
   return runPerfTrace(
     "load_ielts_test",
     async () => {
+      if (LOCAL_TESTS[id]) return LOCAL_TESTS[id]
       try {
         const doc = await exercisesApi.reading(id)
         if (doc?.data) return doc.data
       } catch {
-        // fall back to bundled test
+        // no remote fallback
       }
-      return LOCAL_TESTS[id] ?? null
+      return null
     },
     { testType: "ielts" },
   )
@@ -85,8 +92,10 @@ export function extractReadingOptionValue(option: string): string {
   const trimmed = decodeReadingText(option).trim()
   const roman = trimmed.match(/^((?:i{1,3}|iv|v|vi{0,3}|ix|x))\.(?:\s|$)/i)
   if (roman) return roman[1].toLowerCase()
-  const letter = trimmed.match(/^([A-Z])\.(?:\s|$)/)
+  const letter = trimmed.match(/^([A-Z])(?:\.|\s)(?:\s|$)/)
   if (letter) return letter[1]
+  const letterOnly = trimmed.match(/^([A-Z])\.(?:\s|$)/)
+  if (letterOnly) return letterOnly[1]
   return trimmed
 }
 
@@ -124,22 +133,33 @@ export function isReadingAnswerCorrect(
     )
   }
 
-  return normalized.toUpperCase() === String(question.correctAnswer).trim().toUpperCase()
+  const correctRaw = String(question.correctAnswer).trim()
+  const variants = correctRaw
+    .split(/\s*\/\s*/)
+    .map((part) => part.trim().toUpperCase())
+    .filter(Boolean)
+  const user = normalized.toUpperCase()
+  return variants.some((variant) => variant === user)
 }
 
 export function decodeReadingText(value: string): string {
-  return value
-    .replace(/&rsquo;|&#8217;|&apos;/gi, "'")
-    .replace(/&lsquo;|&#8216;/gi, "'")
-    .replace(/&ldquo;|&#8220;/gi, '"')
-    .replace(/&rdquo;|&#8221;/gi, '"')
-    .replace(/&ndash;|&#8211;/gi, "–")
-    .replace(/&mdash;|&#8212;/gi, "—")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/\u00a0/g, " ")
+  return (
+    value
+      .replace(/&rsquo;|&#8217;|&apos;/gi, "'")
+      .replace(/&lsquo;|&#8216;/gi, "'")
+      .replace(/&ldquo;|&#8220;/gi, '"')
+      .replace(/&rdquo;|&#8221;/gi, '"')
+      .replace(/&ndash;|&#8211;/gi, "–")
+      .replace(/&mdash;|&#8212;/gi, "—")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/\u00a0/g, " ")
+      // Strip leftover HTML (e.g. <em>H. naledi</em>) so tags never show in RN Text
+      .replace(/<\/?[a-zA-Z][^>]*>/g, "")
+      .replace(/\s{2,}/g, " ")
+  )
 }
 
 export function isPlaceholderReadingQuestion(text: string): boolean {
@@ -224,6 +244,28 @@ export function scoreReadingTest(
     }
   }
   return { correct, total }
+}
+
+const READING_BAND_SCORE_TABLE = [
+  { min: 39, max: 40, band: 9.0 },
+  { min: 37, max: 38, band: 8.5 },
+  { min: 35, max: 36, band: 8.0 },
+  { min: 33, max: 34, band: 7.5 },
+  { min: 30, max: 32, band: 7.0 },
+  { min: 27, max: 29, band: 6.5 },
+  { min: 23, max: 26, band: 6.0 },
+  { min: 19, max: 22, band: 5.5 },
+  { min: 15, max: 18, band: 5.0 },
+  { min: 13, max: 14, band: 4.5 },
+  { min: 10, max: 12, band: 4.0 },
+  { min: 0, max: 9, band: 3.5 },
+]
+
+export function readingBandScore(correct: number): number {
+  return (
+    READING_BAND_SCORE_TABLE.find((range) => correct >= range.min && correct <= range.max)?.band ??
+    0
+  )
 }
 
 export function formatReadingCorrectAnswer(question: IeltsReadingQuestion): string {

@@ -18,6 +18,9 @@ function normalizePassageSource(text: string): string {
     .replace(/\n(\d+)\n/g, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n[ \t]+/g, "\n")
+    // Inline scientific names / emphasis often scraped as orphan paragraphs
+    .replace(/([^\n])\n\n((?:[A-Z]\.\s*)?[a-z][a-z-]*(?:\s+[a-z][a-z-]*){0,2})\n\n([a-z(])/g, "$1 $2 $3")
+    .replace(/([^\n])\n((?:[A-Z]\.\s*)?[a-z][a-z-]{1,24})\n([a-z(])/g, "$1 $2 $3")
     .trim()
 }
 

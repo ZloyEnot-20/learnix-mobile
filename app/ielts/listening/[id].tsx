@@ -50,6 +50,7 @@ export default function IeltsListeningTaskScreen() {
             testId={id}
             onExit={() => router.back()}
             onBack={() => router.back()}
+            onGoHome={() => router.replace("/(tabs)")}
           />
         )}
       </SafeAreaView>

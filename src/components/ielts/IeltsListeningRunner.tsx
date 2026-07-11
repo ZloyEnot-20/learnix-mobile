@@ -26,10 +26,10 @@ import {
 import { ListeningExamAudio, type ListeningExamAudioHandle } from "./ListeningExamAudio"
 import { ListeningExamAudioSequence } from "./ListeningExamAudioSequence"
 import { resolveListeningFullAudioUri } from "../../lib/ielts-listening-audio"
-import { HomeworkFooterButton } from "../homework/HomeworkExerciseLayout"
 import { HomeworkListeningReview } from "../homework/HomeworkListeningReview"
 import { HomeworkReportIssueButton } from "../homework/HomeworkReportIssue"
 import { BackButton } from "../ui/BackButton"
+import { IeltsBandScoreScreen } from "./IeltsBandScoreScreen"
 import { ListeningContent } from "./ListeningContent"
 import type { IssueReportPayload } from "../../types/issue-report"
 import { colors, radius, spacing, subjectColors } from "../../theme/tokens"
@@ -209,48 +209,12 @@ function StandaloneQuestion({
   )
 }
 
-function ResultsView({
-  correct,
-  total,
-  band,
-  onExit,
-  onRetry,
-}: {
-  correct: number
-  total: number
-  band: number
-  onExit: () => void
-  onRetry: () => void
-}) {
-  const pct = total > 0 ? Math.round((correct / total) * 100) : 0
-  return (
-    <View style={styles.resultsWrap}>
-      <View style={styles.resultsCard}>
-        <Ionicons name="checkmark-circle" size={48} color={colors.success} />
-        <Text style={styles.resultsTitle}>Listening complete</Text>
-        <Text style={styles.resultsScore}>
-          {correct}/{total} correct ({pct}%)
-        </Text>
-        <Text style={styles.resultsBand}>Band score: {band.toFixed(1)}</Text>
-        <Text style={styles.resultsHint}>
-          Review your answers and listen again to reinforce key details.
-        </Text>
-      </View>
-      <View style={styles.resultsActions}>
-        <Pressable onPress={onRetry} style={styles.retryButton}>
-          <Text style={styles.retryButtonText}>Try again</Text>
-        </Pressable>
-        <HomeworkFooterButton label="Done" onPress={onExit} />
-      </View>
-    </View>
-  )
-}
-
 export function IeltsListeningRunner({
   test,
   testId,
   onExit,
   onBack,
+  onGoHome,
   homeworkId,
   studentId,
   sessionStartedAt: externalSessionStart,
@@ -261,6 +225,7 @@ export function IeltsListeningRunner({
   testId?: string
   onExit: () => void
   onBack?: () => void
+  onGoHome?: () => void
   homeworkId?: string
   studentId?: string
   sessionStartedAt?: number
@@ -272,6 +237,7 @@ export function IeltsListeningRunner({
   const [partIndex, setPartIndex] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [finished, setFinished] = useState(false)
+  const [showReview, setShowReview] = useState(false)
   const [testStarted, setTestStarted] = useState(isHomework)
   const [internalSessionStart, setInternalSessionStart] = useState<number | null>(null)
   const sessionStartedAt = externalSessionStart ?? internalSessionStart
@@ -408,18 +374,6 @@ export function IeltsListeningRunner({
     ])
   }
 
-  const handleRetry = () => {
-    if (isHomework) return
-    setAnswers({})
-    setPartIndex(0)
-    setFinished(false)
-    setTestStarted(false)
-    setInternalSessionStart(null)
-    setFullAudioUri(null)
-    setUsePartSequence(false)
-    setAudioError(null)
-  }
-
   useEffect(() => {
     if (!finished || !homeworkId || !studentId || submittedRef.current || sessionStartedAt == null) {
       return
@@ -446,31 +400,30 @@ export function IeltsListeningRunner({
         ? Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
         : 0
     const attempt = buildListeningAttempt(test, answers, durationSeconds)
+    const goHome = onGoHome ?? onExit
 
-    if (homeworkId) {
+    if (showReview) {
       return (
         <HomeworkListeningReview
           test={test}
           attempt={attempt}
           title={test.title}
           subject="listening"
+          onBack={() => setShowReview(false)}
         />
       )
     }
 
     return (
-      <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
-        <View style={styles.resultsTopBar}>
-          <BackButton onPress={onBack ?? onExit} />
-        </View>
-        <ResultsView
-          correct={correct}
-          total={total}
-          band={band}
-          onExit={onExit}
-          onRetry={handleRetry}
-        />
-      </View>
+      <IeltsBandScoreScreen
+        skill="listening"
+        title={test.title}
+        band={band}
+        correct={correct}
+        total={total}
+        onViewResults={() => setShowReview(true)}
+        onGoHome={goHome}
+      />
     )
   }
 
@@ -594,11 +547,6 @@ export function IeltsListeningRunner({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
-  resultsTopBar: {
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.xs,
-  },
   headerBar: {
     flexDirection: "row",
     alignItems: "center",
@@ -778,40 +726,4 @@ const styles = StyleSheet.create({
   timerText: { fontSize: 13, fontWeight: "700", color: colors.text, fontVariant: ["tabular-nums"] },
   timerTextUrgent: { color: "#B45309" },
   timerTextExpired: { color: colors.error },
-  resultsWrap: {
-    flex: 1,
-    paddingHorizontal: spacing.screen,
-    justifyContent: "center",
-    gap: spacing.md,
-  },
-  resultsCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.lg,
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  resultsTitle: { fontSize: 20, fontWeight: "800", color: colors.text },
-  resultsScore: { fontSize: 18, fontWeight: "700", color: colors.primaryDark },
-  resultsBand: { fontSize: 16, fontWeight: "600", color: colors.text },
-  resultsHint: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 20,
-    marginTop: spacing.sm,
-  },
-  resultsActions: { gap: spacing.sm },
-  retryButton: {
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  retryButtonText: { fontSize: 15, fontWeight: "700", color: colors.text },
 })

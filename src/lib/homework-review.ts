@@ -12,7 +12,8 @@ import {
   formatListeningCorrectAnswer,
   getQuestionDetail,
   isListeningAnswerCorrect,
-  extractListeningMcPrompt,
+  resolveListeningReviewOptions,
+  resolveListeningReviewPrompt,
 } from "./ielts-listening"
 import {
   formatFillBlankCorrectAnswer,
@@ -40,7 +41,9 @@ export interface ReadingReviewItem {
   correctAnswer: string
 }
 
-export type ListeningReviewItem = ReadingReviewItem
+export type ListeningReviewItem = ReadingReviewItem & {
+  options?: string[]
+}
 
 export function getReviewQuestions(exercise: GrammarExercise): GrammarQuestion[] {
   if (exercise.type === "matching") {
@@ -230,10 +233,8 @@ export function buildListeningReviewItems(
 
   return flat.map((question, index) => {
     const detail = getQuestionDetail(test, question.id)
-    const prompt =
-      detail?.question?.trim() ||
-      extractListeningMcPrompt(question.question ?? "", question.options ?? []) ||
-      `Question ${question.id}`
+    const prompt = resolveListeningReviewPrompt(test, question.id, detail)
+    const options = resolveListeningReviewOptions(test, question.id, detail)
     const correctAnswer =
       mistakeById.get(question.id)?.correctAnswer ?? formatListeningCorrectAnswer(question)
     const mistake = mistakeById.get(question.id)
@@ -245,6 +246,7 @@ export function buildListeningReviewItems(
         questionId: question.id,
         partNumber: question.partNumber,
         prompt,
+        options,
         status: "incorrect" as const,
         userAnswer: mistake.userAnswer,
         correctAnswer,
@@ -258,6 +260,7 @@ export function buildListeningReviewItems(
         questionId: question.id,
         partNumber: question.partNumber,
         prompt,
+        options,
         status: isCorrect ? ("correct" as const) : ("incorrect" as const),
         userAnswer: storedAnswer,
         correctAnswer,
@@ -271,6 +274,7 @@ export function buildListeningReviewItems(
           questionId: question.id,
           partNumber: question.partNumber,
           prompt,
+          options,
           status: "correct" as const,
           correctAnswer,
         }
@@ -281,6 +285,7 @@ export function buildListeningReviewItems(
         questionId: question.id,
         partNumber: question.partNumber,
         prompt,
+        options,
         status: "skipped" as const,
         correctAnswer,
       }
@@ -291,6 +296,7 @@ export function buildListeningReviewItems(
       questionId: question.id,
       partNumber: question.partNumber,
       prompt,
+      options,
       status: "skipped" as const,
       correctAnswer,
     }

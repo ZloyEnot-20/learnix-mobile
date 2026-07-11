@@ -236,6 +236,7 @@ export default function HomeworkListeningScreen() {
               timeLimitMinutes={timeLimitMinutes}
               elapsedSeconds={elapsedSeconds}
               onExit={() => router.back()}
+              onGoHome={() => router.replace("/(tabs)")}
             />
           ) : (
             <IeltsListeningScreenSkeleton />

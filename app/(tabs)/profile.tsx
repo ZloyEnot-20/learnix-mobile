@@ -761,8 +761,26 @@ export default function ProfileScreen() {
                 <Ionicons name="headset-outline" size={20} color={colors.primaryDark} />
               </View>
               <View style={styles.testCardBody}>
-                <Text style={styles.testCardTitle}>Test</Text>
+                <Text style={styles.testCardTitle}>Practice Listening</Text>
                 <Text style={styles.testCardSubtitle}>IELTS Listening practice tests</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.testCard,
+                styles.testCardLast,
+                pressed && styles.testCardPressed,
+              ]}
+              onPress={() => router.push("/ielts/reading" as never)}
+            >
+              <View style={styles.testCardIcon}>
+                <Ionicons name="book-outline" size={20} color={colors.primaryDark} />
+              </View>
+              <View style={styles.testCardBody}>
+                <Text style={styles.testCardTitle}>Practice Reading</Text>
+                <Text style={styles.testCardSubtitle}>IELTS Reading practice tests</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
@@ -946,10 +964,11 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     paddingHorizontal: spacing.md,
     paddingVertical: 14,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
     ...shadow.card,
   },
   testCardPressed: { opacity: 0.94 },
+  testCardLast: { marginBottom: spacing.lg },
   testCardIcon: {
     width: 34,
     height: 34,

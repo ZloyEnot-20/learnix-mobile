@@ -39,7 +39,7 @@ export default function IeltsReadingListScreen() {
           <BackButton onPress={() => router.back()} />
           <View style={styles.headerText}>
             <Text style={styles.title}>IELTS Reading</Text>
-            <Text style={styles.subtitle}>Passage + questions in exam format</Text>
+            <Text style={styles.subtitle}>Cambridge Academic tests</Text>
           </View>
         </View>
 
@@ -54,11 +54,7 @@ export default function IeltsReadingListScreen() {
         ) : (
           <ScrollView contentContainerStyle={styles.list}>
             {tasks.map((task) => (
-              <Pressable
-                key={task.id}
-                style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-                onPress={() => router.push(`/ielts/reading/${task.id}` as never)}
-              >
+              <View key={task.id} style={styles.card}>
                 <View style={[styles.iconWrap, { backgroundColor: accent + "22" }]}>
                   <Ionicons name="document-text-outline" size={22} color={accent} />
                 </View>
@@ -70,10 +66,19 @@ export default function IeltsReadingListScreen() {
                       <Ionicons name="help-circle-outline" size={12} color={colors.primaryDark} />
                       <Text style={styles.metaText}>{task.questionCount} questions</Text>
                     </View>
+                    <View style={styles.metaBadge}>
+                      <Ionicons name="time-outline" size={12} color={colors.primaryDark} />
+                      <Text style={styles.metaText}>{task.estimatedMinutes} min</Text>
+                    </View>
                   </View>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.startButton, pressed && styles.startButtonPressed]}
+                  onPress={() => router.push(`/ielts/reading/${task.id}` as never)}
+                >
+                  <Text style={styles.startButtonText}>Start</Text>
+                </Pressable>
+              </View>
             ))}
           </ScrollView>
         )}
@@ -113,7 +118,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     ...shadow.card,
   },
-  cardPressed: { opacity: 0.94 },
   iconWrap: {
     width: 44,
     height: 44,
@@ -123,7 +127,7 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   cardBody: { flex: 1, minWidth: 0, gap: 4 },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
   cardSubtitle: { fontSize: 13, color: colors.textSecondary },
   metaRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   metaBadge: {
@@ -136,6 +140,15 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   metaText: { fontSize: 11, fontWeight: "700", color: colors.primaryDark },
+  startButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexShrink: 0,
+  },
+  startButtonPressed: { opacity: 0.9 },
+  startButtonText: { fontSize: 13, fontWeight: "800", color: "#FFFFFF" },
   empty: {
     flex: 1,
     alignItems: "center",
