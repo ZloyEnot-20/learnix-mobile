@@ -3,6 +3,7 @@ import { orgApi } from "../lib/api"
 
 export function useOrgSettings() {
   const [allowScreenshots, setAllowScreenshots] = useState(false)
+  const [failHomeworkOnAppExit, setFailHomeworkOnAppExit] = useState(true)
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
@@ -12,6 +13,7 @@ export function useOrgSettings() {
       .then((settings) => {
         if (!cancelled) {
           setAllowScreenshots(settings.allowScreenshots)
+          setFailHomeworkOnAppExit(settings.failHomeworkOnAppExit !== false)
           setLoaded(true)
         }
       })
@@ -23,5 +25,5 @@ export function useOrgSettings() {
     }
   }, [])
 
-  return { allowScreenshots, loaded }
+  return { allowScreenshots, failHomeworkOnAppExit, loaded }
 }

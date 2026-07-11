@@ -1,6 +1,6 @@
 import { Asset } from "expo-asset"
 
-import { LISTENING_FULL_AUDIO } from "./listening-audio-registry.generated"
+import { LISTENING_FULL_AUDIO } from "./listening-audio-registry"
 
 function catalogIdFromTest(test: { catalogId?: string; book?: number; test?: number }): string | null {
   if (test.catalogId?.trim()) return test.catalogId.trim()

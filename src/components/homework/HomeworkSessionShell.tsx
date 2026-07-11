@@ -35,8 +35,9 @@ export function HomeworkSessionShell({
   onSuspiciousDismissed,
   children,
 }: HomeworkSessionShellProps) {
-  const { allowScreenshots, loaded } = useOrgSettings()
+  const { allowScreenshots, failHomeworkOnAppExit, loaded } = useOrgSettings()
   const blockScreenshots = !loaded || !allowScreenshots
+  const strictIntegrity = !loaded || failHomeworkOnAppExit
 
   React.useEffect(() => {
     if (!blockScreenshots) return
@@ -58,6 +59,7 @@ export function HomeworkSessionShell({
     pauseUsed,
     handlePaused,
     initialSuspicious,
+    strictIntegrity,
   )
 
   const handleDismissSuspicious = React.useCallback(() => {
@@ -76,11 +78,11 @@ export function HomeworkSessionShell({
     )
   }, [integrity.pauseSession])
 
-  if (integrity.failed) {
+  if (strictIntegrity && integrity.failed) {
     return <HomeworkCheatingFailed />
   }
 
-  if (integrity.suspicious) {
+  if (strictIntegrity && integrity.suspicious) {
     return (
       <HomeworkSuspiciousActivity
         onContinue={handleDismissSuspicious}

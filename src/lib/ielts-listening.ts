@@ -7,19 +7,8 @@ import type {
 } from "../types/ielts"
 import type { HomeworkAttempt, HomeworkMistake } from "../types/domain"
 
-import listeningIndex from "../data/ielts-listening/index.json"
-import { LOCAL_LISTENING_TESTS } from "../data/ielts-listening/tests-registry.generated"
 import { exercisesApi } from "./api"
 import { runPerfTrace } from "./perf"
-
-const LOCAL_TESTS: Record<string, IeltsListeningTest> = LOCAL_LISTENING_TESTS
-
-type IndexEntry = {
-  book: number
-  test: number
-  status: string
-  file: string
-}
 
 export function idFromListeningFile(file: string): string {
   return file.replace(/\.json$/, "")
@@ -36,24 +25,25 @@ export function countListeningQuestions(test: IeltsListeningTest): number {
 }
 
 export async function listIeltsListeningTests(): Promise<IeltsListeningCatalogItem[]> {
-  const entries = listeningIndex as IndexEntry[]
-  return entries
-    .filter((entry) => entry.status === "ok")
-    .map((entry) => {
-      const id = idFromListeningFile(entry.file)
-      const test = LOCAL_TESTS[id]
-      return {
-        id,
-        file: entry.file,
-        book: entry.book,
-        test: entry.test,
-        title: test?.title ?? `Cambridge IELTS ${entry.book} Listening Test ${entry.test}`,
-        subtitle: `Book ${entry.book} · Test ${entry.test}`,
-        estimatedMinutes: test?.totalTime ?? 30,
-        questionCount: test ? countListeningQuestions(test) : 40,
-      }
-    })
-    .sort((a, b) => b.book - a.book || a.test - b.test)
+  try {
+    const summaries = await exercisesApi.listeningSummaries()
+    return summaries
+      .map((item) => ({
+        id: item.slug,
+        file: `${item.slug}.json`,
+        book: item.book ?? 0,
+        test: item.test ?? 0,
+        title: item.title,
+        subtitle:
+          item.subtitle ||
+          (item.book && item.test ? `Book ${item.book} · Test ${item.test}` : ""),
+        estimatedMinutes: item.totalTimeMinutes > 0 ? item.totalTimeMinutes : 30,
+        questionCount: item.questionCount > 0 ? item.questionCount : 40,
+      }))
+      .sort((a, b) => b.book - a.book || a.test - b.test)
+  } catch {
+    return []
+  }
 }
 
 export async function getIeltsListeningTest(id: string): Promise<IeltsListeningTest | null> {
@@ -64,9 +54,9 @@ export async function getIeltsListeningTest(id: string): Promise<IeltsListeningT
         const doc = await exercisesApi.listening(id)
         if (doc?.data) return doc.data
       } catch {
-        // fall back to bundled test
+        // API unavailable
       }
-      return LOCAL_TESTS[id] ?? null
+      return null
     },
     { testType: "ielts-listening" },
   )

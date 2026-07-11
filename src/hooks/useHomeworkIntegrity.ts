@@ -35,6 +35,7 @@ export function useHomeworkIntegrity(
   initialPauseUsed: boolean,
   onPaused: () => void,
   initialSuspicious = false,
+  strictIntegrity = true,
 ): HomeworkIntegrityState {
   const navigation = useNavigation()
   const [failed, setFailed] = useState(false)
@@ -80,8 +81,8 @@ export function useHomeworkIntegrity(
   }, [integrityStatus])
 
   useEffect(() => {
-    if (initialSuspicious) setSuspicious(true)
-  }, [initialSuspicious])
+    if (strictIntegrity && initialSuspicious) setSuspicious(true)
+  }, [initialSuspicious, strictIntegrity])
 
   useEffect(() => {
     if (!homeworkId || !active) return
@@ -134,6 +135,8 @@ export function useHomeworkIntegrity(
   )
 
   const applyOptimisticViolation = useCallback(() => {
+    if (!strictIntegrity) return
+
     const shouldFail =
       pauseUsedRef.current ||
       suspiciousRef.current ||
@@ -152,10 +155,11 @@ export function useHomeworkIntegrity(
     setSuspicious(true)
     integrityStatusRef.current = "cheating_suspicion"
     suspiciousRef.current = true
-  }, [])
+  }, [strictIntegrity])
 
   const syncIntegrityFromServer = useCallback(async () => {
     if (!homeworkId || !active || failed || suspicious) return
+    if (!strictIntegrity) return
 
     try {
       const sub = await homeworkApi.start(homeworkId, { force: true, skipEntryCount: true })
@@ -172,7 +176,7 @@ export function useHomeworkIntegrity(
     } catch {
       // Offline or transient — optimistic UI already shown when applicable.
     }
-  }, [homeworkId, active, failed, suspicious])
+  }, [homeworkId, active, failed, suspicious, strictIntegrity])
 
   syncIntegrityFromServerRef.current = syncIntegrityFromServer
 
@@ -189,6 +193,8 @@ export function useHomeworkIntegrity(
 
       try {
         const res = await homeworkApi.reportViolation(homeworkId, reason)
+        if (!strictIntegrity) return
+
         if (res.integrityStatus) setIntegrityStatus(res.integrityStatus)
         if (res.pauseUsed) setPauseUsed(true)
 
@@ -218,7 +224,7 @@ export function useHomeworkIntegrity(
         processingRef.current = false
       }
     },
-    [homeworkId, canMonitor, applyOptimisticViolation, syncIntegrityFromServer],
+    [homeworkId, canMonitor, applyOptimisticViolation, syncIntegrityFromServer, strictIntegrity],
   )
 
   leaveSessionRef.current = leaveSession
@@ -231,17 +237,17 @@ export function useHomeworkIntegrity(
   }, [])
 
   useEffect(() => {
-    if (!canMonitor()) return
+    if (!strictIntegrity || !canMonitor()) return
 
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       void leaveSession("navigation")
       return true
     })
     return () => sub.remove()
-  }, [canMonitor, leaveSession])
+  }, [canMonitor, leaveSession, strictIntegrity])
 
   useEffect(() => {
-    if (!homeworkId || !active || failed || suspicious) return
+    if (!strictIntegrity || !homeworkId || !active || failed || suspicious) return
 
     const unsubscribe = navigation.addListener("beforeRemove", (e) => {
       if (allowLeaveRef.current) return
@@ -253,7 +259,7 @@ export function useHomeworkIntegrity(
     })
 
     return unsubscribe
-  }, [navigation, homeworkId, active, failed, suspicious, leaveSession])
+  }, [navigation, homeworkId, active, failed, suspicious, leaveSession, strictIntegrity])
 
   useEffect(() => {
     if (!homeworkId || !active || failed || suspicious) {
