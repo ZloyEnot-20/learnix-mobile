@@ -26,6 +26,7 @@ import {
   type PlaybackSpeedType,
 } from "@simform_solutions/react-native-audio-waveform"
 import { resolveAudioWaveformUri } from "../../lib/audio-waveform-cache"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { Skeleton } from "../ui/Skeleton"
 import { colors, radius, spacing } from "../../theme/tokens"
 import type { AudioWaveformPlayerHandle, AudioWaveformPlayerProps } from "./audio-waveform-player-types"
@@ -161,6 +162,8 @@ function AudioWaveformPlayerNativeComponent(
 
   const isLoading = loadState === "downloading" || (loadState === "ready" && waveformLoading)
   const error = downloadError ?? waveformError
+
+  useKeepAwakeWhile(playerState === PlayerState.playing)
 
   const resolveSource = useCallback(async (url: string, cancelled: () => boolean) => {
     setLoadState("downloading")

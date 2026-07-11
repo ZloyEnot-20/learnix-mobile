@@ -7,6 +7,7 @@ import {
   setAudioModeAsync,
   requestRecordingPermissionsAsync,
 } from "expo-audio"
+import { useKeepAwakeWhile } from "./useKeepAwakeWhile"
 
 export type RecorderStatus = "idle" | "recording" | "paused" | "stopped"
 
@@ -36,6 +37,8 @@ export function useAudioRecorder() {
   const [uri, setUri] = useState<string | null>(null)
   const [durationMs, setDurationMs] = useState(0)
   const [error, setError] = useState<string | null>(null)
+
+  useKeepAwakeWhile(status === "recording")
 
   const runExclusive = useCallback(<T,>(fn: () => Promise<T>): Promise<T> => {
     const run = opRef.current.then(fn, fn)

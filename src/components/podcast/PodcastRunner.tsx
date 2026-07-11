@@ -23,6 +23,7 @@ import {
   HomeworkResultsLayout,
 } from "../homework/HomeworkExerciseLayout"
 import { SpeakingProgressBar } from "../speaking/SpeakingProgressBar"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { usePodcastAudioDownload } from "../../hooks/usePodcastAudioDownload"
 import { isSecondsBuffered, getPodcastDownloadProgressPercent } from "../../lib/podcast-audio-cache"
 import { colors, radius, shadow, spacing } from "../../theme/tokens"
@@ -247,6 +248,8 @@ export function PodcastRunner({
   const playing = status.playing
   const displayTime = scrubTime ?? currentTime
   const displayProgress = duration > 0 ? Math.min(1, displayTime / duration) : 0
+
+  useKeepAwakeWhile(Boolean(playing))
 
   const handleSeekPreview = useCallback((ratio: number | null) => {
     if (ratio == null || duration <= 0) {

@@ -6,36 +6,44 @@ import React, {
   useRef,
   useState,
 } from "react"
-import { StyleSheet, View } from "react-native"
+import { StyleSheet, View, type StyleProp, type ViewStyle } from "react-native"
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from "expo-audio"
 
 import { Skeleton } from "../ui/Skeleton"
-import { spacing } from "../../theme/tokens"
-import type { ListeningExamAudioHandle } from "./ListeningExamAudio"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
+import { colors, radius, spacing } from "../../theme/tokens"
+import {
+  ListeningExamAudioTrack,
+  type ListeningExamAudioHandle,
+} from "./ListeningExamAudio"
 
 type ListeningExamAudioSequenceProps = {
   audioUrls: string[]
   autoPlay?: boolean
+  style?: StyleProp<ViewStyle>
 }
 
-function ListeningAudioSkeleton() {
+function ListeningAudioSkeleton({ style }: { style?: StyleProp<ViewStyle> }) {
   return (
-    <View style={styles.skeletonRow} accessibilityLabel="Loading listening audio">
-      {Array.from({ length: 24 }, (_, index) => (
-        <Skeleton
-          key={index}
-          width={4}
-          height={10 + (index % 4) * 4}
-          borderRadius={2}
-          style={styles.skeletonBar}
-        />
-      ))}
+    <View style={[styles.playerRoot, style]} accessibilityLabel="Loading listening audio">
+      <View style={styles.waveformSkeletonRow}>
+        {Array.from({ length: 28 }, (_, index) => (
+          <Skeleton
+            key={index}
+            width={3}
+            height={8 + (index % 5) * 3}
+            borderRadius={2}
+            style={styles.waveformSkeletonBar}
+          />
+        ))}
+      </View>
+      <Skeleton width={72} height={14} borderRadius={4} />
     </View>
   )
 }
 
 function ListeningExamAudioSequenceComponent(
-  { audioUrls, autoPlay = true }: ListeningExamAudioSequenceProps,
+  { audioUrls, autoPlay = true, style }: ListeningExamAudioSequenceProps,
   ref: React.ForwardedRef<ListeningExamAudioHandle>,
 ) {
   const player = useAudioPlayer(null, { updateInterval: 250 })
@@ -44,6 +52,8 @@ function ListeningExamAudioSequenceComponent(
   const [ready, setReady] = useState(false)
   const autoPlayTriggeredRef = useRef(false)
   const currentUrl = audioUrls[partIndex]
+
+  useKeepAwakeWhile(Boolean(status.playing))
 
   useEffect(() => {
     let cancelled = false
@@ -108,10 +118,17 @@ function ListeningExamAudioSequenceComponent(
   useImperativeHandle(ref, () => ({ pause, stop }), [pause, stop])
 
   if (!ready && !status.playing) {
-    return <ListeningAudioSkeleton />
+    return <ListeningAudioSkeleton style={style} />
   }
 
-  return null
+  return (
+    <ListeningExamAudioTrack
+      currentSeconds={status.currentTime ?? 0}
+      durationSeconds={status.duration ?? 0}
+      playing={Boolean(status.playing)}
+      style={style}
+    />
+  )
 }
 
 export const ListeningExamAudioSequence = React.memo(
@@ -121,15 +138,27 @@ export const ListeningExamAudioSequence = React.memo(
 )
 
 const styles = StyleSheet.create({
-  skeletonRow: {
+  playerRoot: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    minWidth: 0,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primaryLight,
+  },
+  waveformSkeletonRow: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "flex-end",
-    gap: 3,
-    minHeight: 28,
-    paddingHorizontal: spacing.screen,
-    paddingVertical: spacing.xs,
+    gap: 2,
+    minHeight: 20,
+    paddingVertical: 2,
   },
-  skeletonBar: {
-    opacity: 0.85,
+  waveformSkeletonBar: {
+    alignSelf: "flex-end",
   },
 })

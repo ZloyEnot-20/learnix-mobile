@@ -7,6 +7,7 @@ import type { HomeworkAttempt, Subject } from "../../types/domain"
 import { formatShortDate } from "../../lib/utils"
 import { resolveSpeakingAudioUri } from "../../lib/speaking-audio-cache"
 import { prefetchAppMediaAssets } from "../../lib/app-cache"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { PlaybackWaveformBars } from "../speaking/WaveformBars"
 import { SpeakingProgressBar } from "../speaking/SpeakingProgressBar"
 import { HomeworkReviewShell } from "./HomeworkReviewShell"
@@ -54,6 +55,8 @@ function SpeakingRecordingCard({
   const duration = status.duration ?? 0
   const currentTime = status.currentTime ?? 0
   const progress = duration > 0 ? Math.min(1, currentTime / duration) : 0
+
+  useKeepAwakeWhile(Boolean(status.playing))
 
   useEffect(() => {
     let cancelled = false

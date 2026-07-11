@@ -1,4 +1,9 @@
-export type IssueReportExerciseKind = "grammar" | "vocabulary" | "podcast" | "speaking"
+export type IssueReportExerciseKind =
+  | "grammar"
+  | "vocabulary"
+  | "podcast"
+  | "speaking"
+  | "listening"
 
 export type IssueReportStatus = "open" | "resolved" | "dismissed"
 

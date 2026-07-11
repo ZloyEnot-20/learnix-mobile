@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useCountdown, formatTimer } from "../../hooks/useCountdown"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import type { IeltsListeningQuestion, IeltsListeningTest } from "../../types/ielts"
 import {
   buildListeningAttempt,
@@ -27,8 +28,10 @@ import { ListeningExamAudioSequence } from "./ListeningExamAudioSequence"
 import { resolveListeningFullAudioUri } from "../../lib/ielts-listening-audio"
 import { HomeworkFooterButton } from "../homework/HomeworkExerciseLayout"
 import { HomeworkListeningReview } from "../homework/HomeworkListeningReview"
+import { HomeworkReportIssueButton } from "../homework/HomeworkReportIssue"
 import { BackButton } from "../ui/BackButton"
 import { ListeningContent } from "./ListeningContent"
+import type { IssueReportPayload } from "../../types/issue-report"
 import { colors, radius, spacing, subjectColors } from "../../theme/tokens"
 
 const LISTENING_ACCENT = subjectColors.listening
@@ -278,6 +281,8 @@ export function IeltsListeningRunner({
   const [audioError, setAudioError] = useState<string | null>(null)
   const audioPlayerRef = useRef<ListeningExamAudioHandle>(null)
 
+  useKeepAwakeWhile(testStarted && !finished)
+
   const timerMinutes = isHomework ? timeLimitMinutes : test.totalTime
   const secondsLeft = useCountdown(
     timerMinutes,
@@ -367,23 +372,40 @@ export function IeltsListeningRunner({
     }
   }
 
+  const showProtectedInfo = useCallback(() => {
+    Alert.alert(
+      isHomework ? "Protected homework" : "Exam mode",
+      isHomework
+        ? "This is a protected assignment. Complete all questions before submitting.\n\nAudio plays once — seeking and pausing are disabled."
+        : "Audio plays once — seeking and pausing are disabled.",
+      [{ text: "OK", style: "cancel" }],
+    )
+  }, [isHomework])
+
+  const reportIssue: IssueReportPayload | undefined =
+    homeworkId && testId
+      ? {
+          homeworkId,
+          exerciseSlug: testId,
+          exerciseTitle: test.title,
+          exerciseKind: "listening",
+        }
+      : undefined
+
   const handleSubmitPress = () => {
     const totalQuestions = test.parts.reduce((sum, p) => sum + p.questions.length, 0)
     const answeredCount = Object.values(answers).filter((a) => a.trim()).length
     const unanswered = totalQuestions - answeredCount
 
-    if (unanswered > 0) {
-      Alert.alert(
-        "Submit test?",
-        `${unanswered} question${unanswered === 1 ? "" : "s"} unanswered. Submit anyway?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Submit", onPress: submitTest },
-        ],
-      )
-      return
-    }
-    submitTest()
+    const message =
+      unanswered > 0
+        ? `${unanswered} question${unanswered === 1 ? "" : "s"} unanswered. Submit anyway?`
+        : "Are you sure you want to submit your answers?"
+
+    Alert.alert("Submit?", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Submit", onPress: submitTest },
+    ])
   }
 
   const handleRetry = () => {
@@ -455,17 +477,29 @@ export function IeltsListeningRunner({
   return (
     <View style={[styles.screen, { paddingBottom: insets.bottom }]}>
       <View style={styles.headerBar}>
-        <BackButton onPress={onBack ?? onExit} />
-        {testStarted ? <ListeningTimer secondsLeft={secondsLeft} /> : null}
+        <Pressable
+          onPress={showProtectedInfo}
+          hitSlop={12}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Protected homework info"
+        >
+          <Ionicons name="lock-closed-outline" size={22} color={colors.textMuted} />
+        </Pressable>
+
+        {testStarted && fullAudioUri ? (
+          <ListeningExamAudio ref={audioPlayerRef} audioUri={fullAudioUri} autoPlay />
+        ) : testStarted && usePartSequence ? (
+          <ListeningExamAudioSequence ref={audioPlayerRef} audioUrls={partAudioUrls} autoPlay />
+        ) : (
+          <View style={styles.headerAudioSpacer} />
+        )}
+
+        <View style={styles.headerTrailing}>
+          {testStarted ? <ListeningTimer secondsLeft={secondsLeft} /> : null}
+          {reportIssue ? <HomeworkReportIssueButton report={reportIssue} /> : null}
+        </View>
       </View>
-
-      {testStarted && fullAudioUri ? (
-        <ListeningExamAudio ref={audioPlayerRef} audioUri={fullAudioUri} autoPlay />
-      ) : null}
-
-      {testStarted && !fullAudioUri && usePartSequence ? (
-        <ListeningExamAudioSequence ref={audioPlayerRef} audioUrls={partAudioUrls} autoPlay />
-      ) : null}
 
       {testStarted && audioError ? (
         <View style={styles.audioErrorBanner}>
@@ -537,7 +571,7 @@ export function IeltsListeningRunner({
             </Pressable>
           ) : partIndex === totalParts - 1 ? (
             <Pressable onPress={handleSubmitPress} style={styles.submitButton}>
-              <Text style={styles.submitButtonText}>Submit test</Text>
+              <Text style={styles.submitButtonText}>Submit</Text>
             </Pressable>
           ) : (
             <View style={styles.footerCenterSpacer} />
@@ -568,7 +602,6 @@ const styles = StyleSheet.create({
   headerBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     gap: spacing.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
@@ -576,6 +609,23 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: colors.card,
   },
+  headerAudioSpacer: {
+    flex: 1,
+    minWidth: 0,
+  },
+  headerTrailing: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 0,
+    gap: spacing.xs,
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconBtnPressed: { opacity: 0.6 },
   audioErrorBanner: {
     marginHorizontal: spacing.sm,
     marginBottom: spacing.xs,

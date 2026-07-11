@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus, type AudioPlayer } from "expo-audio"
 import { SpeakingProgressBar } from "../speaking/SpeakingProgressBar"
 import { Skeleton } from "../ui/Skeleton"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { colors, radius, spacing } from "../../theme/tokens"
 import type { AudioWaveformPlayerHandle, AudioWaveformPlayerProps } from "./audio-waveform-player-types"
 
@@ -102,6 +103,8 @@ function AudioExpoPlayerComponent(
   const durationSeconds = status.duration ?? duration ?? 0
   const currentSeconds = status.currentTime ?? 0
   const progress = durationSeconds > 0 ? Math.min(1, currentSeconds / durationSeconds) : 0
+
+  useKeepAwakeWhile(Boolean(status.playing))
 
   useEffect(() => {
     let cancelled = false

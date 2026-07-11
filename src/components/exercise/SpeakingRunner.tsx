@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import type { GrammarExercise, GrammarQuestion } from "../../types/grammar"
 import { useAudioRecorder } from "../../hooks/useAudioRecorder"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { uploadsApi } from "../../lib/api"
 import { getUserFacingErrorMessage } from "../../lib/api-client"
 import {
@@ -226,6 +227,8 @@ export function SpeakingRunner(props: ExerciseRunnerProps & { exercise: GrammarE
   const previewCurrentTime = previewStatus.currentTime ?? 0
   const recorder = useAudioRecorder()
   const autoStoppingRef = useRef(false)
+
+  useKeepAwakeWhile(playing)
 
   const q: GrammarQuestion | undefined = questions[index]
   const finished = index >= questions.length

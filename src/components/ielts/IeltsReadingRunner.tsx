@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useCountdown, formatTimer } from "../../hooks/useCountdown"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import type { IeltsReadingQuestion, IeltsReadingTest } from "../../types/ielts"
 import {
   buildReadingAttempt,
@@ -252,6 +253,8 @@ export function IeltsReadingRunner({
   const panelAnimating = useRef(false)
   const [sessionStartedAt] = useState(() => externalSessionStart ?? Date.now())
   const submittedRef = React.useRef(false)
+
+  useKeepAwakeWhile(!finished)
 
   const timerMinutes = timeLimitMinutes ?? test.totalTimeMinutes
   const part = test.parts[partIndex]

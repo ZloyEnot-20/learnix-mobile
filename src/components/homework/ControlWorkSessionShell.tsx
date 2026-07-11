@@ -3,6 +3,7 @@ import { Alert, StyleSheet, View } from "react-native"
 import * as ScreenCapture from "expo-screen-capture"
 import { useRouter } from "expo-router"
 import { useControlWorkIntegrity } from "../../hooks/useControlWorkIntegrity"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { useOrgSettings } from "../../hooks/useOrgSettings"
 import { HomeworkCheatingFailed } from "./HomeworkCheatingFailed"
 import { HomeworkSuspiciousActivity } from "./HomeworkSuspiciousActivity"
@@ -27,6 +28,8 @@ export function ControlWorkSessionShell({
 }: ControlWorkSessionShellProps) {
   const { allowScreenshots, loaded } = useOrgSettings()
   const blockScreenshots = !loaded || !allowScreenshots
+
+  useKeepAwakeWhile(active)
 
   React.useEffect(() => {
     if (!blockScreenshots) return

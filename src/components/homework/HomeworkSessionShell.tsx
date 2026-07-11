@@ -3,6 +3,7 @@ import { Alert, StyleSheet, View } from "react-native"
 import * as ScreenCapture from "expo-screen-capture"
 import { useRouter } from "expo-router"
 import { useHomeworkIntegrity } from "../../hooks/useHomeworkIntegrity"
+import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { useOrgSettings } from "../../hooks/useOrgSettings"
 import { HomeworkCheatingFailed } from "./HomeworkCheatingFailed"
 import { HomeworkSuspiciousActivity } from "./HomeworkSuspiciousActivity"
@@ -38,6 +39,8 @@ export function HomeworkSessionShell({
   const { allowScreenshots, failHomeworkOnAppExit, loaded } = useOrgSettings()
   const blockScreenshots = !loaded || !allowScreenshots
   const strictIntegrity = !loaded || failHomeworkOnAppExit
+
+  useKeepAwakeWhile(active)
 
   React.useEffect(() => {
     if (!blockScreenshots) return
