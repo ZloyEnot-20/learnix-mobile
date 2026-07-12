@@ -4,6 +4,23 @@ export type IeltsReadingQuestionType =
   | "multiple-choice"
   | "fill-in-blank"
   | "short-answer"
+  | "matching-headings"
+  | "matching-information"
+  | "matching-features"
+  | "matching-sentence-endings"
+  | "sentence-completion"
+  | "summary-completion"
+  | "note-completion"
+  | "table-completion"
+  | "flow-chart-completion"
+  | "diagram-label-completion"
+  | "selecting-a-title"
+  | "summary-completion-word-box"
+  | "diagram-completion"
+  | "note-completion-word-box"
+  | "table-completion-word-box"
+  | "flow-chart-completion-word-box"
+  | string
 
 export interface IeltsReadingQuestion {
   id: number

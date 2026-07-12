@@ -262,13 +262,16 @@ export function ReadingSectionContent({
   /** Shared A–J bank with inline `[N]` blanks (summary / notes with letters). */
   const letterMode = sharedOptions.length > 0 && hasInlineContent
   /**
-   * Matching sentence endings / features: stems listed as questions + shared
-   * ending bank (no inline content). Pick a letter for the focused stem.
+   * Matching sentence endings / features / headings: stems listed as questions +
+   * shared option bank (no inline content). Pick a letter for the focused stem.
    */
   const matchingBankMode =
     sharedOptions.length > 0 &&
     !hasInlineContent &&
-    section.questions.some((q) => Boolean(q.question?.trim()))
+    section.questions.some((q) => Boolean(q.question?.trim())) &&
+    !section.questions.some(
+      (q) => q.type === "true-false-not-given" || q.type === "yes-no-not-given",
+    )
 
   const blankIds = useMemo(() => {
     if (hasInlineContent && section.content) {
