@@ -1,5 +1,5 @@
-import React from "react"
-import { ScrollView, StyleSheet, Text, View } from "react-native"
+import React, { useEffect, useMemo, useState } from "react"
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import type { BookExerciseRaw, LessonStep } from "../../lib/books/types"
 import { colors, radius, spacing, typography } from "../../theme/tokens"
 
@@ -11,68 +11,256 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
 }
 
-function Chip({ label }: { label: string }) {
+function Chip({
+  label,
+  selected,
+  placed,
+  onPress,
+}: {
+  label: string
+  selected?: boolean
+  placed?: boolean
+  onPress?: () => void
+}) {
   return (
-    <View style={styles.chip}>
-      <Text style={styles.chipText}>{label}</Text>
-    </View>
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={[
+        styles.chip,
+        selected && styles.chipSelected,
+        placed && styles.chipPlaced,
+        !onPress && styles.chipStatic,
+      ]}
+    >
+      <Text
+        style={[
+          styles.chipText,
+          selected && styles.chipTextSelected,
+          placed && styles.chipTextPlaced,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
   )
 }
 
-function ChipRow({ items }: { items: string[] }) {
+function ChipRow({
+  items,
+  selected,
+  onSelect,
+}: {
+  items: string[]
+  selected?: string | null
+  onSelect?: (item: string) => void
+}) {
   if (!items.length) return null
   return (
     <View style={styles.chipRow}>
       {items.map((item) => (
-        <Chip key={item} label={item} />
+        <Chip
+          key={item}
+          label={item}
+          selected={selected === item}
+          onPress={onSelect ? () => onSelect(item) : undefined}
+        />
       ))}
     </View>
   )
 }
 
-function Block({ title, children }: { title?: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.block}>
+function Block({
+  title,
+  children,
+  onPress,
+  active,
+}: {
+  title?: string
+  children: React.ReactNode
+  onPress?: () => void
+  active?: boolean
+}) {
+  const content = (
+    <>
       {title ? <Text style={styles.blockTitle}>{title}</Text> : null}
       {children}
+    </>
+  )
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={[styles.block, active && styles.blockActive]}
+      >
+        {content}
+      </Pressable>
+    )
+  }
+  return <View style={styles.block}>{content}</View>
+}
+
+/** Tap a word, then tap a bucket to place it. Tap placed word to return to bank. */
+function SortIntoBuckets({
+  bank,
+  buckets,
+  exerciseKey,
+}: {
+  bank: string[]
+  buckets: string[]
+  exerciseKey: string
+}) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const [placement, setPlacement] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    setSelected(null)
+    setPlacement({})
+  }, [exerciseKey])
+
+  const remaining = useMemo(
+    () => bank.filter((w) => !placement[w]),
+    [bank, placement],
+  )
+
+  const placeIn = (bucket: string) => {
+    if (!selected) return
+    setPlacement((prev) => ({ ...prev, [selected]: bucket }))
+    setSelected(null)
+  }
+
+  const unplace = (word: string) => {
+    setPlacement((prev) => {
+      const next = { ...prev }
+      delete next[word]
+      return next
+    })
+    setSelected(word)
+  }
+
+  return (
+    <View style={styles.gap}>
+      <Text style={styles.hint}>
+        {selected ? `Selected: ${selected} — tap a column` : "Tap a word, then tap a column"}
+      </Text>
+      <ChipRow
+        items={remaining}
+        selected={selected}
+        onSelect={(item) => setSelected((cur) => (cur === item ? null : item))}
+      />
+      {buckets.map((bucket) => {
+        const words = bank.filter((w) => placement[w] === bucket)
+        return (
+          <Block
+            key={bucket}
+            title={bucket}
+            active={Boolean(selected)}
+            onPress={() => placeIn(bucket)}
+          >
+            {words.length === 0 ? (
+              <Text style={styles.muted}>Tap here to place the selected word</Text>
+            ) : (
+              <View style={styles.chipRow}>
+                {words.map((w) => (
+                  <Chip key={w} label={w} placed onPress={() => unplace(w)} />
+                ))}
+              </View>
+            )}
+          </Block>
+        )
+      })}
     </View>
   )
 }
 
-function renderBody(raw: BookExerciseRaw, uiType: LessonStep["uiType"]) {
+function ChecklistSelect({ items, exerciseKey }: { items: string[]; exerciseKey: string }) {
+  const [picked, setPicked] = useState<Record<string, boolean>>({})
+  useEffect(() => setPicked({}), [exerciseKey])
+  return (
+    <View style={styles.chipRow}>
+      {items.map((item) => (
+        <Chip
+          key={item}
+          label={item}
+          selected={Boolean(picked[item])}
+          onPress={() => setPicked((p) => ({ ...p, [item]: !p[item] }))}
+        />
+      ))}
+    </View>
+  )
+}
+
+function TfngQuestions({
+  passage,
+  questions,
+  exerciseKey,
+}: {
+  passage: string
+  questions: Array<Record<string, unknown>>
+  exerciseKey: string
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  useEffect(() => setAnswers({}), [exerciseKey])
+  const options = ["True", "False", "Not given"]
+
+  return (
+    <View style={styles.gap}>
+      <Block title="Passage">
+        <Text style={styles.body}>{passage}</Text>
+      </Block>
+      {questions.map((q) => {
+        const num = String(q.number ?? "")
+        return (
+          <Block key={num}>
+            <Text style={styles.body}>
+              {num}. {String(q.statement ?? "")}
+            </Text>
+            <View style={[styles.chipRow, { marginTop: 8 }]}>
+              {options.map((opt) => (
+                <Chip
+                  key={opt}
+                  label={opt}
+                  selected={answers[num] === opt}
+                  onPress={() => setAnswers((a) => ({ ...a, [num]: opt }))}
+                />
+              ))}
+            </View>
+          </Block>
+        )
+      })}
+    </View>
+  )
+}
+
+function renderBody(raw: BookExerciseRaw, uiType: LessonStep["uiType"], exerciseKey: string) {
   switch (uiType) {
     case "vocab-checklist":
+      return <ChecklistSelect items={asStringArray(raw.items)} exerciseKey={exerciseKey} />
     case "word-formation":
     case "answer-list": {
       const items = asStringArray(raw.items)
-      const answers = asStringArray(raw.answers)
-      return <ChipRow items={items.length ? items : answers} />
+      return <ChipRow items={items.length ? items : asStringArray(raw.answers)} />
     }
     case "vocab-table": {
       const table = isRecord(raw.table) ? raw.table : {}
       return (
-        <View style={styles.gap}>
-          <ChipRow items={asStringArray(raw.items)} />
-          {Object.keys(table).map((col) => (
-            <Block key={col} title={col}>
-              <Text style={styles.muted}>Sort the words into this column</Text>
-            </Block>
-          ))}
-        </View>
+        <SortIntoBuckets
+          bank={asStringArray(raw.items)}
+          buckets={Object.keys(table)}
+          exerciseKey={exerciseKey}
+        />
       )
     }
     case "prefix-choice":
     case "classification": {
       const answers = isRecord(raw.answers) ? raw.answers : {}
+      const buckets = Object.keys(answers)
       return (
-        <View style={styles.gap}>
-          <ChipRow items={asStringArray(raw.items)} />
-          {Object.keys(answers).map((bucket) => (
-            <Block key={bucket} title={bucket}>
-              <Text style={styles.muted}>Place matching items here</Text>
-            </Block>
-          ))}
-        </View>
+        <SortIntoBuckets
+          bank={asStringArray(raw.items)}
+          buckets={buckets.length ? buckets : ["Group A", "Group B"]}
+          exerciseKey={exerciseKey}
+        />
       )
     }
     case "fill-blank-sentences": {
@@ -86,6 +274,7 @@ function renderBody(raw: BookExerciseRaw, uiType: LessonStep["uiType"]) {
                 <Text style={styles.body}>
                   {i + 1}. {String(it.sentence ?? "")}
                 </Text>
+                <Text style={styles.hint}>Write your answer in your notebook / discuss</Text>
               </Block>
             )
           })}
@@ -93,24 +282,15 @@ function renderBody(raw: BookExerciseRaw, uiType: LessonStep["uiType"]) {
       )
     }
     case "reading-tfng": {
-      const questions = Array.isArray(raw.questions) ? raw.questions : []
+      const questions = Array.isArray(raw.questions)
+        ? raw.questions.filter(isRecord)
+        : []
       return (
-        <View style={styles.gap}>
-          <Block title="Passage">
-            <Text style={styles.body}>{String(raw.passage ?? "")}</Text>
-          </Block>
-          {questions.map((q) => {
-            if (!isRecord(q)) return null
-            return (
-              <Block key={String(q.number)}>
-                <Text style={styles.body}>
-                  {String(q.number)}. {String(q.statement ?? "")}
-                </Text>
-                <Text style={styles.hint}>True / False / Not given</Text>
-              </Block>
-            )
-          })}
-        </View>
+        <TfngQuestions
+          passage={String(raw.passage ?? "")}
+          questions={questions}
+          exerciseKey={exerciseKey}
+        />
       )
     }
     case "paraphrase-pairs": {
@@ -268,6 +448,7 @@ function renderBody(raw: BookExerciseRaw, uiType: LessonStep["uiType"]) {
 }
 
 export function LiveExerciseView({ step }: { step: LessonStep }) {
+  const exerciseKey = `${step.unitNumber}-${step.exerciseId}-${step.uiType}`
   return (
     <ScrollView contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
       <View style={styles.metaRow}>
@@ -277,7 +458,7 @@ export function LiveExerciseView({ step }: { step: LessonStep }) {
         <Text style={styles.meta}>Ex {step.exerciseId}</Text>
       </View>
       {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
-      {renderBody(step.raw, step.uiType)}
+      {renderBody(step.raw, step.uiType, exerciseKey)}
     </ScrollView>
   )
 }
@@ -303,6 +484,10 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
     gap: 6,
   },
+  blockActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+  },
   blockTitle: { ...typography.label, color: colors.text, fontWeight: "700" },
   body: { ...typography.body, color: colors.text, lineHeight: 21 },
   muted: { ...typography.caption, color: colors.textSecondary },
@@ -311,8 +496,21 @@ const styles = StyleSheet.create({
   chip: {
     backgroundColor: colors.borderLight,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  chipStatic: {},
+  chipSelected: {
+    backgroundColor: colors.primaryLight,
+    borderColor: colors.primary,
+  },
+  chipPlaced: {
+    backgroundColor: "#ECFDF5",
+    borderColor: "#059669",
   },
   chipText: { ...typography.caption, color: colors.text },
+  chipTextSelected: { color: colors.primaryDark, fontWeight: "700" },
+  chipTextPlaced: { color: "#047857", fontWeight: "600" },
 })

@@ -1,10 +1,15 @@
 import { Platform } from "react-native"
 import Constants from "expo-constants"
 import { debugApi, pushTokenApi, type AuthUser } from "./api"
+import { requestLiveLessonRefresh } from "./live-lesson-refresh"
+import { isLiveLessonPush, navigateFromPushData } from "./push-navigation"
 import { requestNotificationsRefresh } from "./notifications-refresh"
 import { isStudentUser } from "./guest"
 
 type FirebaseMessagingModule = typeof import("@react-native-firebase/messaging").default
+type RemoteMessage = {
+  data?: Record<string, string>
+}
 
 function getMessagingModule(): FirebaseMessagingModule {
   return require("@react-native-firebase/messaging").default
@@ -28,6 +33,13 @@ let readyPromise: Promise<string | null> | null = null
 let unsubscribeForeground: (() => void) | null = null
 let unsubscribeTokenRefresh: (() => void) | null = null
 let unsubscribeOpenedApp: (() => void) | null = null
+
+function refreshFromPush(data?: Record<string, string>): void {
+  requestNotificationsRefresh()
+  if (isLiveLessonPush(data)) {
+    requestLiveLessonRefresh()
+  }
+}
 
 async function requestNotificationPermission(): Promise<boolean> {
   const module = getMessagingModule()
@@ -65,8 +77,8 @@ function attachMessageListeners(): void {
   if (listenersAttached) return
   listenersAttached = true
 
-  unsubscribeForeground = messaging().onMessage(async () => {
-    requestNotificationsRefresh()
+  unsubscribeForeground = messaging().onMessage(async (message: RemoteMessage) => {
+    refreshFromPush(message?.data)
   })
 
   unsubscribeTokenRefresh = messaging().onTokenRefresh(async (token) => {
@@ -79,12 +91,15 @@ function attachMessageListeners(): void {
     await syncTokenWithBackend(activeUserId, token)
   })
 
-  unsubscribeOpenedApp = messaging().onNotificationOpenedApp(() => {
-    requestNotificationsRefresh()
+  unsubscribeOpenedApp = messaging().onNotificationOpenedApp((message: RemoteMessage) => {
+    refreshFromPush(message?.data)
+    navigateFromPushData(message?.data)
   })
 
-  void messaging().getInitialNotification().then((message) => {
-    if (message) requestNotificationsRefresh()
+  void messaging().getInitialNotification().then((message: RemoteMessage | null) => {
+    if (!message) return
+    refreshFromPush(message.data)
+    navigateFromPushData(message.data)
   })
 }
 

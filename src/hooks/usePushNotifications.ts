@@ -1,6 +1,11 @@
 import { useEffect, useRef } from "react"
+import { router } from "expo-router"
 import { useAuth } from "../context/AuthContext"
 import { isStudentUser } from "../lib/guest"
+import {
+  isLiveLessonPush,
+  setPushNavigationHandler,
+} from "../lib/push-navigation"
 import {
   initializePushMessaging,
   syncPushTokenForStudent,
@@ -11,6 +16,17 @@ import {
 export function usePushNotifications(): void {
   const { user, isLoading } = useAuth()
   const registeredUserIdRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    setPushNavigationHandler((data) => {
+      if (!isLiveLessonPush(data)) return
+      // Cold start: wait a tick so the root Stack is ready.
+      setTimeout(() => {
+        router.push("/live-lesson" as never)
+      }, 350)
+    })
+    return () => setPushNavigationHandler(null)
+  }, [])
 
   useEffect(() => {
     if (isLoading) return

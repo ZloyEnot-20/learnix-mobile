@@ -1,5 +1,12 @@
 import React, { useCallback, useLayoutEffect, useRef, useState } from "react"
-import { Animated, StyleSheet, Text, View, type LayoutChangeEvent } from "react-native"
+import {
+  Animated,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+} from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useNavigation } from "expo-router"
 import { useIsFocused } from "@react-navigation/native"
@@ -36,6 +43,7 @@ import {
   setHomeScreenSnapshot,
   type HomeScreenSnapshot,
 } from "../../src/lib/home-screen-cache"
+import { requestLiveLessonRefresh } from "../../src/lib/live-lesson-refresh"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { runPerfTrace } from "../../src/lib/perf"
 import { useLessonCountdown } from "../../src/hooks/useLessonCountdown"
@@ -162,6 +170,7 @@ export default function HomeScreen() {
   )
   const [scheduleLoading, setScheduleLoading] = useState(!initialSnapshot)
   const [loading, setLoading] = useState(!initialSnapshot)
+  const [refreshing, setRefreshing] = useState(false)
   const [notificationScrollLocked, setNotificationScrollLocked] = useState(false)
   const isHomeFocused = useIsFocused()
 
@@ -228,6 +237,18 @@ export default function HomeScreen() {
     },
     [fetchLessonSchedule],
   )
+
+  const onRefresh = useCallback(async () => {
+    if (!user || guest) return
+    setRefreshing(true)
+    try {
+      requestNotificationsRefresh()
+      requestLiveLessonRefresh()
+      await load()
+    } finally {
+      setRefreshing(false)
+    }
+  }, [user, guest, load])
 
   useFocusEffect(
     useCallback(() => {
@@ -331,6 +352,14 @@ export default function HomeScreen() {
       showsVerticalScrollIndicator={false}
       scrollEventThrottle={16}
       scrollEnabled={!notificationScrollLocked}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.primary}
+          colors={[colors.primary]}
+        />
+      }
       onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
         useNativeDriver: true,
       })}

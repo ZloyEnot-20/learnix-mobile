@@ -762,7 +762,7 @@ export default function ProfileScreen() {
               </View>
               <View style={styles.testCardBody}>
                 <Text style={styles.testCardTitle}>Live lesson</Text>
-                <Text style={styles.testCardSubtitle}>Join if your teacher started a class</Text>
+                <Text style={styles.testCardSubtitle}>Join when your teacher starts class</Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
