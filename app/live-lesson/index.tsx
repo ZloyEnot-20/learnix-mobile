@@ -11,6 +11,7 @@ import { flattenUnitToSteps } from "../../src/lib/books/lesson-flow"
 import type { LessonStep, LiveLessonState } from "../../src/lib/books/types"
 import { useLiveLessonSocket } from "../../src/hooks/useLiveLessonSocket"
 import { LiveExerciseView } from "../../src/components/live-lesson/LiveExerciseView"
+import { LiveLessonFinishedScreen } from "../../src/components/live-lesson/LiveLessonFinishedScreen"
 import { LiveLessonRoomSkeleton } from "../../src/components/live-lesson/LiveLessonSkeletons"
 import { colors, radius, spacing, typography } from "../../src/theme/tokens"
 
@@ -30,12 +31,25 @@ export default function LiveLessonScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [localProgress, setLocalProgress] = useState(0)
   const [idle, setIdle] = useState(false)
-  const [doneFlash, setDoneFlash] = useState(false)
+  const [finishedSummary, setFinishedSummary] = useState<{
+    unitNumber: number | null
+    score: number | null
+  } | null>(null)
   const liveIdRef = useRef<string | null>(null)
   const lastExerciseRef = useRef<string | null>(null)
+  const lastMeRef = useRef<{ score: number | null; unit: number | null }>({
+    score: null,
+    unit: null,
+  })
 
   const applyState = useCallback((state: LiveLessonState | null) => {
     if (!state || state.lessonStatus === "finished") {
+      if (state?.lessonStatus === "finished") {
+        setFinishedSummary({
+          unitNumber: state.currentUnit ?? lastMeRef.current.unit,
+          score: lastMeRef.current.score,
+        })
+      }
       setLive(null)
       setIdle(true)
       liveIdRef.current = null
@@ -47,13 +61,24 @@ export default function LiveLessonScreen() {
       lastExerciseRef.current !== state.currentExercise
     if (exerciseChanged) {
       setLocalProgress(0)
-      setDoneFlash(false)
     }
     lastExerciseRef.current = state.currentExercise
     liveIdRef.current = state.id
     setLive(state)
     setIdle(false)
-  }, [])
+    setFinishedSummary(null)
+
+    const me = state.students?.find((s) => s.studentId === user?.id)
+    if (me) {
+      lastMeRef.current = {
+        score: me.score ?? (me.status === "done" ? me.progress : null),
+        unit: state.currentUnit,
+      }
+      if (me.status === "done") {
+        setLocalProgress(me.progress ?? 100)
+      }
+    }
+  }, [user?.id])
 
   const joinActive = useCallback(async () => {
     if (!user || isGuestUser(user) || user.type !== "student") {
@@ -79,16 +104,25 @@ export default function LiveLessonScreen() {
     }
   }, [user, applyState])
 
-  /** Lightweight poll — picks up teacher exercise changes without reload. */
+  /** Lightweight poll — picks up teacher exercise / finish without reload. */
   const refreshActive = useCallback(async () => {
     if (!user || isGuestUser(user) || user.type !== "student") return
     try {
       const active = await liveLessonsApi.getActive()
       if (!active) {
-        applyState(null)
+        if (liveIdRef.current) {
+          setFinishedSummary({
+            unitNumber: lastMeRef.current.unit,
+            score: lastMeRef.current.score,
+          })
+          setLive(null)
+          setIdle(true)
+          liveIdRef.current = null
+        } else {
+          applyState(null)
+        }
         return
       }
-      // Already joined: just sync state. First time: join.
       if (liveIdRef.current && liveIdRef.current === active.id) {
         applyState(active)
       } else {
@@ -145,22 +179,21 @@ export default function LiveLessonScreen() {
   const currentStep = steps.find((s) => s.exerciseId === live?.currentExercise) ?? null
   const me = live?.students?.find((s) => s.studentId === user?.id)
   const open = Boolean(live?.openForStudents && live.lessonStatus === "active")
+  const isDone = me?.status === "done" || localProgress >= 100
 
-  const markWorking = async (progress: number) => {
+  const markWorking = async (progress: number, status?: "working" | "done") => {
     if (!live) return
+    const nextStatus = status ?? (progress >= 100 ? "done" : "working")
     setLocalProgress(progress)
     setSubmitting(true)
     setError(null)
-    setDoneFlash(false)
     try {
-      // Always REST — reliable; server broadcasts to teacher room.
       const next = await liveLessonsApi.progress(live.id, {
         progress,
-        status: progress >= 100 ? "done" : "working",
-        score: progress >= 100 ? Math.round(progress) : null,
+        status: nextStatus,
+        score: nextStatus === "done" ? Math.round(progress) : null,
       })
       applyState(next)
-      if (progress >= 100) setDoneFlash(true)
     } catch (e) {
       setError(getUserFacingErrorMessage(e, "Failed to update progress"))
     } finally {
@@ -168,10 +201,30 @@ export default function LiveLessonScreen() {
     }
   }
 
+  const changeAnswers = async () => {
+    await markWorking(Math.min(90, localProgress || 50), "working")
+  }
+
   if (authLoading || loading) {
     return (
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
         <LiveLessonRoomSkeleton />
+      </SafeAreaView>
+    )
+  }
+
+  if (finishedSummary) {
+    return (
+      <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
+        <LiveLessonFinishedScreen
+          unitNumber={finishedSummary.unitNumber}
+          score={finishedSummary.score}
+          onGoHome={() => router.replace("/(tabs)" as never)}
+          onDismiss={() => {
+            setFinishedSummary(null)
+            setIdle(true)
+          }}
+        />
       </SafeAreaView>
     )
   }
@@ -203,12 +256,6 @@ export default function LiveLessonScreen() {
         </View>
       ) : null}
 
-      {doneFlash ? (
-        <View style={styles.successBanner}>
-          <Text style={styles.successText}>Marked complete — teacher can see your progress</Text>
-        </View>
-      ) : null}
-
       {idle || !live ? (
         <View style={styles.waiting}>
           <View style={styles.idleIcon}>
@@ -232,6 +279,7 @@ export default function LiveLessonScreen() {
           {me ? (
             <Text style={styles.waitingMeta}>
               You are {me.status} · {me.progress}%
+              {me.score != null ? ` · score ${me.score}` : ""}
             </Text>
           ) : null}
           {live.currentExercise ? (
@@ -247,28 +295,47 @@ export default function LiveLessonScreen() {
             </Text>
           </View>
           <View style={styles.exercise}>
-            <LiveExerciseView key={`${live.currentExercise}-${live.currentUnit}`} step={currentStep} />
+            <LiveExerciseView
+              key={`${live.currentExercise}-${live.currentUnit}`}
+              step={currentStep}
+              locked={isDone}
+            />
           </View>
           <View style={styles.actions}>
-            <Pressable
-              style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
-              disabled={submitting}
-              onPress={() => void markWorking(Math.min(90, (localProgress || 0) + 25))}
-            >
-              <Text style={styles.secondaryBtnText}>
-                {`I'm working (${Math.min(90, (localProgress || 0) + 25)}%)`}
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.primaryBtn, submitting && styles.btnDisabled]}
-              disabled={submitting}
-              onPress={() => void markWorking(100)}
-            >
-              <Ionicons name="checkmark-circle" size={18} color="#fff" />
-              <Text style={styles.primaryBtnText}>
-                {submitting ? "Saving…" : "Mark complete"}
-              </Text>
-            </Pressable>
+            {isDone ? (
+              <Pressable
+                style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
+                disabled={submitting}
+                onPress={() => void changeAnswers()}
+              >
+                <Ionicons name="create-outline" size={18} color={colors.text} />
+                <Text style={styles.secondaryBtnText}>
+                  {submitting ? "Updating…" : "Change answers"}
+                </Text>
+              </Pressable>
+            ) : (
+              <>
+                <Pressable
+                  style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
+                  disabled={submitting}
+                  onPress={() => void markWorking(Math.min(90, (localProgress || 0) + 25))}
+                >
+                  <Text style={styles.secondaryBtnText}>
+                    {`I'm working (${Math.min(90, (localProgress || 0) + 25)}%)`}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                  disabled={submitting}
+                  onPress={() => void markWorking(100, "done")}
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                  <Text style={styles.primaryBtnText}>
+                    {submitting ? "Saving…" : "Mark complete"}
+                  </Text>
+                </Pressable>
+              </>
+            )}
           </View>
         </View>
       ) : (
@@ -302,14 +369,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   errorText: { ...typography.caption, color: "#DC2626" },
-  successBanner: {
-    marginHorizontal: spacing.screen,
-    marginTop: spacing.sm,
-    backgroundColor: "#ECFDF5",
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  successText: { ...typography.caption, color: "#047857", fontWeight: "600" },
   waiting: {
     flex: 1,
     alignItems: "center",
@@ -366,11 +425,14 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { ...typography.label, color: "#fff", fontWeight: "700" },
   secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.button,
     paddingVertical: 12,
-    alignItems: "center",
     backgroundColor: colors.background,
   },
   secondaryBtnText: { ...typography.label, color: colors.text },

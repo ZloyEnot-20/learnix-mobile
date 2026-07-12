@@ -134,6 +134,7 @@ export interface LiveLessonState {
   teacherId: string
   currentUnit: number | null
   currentExercise: string | null
+  unitCompleted?: boolean
   lessonStatus: LiveLessonStatus
   openForStudents: boolean
   startedAt: string | null

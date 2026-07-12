@@ -447,19 +447,36 @@ function renderBody(raw: BookExerciseRaw, uiType: LessonStep["uiType"], exercise
   }
 }
 
-export function LiveExerciseView({ step }: { step: LessonStep }) {
+export function LiveExerciseView({
+  step,
+  locked = false,
+}: {
+  step: LessonStep
+  locked?: boolean
+}) {
   const exerciseKey = `${step.unitNumber}-${step.exerciseId}-${step.uiType}`
   return (
-    <ScrollView contentContainerStyle={styles.wrap} showsVerticalScrollIndicator={false}>
-      <View style={styles.metaRow}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>{step.uiLabel}</Text>
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        contentContainerStyle={styles.wrap}
+        showsVerticalScrollIndicator={false}
+        pointerEvents={locked ? "none" : "auto"}
+      >
+        <View style={styles.metaRow}>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{step.uiLabel}</Text>
+          </View>
+          <Text style={styles.meta}>Ex {step.exerciseId}</Text>
         </View>
-        <Text style={styles.meta}>Ex {step.exerciseId}</Text>
-      </View>
-      {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
-      {renderBody(step.raw, step.uiType, exerciseKey)}
-    </ScrollView>
+        {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
+        {renderBody(step.raw, step.uiType, exerciseKey)}
+      </ScrollView>
+      {locked ? (
+        <View style={styles.lockedBanner} pointerEvents="none">
+          <Text style={styles.lockedText}>Completed — tap Change answers to edit</Text>
+        </View>
+      ) : null}
+    </View>
   )
 }
 
@@ -513,4 +530,17 @@ const styles = StyleSheet.create({
   chipText: { ...typography.caption, color: colors.text },
   chipTextSelected: { color: colors.primaryDark, fontWeight: "700" },
   chipTextPlaced: { color: "#047857", fontWeight: "600" },
+  lockedBanner: {
+    position: "absolute",
+    left: spacing.screen,
+    right: spacing.screen,
+    bottom: spacing.sm,
+    backgroundColor: "#ECFDF5",
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  lockedText: { ...typography.caption, color: "#047857", fontWeight: "600", textAlign: "center" },
 })
