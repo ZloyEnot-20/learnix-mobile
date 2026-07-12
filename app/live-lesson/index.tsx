@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native"
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { router, useFocusEffect } from "expo-router"
@@ -31,6 +31,7 @@ export default function LiveLessonScreen() {
   const [submitting, setSubmitting] = useState(false)
   const [localProgress, setLocalProgress] = useState(0)
   const [idle, setIdle] = useState(false)
+  const [exerciseAnswers, setExerciseAnswers] = useState<Record<string, unknown> | null>(null)
   const [finishedSummary, setFinishedSummary] = useState<{
     unitNumber: number | null
     score: number | null
@@ -61,6 +62,7 @@ export default function LiveLessonScreen() {
       lastExerciseRef.current !== state.currentExercise
     if (exerciseChanged) {
       setLocalProgress(0)
+      setExerciseAnswers(null)
     }
     lastExerciseRef.current = state.currentExercise
     liveIdRef.current = state.id
@@ -191,7 +193,9 @@ export default function LiveLessonScreen() {
       const next = await liveLessonsApi.progress(live.id, {
         progress,
         status: nextStatus,
-        score: nextStatus === "done" ? Math.round(progress) : null,
+        // Server grades from answers — do not send fake score: 100
+        score: nextStatus === "done" ? undefined : null,
+        ...(exerciseAnswers ? { answers: exerciseAnswers } : {}),
       })
       applyState(next)
     } catch (e) {
@@ -201,8 +205,21 @@ export default function LiveLessonScreen() {
     }
   }
 
-  const changeAnswers = async () => {
-    await markWorking(Math.min(90, localProgress || 50), "working")
+  const confirmComplete = () => {
+    Alert.alert(
+      "Complete exercise?",
+      "Your answers will be sent to the teacher. You won’t be able to change them.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Complete",
+          style: "default",
+          onPress: () => {
+            void markWorking(100, "done")
+          },
+        },
+      ],
+    )
   }
 
   if (authLoading || loading) {
@@ -299,20 +316,15 @@ export default function LiveLessonScreen() {
               key={`${live.currentExercise}-${live.currentUnit}`}
               step={currentStep}
               locked={isDone}
+              onAnswersChange={setExerciseAnswers}
             />
           </View>
           <View style={styles.actions}>
             {isDone ? (
-              <Pressable
-                style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
-                disabled={submitting}
-                onPress={() => void changeAnswers()}
-              >
-                <Ionicons name="create-outline" size={18} color={colors.text} />
-                <Text style={styles.secondaryBtnText}>
-                  {submitting ? "Updating…" : "Change answers"}
-                </Text>
-              </Pressable>
+              <View style={styles.completedBanner}>
+                <Ionicons name="checkmark-circle" size={20} color="#047857" />
+                <Text style={styles.completedText}>Completed — answers locked</Text>
+              </View>
             ) : (
               <>
                 <Pressable
@@ -327,12 +339,10 @@ export default function LiveLessonScreen() {
                 <Pressable
                   style={[styles.primaryBtn, submitting && styles.btnDisabled]}
                   disabled={submitting}
-                  onPress={() => void markWorking(100, "done")}
+                  onPress={confirmComplete}
                 >
                   <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                  <Text style={styles.primaryBtnText}>
-                    {submitting ? "Saving…" : "Mark complete"}
-                  </Text>
+                  <Text style={styles.primaryBtnText}>{submitting ? "Saving…" : "Complete"}</Text>
                 </Pressable>
               </>
             )}
@@ -437,4 +447,16 @@ const styles = StyleSheet.create({
   },
   secondaryBtnText: { ...typography.label, color: colors.text },
   btnDisabled: { opacity: 0.6 },
+  completedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#ECFDF5",
+    borderRadius: radius.button,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  completedText: { ...typography.label, color: "#047857", fontWeight: "700" },
 })
