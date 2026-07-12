@@ -755,6 +755,20 @@ export default function ProfileScreen() {
 
             <Pressable
               style={({ pressed }) => [styles.testCard, pressed && styles.testCardPressed]}
+              onPress={() => router.push("/live-lesson" as never)}
+            >
+              <View style={styles.testCardIcon}>
+                <Ionicons name="radio-outline" size={20} color={colors.primaryDark} />
+              </View>
+              <View style={styles.testCardBody}>
+                <Text style={styles.testCardTitle}>Live lesson</Text>
+                <Text style={styles.testCardSubtitle}>Join if your teacher started a class</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.testCard, pressed && styles.testCardPressed]}
               onPress={() => router.push("/ielts/listening" as never)}
             >
               <View style={styles.testCardIcon}>

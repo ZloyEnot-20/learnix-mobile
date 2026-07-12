@@ -8,6 +8,7 @@ import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
 import { isGuestUser } from "../../src/lib/guest"
 import { ContinueLearningBanner } from "../../src/components/ContinueLearningBanner"
 import { NextLessonBanner } from "../../src/components/NextLessonBanner"
+import { JoinLiveLessonBanner } from "../../src/components/live-lesson/JoinLiveLessonBanner"
 import { NotificationsBell } from "../../src/components/NotificationsBell"
 import { NotificationBanner } from "../../src/components/NotificationBanner"
 import { IeltsMockTestBanner } from "../../src/components/IeltsMockTestBanner"
@@ -349,7 +350,13 @@ export default function HomeScreen() {
         />
       </FadeInDown>
 
-      <FadeInDown index={2} style={styles.notificationBannerWrap}>
+      {!guest ? (
+        <FadeInDown index={2}>
+          <JoinLiveLessonBanner />
+        </FadeInDown>
+      ) : null}
+
+      <FadeInDown index={guest ? 2 : 3} style={styles.notificationBannerWrap}>
         <NotificationBanner
           isFocused={isHomeFocused}
           loading={loading}
