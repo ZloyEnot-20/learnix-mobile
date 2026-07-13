@@ -1,4 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import {
   Pressable,
   ScrollView,
@@ -8,6 +16,7 @@ import {
   View,
 } from "react-native"
 import type { BookExerciseRaw, LessonStep } from "../../lib/books/types"
+import { parseNumberedGaps } from "../../lib/books/gap-text"
 import { colors, radius, spacing, typography } from "../../theme/tokens"
 
 function asStringArray(v: unknown): string[] {
@@ -18,12 +27,50 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
 }
 
-function countGaps(text: string): number {
-  const matches = text.match(/_{2,}|\b\d+\s*[.)]?\s*_+/g)
-  if (matches?.length) return matches.length
-  // numbered blanks in summary: "the 1 of colonial" / "remains of 2 hidden"
-  const nums = text.match(/\b(\d+)\b(?=\s+[a-z])/gi)
-  return nums?.length ?? 0
+type DockState = {
+  words: string[]
+  selectedBlank: number | null
+  hint: string
+  onPickWord: (word: string) => void
+} | null
+
+const WordBankDockContext = createContext<{
+  setDock: (dock: DockState) => void
+}>({ setDock: () => {} })
+
+function useWordBankDock(
+  words: string[] | undefined,
+  selectedBlank: number | null,
+  onPickWord: (word: string) => void,
+  hint: string,
+) {
+  const { setDock } = useContext(WordBankDockContext)
+  const onPickWordRef = useRef(onPickWord)
+  onPickWordRef.current = onPickWord
+  const wordsRef = useRef(words)
+  wordsRef.current = words
+  const stableOnPickWord = useCallback((word: string) => {
+    onPickWordRef.current(word)
+  }, [])
+  const wordsKey = words?.join("\0") ?? ""
+
+  useEffect(() => {
+    const current = wordsRef.current
+    if (!current?.length) {
+      setDock(null)
+      return
+    }
+    setDock({
+      words: current,
+      selectedBlank,
+      hint,
+      onPickWord: stableOnPickWord,
+    })
+  }, [wordsKey, selectedBlank, hint, setDock, stableOnPickWord])
+
+  useEffect(() => {
+    return () => setDock(null)
+  }, [setDock])
 }
 
 function Chip({
@@ -354,54 +401,226 @@ function ListAnswers({
   wordBank?: string[]
 }) {
   const [values, setValues] = useState<string[]>(() => labels.map(() => ""))
-  const [selectedWord, setSelectedWord] = useState<string | null>(null)
+  const [selectedBlank, setSelectedBlank] = useState<number | null>(null)
+  const hasBank = Boolean(wordBank && wordBank.length > 0)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const valuesRef = useRef(values)
+  valuesRef.current = values
+  const selectedBlankRef = useRef(selectedBlank)
+  selectedBlankRef.current = selectedBlank
 
   useEffect(() => {
     setValues(labels.map(() => ""))
-    setSelectedWord(null)
+    setSelectedBlank(null)
   }, [exerciseKey, labels.length])
 
-  const update = (index: number, text: string) => {
-    const next = [...values]
+  const update = useCallback((index: number, text: string) => {
+    const next = [...valuesRef.current]
     next[index] = text
     setValues(next)
-    queueMicrotask(() => onChange?.(next))
+    queueMicrotask(() => onChangeRef.current?.(next))
+  }, [])
+
+  const onPickWord = useCallback((word: string) => {
+    const blank = selectedBlankRef.current
+    if (blank == null) return
+    const next = [...valuesRef.current]
+    next[blank] = word
+    setValues(next)
+    queueMicrotask(() => onChangeRef.current?.(next))
+    const nextEmpty = next.findIndex((v, i) => i !== blank && !(v ?? "").trim())
+    setSelectedBlank(nextEmpty >= 0 ? nextEmpty : null)
+  }, [])
+
+  useWordBankDock(
+    hasBank ? wordBank : undefined,
+    selectedBlank,
+    onPickWord,
+    selectedBlank != null
+      ? `Gap ${selectedBlank + 1} selected — tap a word below`
+      : "Tap a blank, then tap a word below",
+  )
+
+  return (
+    <View style={styles.gap}>
+      {hasBank ? (
+        <Text style={styles.hint}>
+          {selectedBlank != null
+            ? `Blank ${selectedBlank + 1} selected — pick a word from the panel`
+            : "Tap a blank first, then choose a word from the bottom panel"}
+        </Text>
+      ) : null}
+      {labels.map((label, i) => {
+        const selected = selectedBlank === i
+        return (
+          <Pressable
+            key={`${exerciseKey}-${i}`}
+            onPress={() => {
+              if (!hasBank) return
+              setSelectedBlank((cur) => (cur === i ? null : i))
+            }}
+            style={[styles.block, selected && styles.blockActive]}
+          >
+            <Text style={styles.body}>{label}</Text>
+            {hasBank ? (
+              <View style={[styles.blankPill, selected && styles.blankPillActive]}>
+                <Text
+                  style={[styles.blankPillText, values[i] ? styles.blankPillFilled : null]}
+                  numberOfLines={1}
+                >
+                  {values[i]?.trim() ? values[i] : `Blank ${i + 1}`}
+                </Text>
+              </View>
+            ) : (
+              <AnswerInput
+                value={values[i] ?? ""}
+                onChangeText={(t) => update(i, t)}
+                placeholder={placeholder ?? "Type your answer"}
+              />
+            )}
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+}
+
+/** Passage/summary with inline numbered gaps + optional word bank dock. */
+function InlineGapPassage({
+  text,
+  exerciseKey,
+  onChange,
+  wordBank,
+  expectedCount,
+  placeholder,
+}: {
+  text: string
+  exerciseKey: string
+  onChange?: (values: string[]) => void
+  wordBank?: string[]
+  expectedCount?: number
+  placeholder?: string
+}) {
+  const { segments, gapCount } = useMemo(
+    () => parseNumberedGaps(text, expectedCount),
+    [text, expectedCount],
+  )
+  const count = Math.max(gapCount, expectedCount ?? 0)
+  const [values, setValues] = useState<string[]>(() => Array.from({ length: count }, () => ""))
+  const [selectedBlank, setSelectedBlank] = useState<number | null>(null)
+  const hasBank = Boolean(wordBank && wordBank.length > 0)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  const valuesRef = useRef(values)
+  valuesRef.current = values
+  const selectedBlankRef = useRef(selectedBlank)
+  selectedBlankRef.current = selectedBlank
+
+  useEffect(() => {
+    setValues(Array.from({ length: count }, () => ""))
+    setSelectedBlank(null)
+  }, [exerciseKey, count])
+
+  const commit = useCallback((next: string[]) => {
+    setValues(next)
+    queueMicrotask(() => onChangeRef.current?.(next))
+  }, [])
+
+  const onPickWord = useCallback(
+    (word: string) => {
+      const blank = selectedBlankRef.current
+      if (blank == null) return
+      const next = [...valuesRef.current]
+      next[blank] = word
+      commit(next)
+      const nextEmpty = next.findIndex((v, i) => i !== blank && !(v ?? "").trim())
+      setSelectedBlank(nextEmpty >= 0 ? nextEmpty : null)
+    },
+    [commit],
+  )
+
+  useWordBankDock(
+    hasBank ? wordBank : undefined,
+    selectedBlank,
+    onPickWord,
+    selectedBlank != null
+      ? `Gap ${selectedBlank + 1} selected — tap a word below`
+      : "Tap a numbered blank, then a word below",
+  )
+
+  if (gapCount === 0) {
+    return (
+      <View style={styles.gap}>
+        <Block title="Text">
+          <Text style={styles.body}>{text}</Text>
+        </Block>
+        <ListAnswers
+          labels={Array.from({ length: Math.max(count, 1) }, (_, i) => `Gap ${i + 1}`)}
+          exerciseKey={exerciseKey}
+          placeholder={placeholder}
+          wordBank={wordBank}
+          onChange={onChange}
+        />
+      </View>
+    )
   }
 
   return (
     <View style={styles.gap}>
-      {wordBank && wordBank.length > 0 ? (
-        <>
-          <Text style={styles.hint}>
-            {selectedWord
-              ? `Selected: ${selectedWord} — tap a sentence to fill`
-              : "Tap a word, then tap a sentence — or type"}
-          </Text>
-          <ChipRow
-            items={wordBank}
-            selected={selectedWord}
-            onSelect={(item) => setSelectedWord((cur) => (cur === item ? null : item))}
-          />
-        </>
-      ) : null}
-      {labels.map((label, i) => (
-        <Pressable
-          key={`${exerciseKey}-${i}`}
-          onPress={() => {
-            if (!selectedWord) return
-            update(i, selectedWord)
-            setSelectedWord(null)
-          }}
-          style={[styles.block, selectedWord ? styles.blockActive : null]}
-        >
-          <Text style={styles.body}>{label}</Text>
+      <Text style={styles.hint}>
+        {hasBank
+          ? selectedBlank != null
+            ? `Gap ${selectedBlank + 1} selected — pick a word below`
+            : "Tap a number in the text, then pick a word from the bottom panel"
+          : "Tap a number in the text to select a blank, then type below — or fill the list"}
+      </Text>
+      <View style={styles.inlineWrap}>
+        {segments.map((seg, i) => {
+          if (seg.type === "text") {
+            return (
+              <Text key={`t-${i}`} style={styles.inlineText}>
+                {seg.text}
+              </Text>
+            )
+          }
+          const filled = values[seg.index]?.trim()
+          const selected = selectedBlank === seg.index
+          return (
+            <Pressable
+              key={`g-${seg.index}-${i}`}
+              onPress={() => setSelectedBlank((cur) => (cur === seg.index ? null : seg.index))}
+              style={[styles.inlineBlank, selected && styles.inlineBlankActive]}
+            >
+              <Text
+                style={[
+                  styles.inlineBlankText,
+                  filled ? styles.blankPillFilled : null,
+                  selected && !filled ? { color: "#fff" } : null,
+                  selected && filled ? { color: "#fff" } : null,
+                ]}
+              >
+                {filled || String(seg.index + 1)}
+              </Text>
+            </Pressable>
+          )
+        })}
+      </View>
+      {!hasBank ? (
+        selectedBlank != null ? (
           <AnswerInput
-            value={values[i] ?? ""}
-            onChangeText={(t) => update(i, t)}
-            placeholder={placeholder ?? "Type your answer"}
+            value={values[selectedBlank] ?? ""}
+            onChangeText={(t) => {
+              const next = [...values]
+              next[selectedBlank] = t
+              commit(next)
+            }}
+            placeholder={placeholder ?? `Gap ${selectedBlank + 1}`}
           />
-        </Pressable>
-      ))}
+        ) : (
+          <Text style={styles.muted}>Select a numbered blank above to type your answer</Text>
+        )
+      ) : null}
     </View>
   )
 }
@@ -495,53 +714,15 @@ function SentenceWordbox({
   exerciseKey: string
   onChange?: (values: string[]) => void
 }) {
-  const [selected, setSelected] = useState<string | null>(null)
-  const [values, setValues] = useState<string[]>(() => sentences.map(() => ""))
-
-  useEffect(() => {
-    setSelected(null)
-    setValues(sentences.map(() => ""))
-  }, [exerciseKey])
-
-  const place = (index: number) => {
-    if (!selected) return
-    const next = [...values]
-    next[index] = selected
-    setValues(next)
-    queueMicrotask(() => onChange?.(next))
-    setSelected(null)
-  }
-
+  const labels = sentences.map((s, i) => `${i + 1}. ${String(s.sentence ?? "")}`)
   return (
-    <View style={styles.gap}>
-      <Text style={styles.hint}>
-        {selected ? `Selected: ${selected} — tap a sentence` : "Tap a word, then tap a sentence"}
-      </Text>
-      <ChipRow
-        items={bank}
-        selected={selected}
-        onSelect={(item) => setSelected((cur) => (cur === item ? null : item))}
-      />
-      {sentences.map((s, i) => (
-        <Pressable
-          key={i}
-          onPress={() => place(i)}
-          style={[styles.block, selected ? styles.blockActive : null]}
-        >
-          <Text style={styles.body}>{String(s.sentence ?? "")}</Text>
-          <AnswerInput
-            value={values[i] ?? ""}
-            onChangeText={(t) => {
-              const next = [...values]
-              next[i] = t
-              setValues(next)
-              queueMicrotask(() => onChange?.(next))
-            }}
-            placeholder="Or type the word"
-          />
-        </Pressable>
-      ))}
-    </View>
+    <ListAnswers
+      labels={labels}
+      exerciseKey={exerciseKey}
+      wordBank={bank}
+      placeholder="Fill the blank"
+      onChange={onChange}
+    />
   )
 }
 
@@ -775,19 +956,18 @@ function renderBody(
 
     case "summary-completion": {
       const summary = String(raw.summary ?? "")
-      const gapCount = Math.max(countGaps(summary), asStringArray(raw.answers).length, 8)
-      const labels = Array.from({ length: gapCount }, (_, i) => `Gap ${i + 1}`)
+      const answersLen = asStringArray(raw.answers).length
+      const parsed = parseNumberedGaps(summary, answersLen || undefined)
+      const expected = Math.max(parsed.gapCount, answersLen, 1)
       return (
         <View style={styles.gap}>
           {raw.audio_track != null ? (
             <Text style={styles.hint}>Audio track {String(raw.audio_track)}</Text>
           ) : null}
-          <Block title="Summary">
-            <Text style={styles.body}>{summary}</Text>
-          </Block>
-          <ListAnswers
-            labels={labels}
+          <InlineGapPassage
+            text={summary}
             exerciseKey={exerciseKey}
+            expectedCount={expected}
             placeholder="NO MORE THAN TWO WORDS"
             onChange={(values) => emit({ kind: "list", values })}
           />
@@ -813,25 +993,18 @@ function renderBody(
     case "gap-fill-passage": {
       const text = String(raw.text ?? "")
       const words = asStringArray(raw.words)
-      const gapCount = Math.max(countGaps(text), words.length || 5)
+      const answersLen = asStringArray(raw.answers).length
+      const parsed = parseNumberedGaps(text, answersLen || words.length || undefined)
+      const expected = Math.max(parsed.gapCount, answersLen, words.length, 1)
       return (
-        <View style={styles.gap}>
-          {words.length ? (
-            <>
-              <Text style={styles.hint}>Word box — use these words</Text>
-              <ChipRow items={words} />
-            </>
-          ) : null}
-          <Block title="Passage">
-            <Text style={styles.body}>{text}</Text>
-          </Block>
-          <ListAnswers
-            labels={Array.from({ length: gapCount }, (_, i) => `Gap ${i + 1}`)}
-            exerciseKey={exerciseKey}
-            placeholder="Word for this gap"
-            onChange={(values) => emit({ kind: "list", values })}
-          />
-        </View>
+        <InlineGapPassage
+          text={text}
+          exerciseKey={exerciseKey}
+          wordBank={words.length ? words : undefined}
+          expectedCount={expected}
+          placeholder="Word for this gap"
+          onChange={(values) => emit({ kind: "list", values })}
+        />
       )
     }
 
@@ -957,29 +1130,54 @@ export function LiveExerciseView({
   onAnswersChange?: (answers: Record<string, unknown>) => void
 }) {
   const exerciseKey = `${step.unitNumber}-${step.exerciseId}-${step.uiType}`
+  const [dock, setDock] = useState<DockState>(null)
+  const dockApi = useMemo(() => ({ setDock }), [])
+
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView
-        contentContainerStyle={styles.wrap}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        pointerEvents={locked ? "none" : "auto"}
-      >
-        <View style={styles.metaRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{step.uiLabel}</Text>
+    <WordBankDockContext.Provider value={dockApi}>
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={[styles.wrap, dock ? { paddingBottom: 8 } : null]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          pointerEvents={locked ? "none" : "auto"}
+        >
+          <View style={styles.metaRow}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{step.uiLabel}</Text>
+            </View>
+            <Text style={styles.meta}>Ex {step.exerciseId}</Text>
           </View>
-          <Text style={styles.meta}>Ex {step.exerciseId}</Text>
-        </View>
-        {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
-        {renderBody(step.raw, step.uiType, exerciseKey, onAnswersChange, unitSteps)}
-      </ScrollView>
-      {locked ? (
-        <View style={styles.lockedBanner} pointerEvents="none">
-          <Text style={styles.lockedText}>Answers locked</Text>
-        </View>
-      ) : null}
-    </View>
+          {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
+          {renderBody(step.raw, step.uiType, exerciseKey, onAnswersChange, unitSteps)}
+        </ScrollView>
+        {dock && !locked ? (
+          <View style={styles.wordDock}>
+            <Text style={styles.wordDockHint}>{dock.hint}</Text>
+            <View style={[styles.chipRow, dock.selectedBlank == null && { opacity: 0.45 }]}>
+              {dock.words.map((word) => (
+                <Chip
+                  key={word}
+                  label={word}
+                  onPress={() => {
+                    if (dock.selectedBlank == null) return
+                    dock.onPickWord(word)
+                  }}
+                />
+              ))}
+            </View>
+            {dock.selectedBlank == null ? (
+              <Text style={styles.muted}>Select a blank above first</Text>
+            ) : null}
+          </View>
+        ) : null}
+        {locked ? (
+          <View style={styles.lockedBanner} pointerEvents="none">
+            <Text style={styles.lockedText}>Answers locked</Text>
+          </View>
+        ) : null}
+      </View>
+    </WordBankDockContext.Provider>
   )
 }
 
@@ -1048,6 +1246,59 @@ const styles = StyleSheet.create({
   chipText: { ...typography.caption, color: colors.text },
   chipTextSelected: { color: colors.primaryDark, fontWeight: "700" },
   chipTextPlaced: { color: "#047857", fontWeight: "600" },
+  blankPill: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.background,
+  },
+  blankPillActive: {
+    borderColor: colors.primary,
+    borderStyle: "solid",
+    backgroundColor: colors.primaryLight,
+  },
+  blankPillText: { ...typography.body, color: colors.textMuted },
+  blankPillFilled: { color: colors.text, fontWeight: "600" },
+  inlineWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    padding: spacing.md,
+  },
+  inlineText: { ...typography.body, color: colors.text, lineHeight: 24 },
+  inlineBlank: {
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 28,
+    alignItems: "center",
+    backgroundColor: colors.primaryLight,
+  },
+  inlineBlankActive: {
+    backgroundColor: colors.primary,
+  },
+  inlineBlankText: { ...typography.caption, color: colors.primaryDark, fontWeight: "700" },
+  wordDock: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderLight,
+    backgroundColor: colors.card,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    gap: 8,
+  },
+  wordDockHint: { ...typography.caption, color: colors.primaryDark, fontWeight: "600" },
   lockedBanner: {
     position: "absolute",
     left: spacing.screen,

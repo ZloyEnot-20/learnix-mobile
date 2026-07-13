@@ -11,6 +11,7 @@ import { flattenUnitToSteps } from "../../src/lib/books/lesson-flow"
 import type { LessonStep, LiveLessonState } from "../../src/lib/books/types"
 import { useLiveLessonSocket } from "../../src/hooks/useLiveLessonSocket"
 import { LiveExerciseView } from "../../src/components/live-lesson/LiveExerciseView"
+import { LiveExerciseReview } from "../../src/components/live-lesson/LiveExerciseReview"
 import { LiveLessonFinishedScreen } from "../../src/components/live-lesson/LiveLessonFinishedScreen"
 import { LiveLessonRoomSkeleton } from "../../src/components/live-lesson/LiveLessonSkeletons"
 import { colors, radius, spacing, typography } from "../../src/theme/tokens"
@@ -185,6 +186,10 @@ export default function LiveLessonScreen() {
   const open = Boolean(live?.openForStudents && live.lessonStatus === "active")
   const isDone = me?.status === "done" || localProgress >= 100
 
+  const handleAnswersChange = useCallback((answers: Record<string, unknown>) => {
+    setExerciseAnswers(answers)
+  }, [])
+
   const markWorking = async (progress: number, status?: "working" | "done") => {
     if (!live) return
     const nextStatus = status ?? (progress >= 100 ? "done" : "working")
@@ -254,6 +259,15 @@ export default function LiveLessonScreen() {
       : `In lesson · ${live.lessonStatus}`
     : "Your group"
 
+  const headerTitle =
+    live && live.openForStudents && live.currentExercise
+      ? `Open · Unit ${live.currentUnit} · Ex ${live.currentExercise}`
+      : live && live.lastExerciseReview
+        ? `Review · Unit ${live.lastExerciseReview.unitNumber} · Ex ${live.lastExerciseReview.exerciseId}`
+        : "Live lesson"
+
+  const review = live?.lastExerciseReview
+
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.header}>
@@ -261,7 +275,9 @@ export default function LiveLessonScreen() {
           <Ionicons name="close" size={24} color={colors.text} />
         </Pressable>
         <View style={styles.headerCenter}>
-          <Text style={styles.headerTitle}>Live lesson</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {headerTitle}
+          </Text>
           <Text style={styles.headerSub}>{statusLabel}</Text>
         </View>
         <Pressable onPress={() => void joinActive()} hitSlop={12}>
@@ -288,6 +304,44 @@ export default function LiveLessonScreen() {
             <Text style={styles.primaryBtnText}>Check again</Text>
           </Pressable>
         </View>
+      ) : open && currentStep ? (
+        <View style={styles.room}>
+          <View style={styles.exercise}>
+            <LiveExerciseView
+              key={`${live.currentExercise}-${live.currentUnit}`}
+              step={currentStep}
+              unitSteps={steps}
+              locked={isDone}
+              onAnswersChange={handleAnswersChange}
+            />
+          </View>
+          <View style={styles.actions}>
+            {isDone ? (
+              <View style={styles.completedBanner}>
+                <Ionicons name="checkmark-circle" size={20} color="#047857" />
+                <Text style={styles.completedText}>Completed — answers locked</Text>
+              </View>
+            ) : (
+              <Pressable
+                style={[styles.primaryBtn, submitting && styles.btnDisabled]}
+                disabled={submitting}
+                onPress={confirmComplete}
+              >
+                <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                <Text style={styles.primaryBtnText}>{submitting ? "Saving…" : "Complete"}</Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      ) : review ? (
+        <View style={styles.room}>
+          <LiveExerciseReview
+            unitNumber={review.unitNumber}
+            exerciseId={review.exerciseId}
+            answerKey={review.answerKey}
+            me={me}
+          />
+        </View>
       ) : !open ? (
         <View style={styles.waiting}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -304,55 +358,6 @@ export default function LiveLessonScreen() {
           {live.currentExercise ? (
             <Text style={styles.waitingMeta}>Current exercise: {live.currentExercise}</Text>
           ) : null}
-        </View>
-      ) : currentStep ? (
-        <View style={styles.room}>
-          <View style={styles.openBadge}>
-            <Ionicons name="radio" size={14} color="#fff" />
-            <Text style={styles.openBadgeText}>
-              Open · Unit {live.currentUnit} · Ex {live.currentExercise}
-            </Text>
-          </View>
-          <View style={styles.exercise}>
-            <LiveExerciseView
-              key={`${live.currentExercise}-${live.currentUnit}`}
-              step={currentStep}
-              unitSteps={steps}
-              locked={isDone}
-              onAnswersChange={(answers) => {
-                // Defer — child must never update parent synchronously during its render.
-                queueMicrotask(() => setExerciseAnswers(answers))
-              }}
-            />
-          </View>
-          <View style={styles.actions}>
-            {isDone ? (
-              <View style={styles.completedBanner}>
-                <Ionicons name="checkmark-circle" size={20} color="#047857" />
-                <Text style={styles.completedText}>Completed — answers locked</Text>
-              </View>
-            ) : (
-              <>
-                <Pressable
-                  style={[styles.secondaryBtn, submitting && styles.btnDisabled]}
-                  disabled={submitting}
-                  onPress={() => void markWorking(Math.min(90, (localProgress || 0) + 25))}
-                >
-                  <Text style={styles.secondaryBtnText}>
-                    {`I'm working (${Math.min(90, (localProgress || 0) + 25)}%)`}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.primaryBtn, submitting && styles.btnDisabled]}
-                  disabled={submitting}
-                  onPress={confirmComplete}
-                >
-                  <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                  <Text style={styles.primaryBtnText}>{submitting ? "Saving…" : "Complete"}</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
         </View>
       ) : (
         <View style={styles.waiting}>
@@ -405,19 +410,6 @@ const styles = StyleSheet.create({
   waitingSub: { ...typography.bodySm, color: colors.textSecondary, textAlign: "center" },
   waitingMeta: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
   room: { flex: 1 },
-  openBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    marginHorizontal: spacing.screen,
-    marginTop: spacing.md,
-    backgroundColor: "#059669",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-  },
-  openBadgeText: { ...typography.caption, color: "#fff", fontWeight: "600" },
   exercise: { flex: 1, paddingHorizontal: spacing.screen, paddingTop: spacing.md },
   actions: {
     paddingHorizontal: spacing.screen,
@@ -440,18 +432,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   primaryBtnText: { ...typography.label, color: "#fff", fontWeight: "700" },
-  secondaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.button,
-    paddingVertical: 12,
-    backgroundColor: colors.background,
-  },
-  secondaryBtnText: { ...typography.label, color: colors.text },
   btnDisabled: { opacity: 0.6 },
   completedBanner: {
     flexDirection: "row",

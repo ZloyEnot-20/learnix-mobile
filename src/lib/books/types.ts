@@ -149,6 +149,13 @@ export interface LiveLessonState {
   unitCompleted?: boolean
   lessonStatus: LiveLessonStatus
   openForStudents: boolean
+  /** Populated after teacher finishes an exercise — students see answer review. */
+  lastExerciseReview?: {
+    unitNumber: number
+    exerciseId: string
+    answerKey: unknown
+    closedAt?: string
+  } | null
   startedAt: string | null
   pausedAt: string | null
   finishedAt: string | null

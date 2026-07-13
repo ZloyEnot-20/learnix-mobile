@@ -595,6 +595,15 @@ export default function ProfileScreen() {
 
   const settingsItems: SettingsItem[] = [
     {
+      id: "debug",
+      label: "Debug",
+      icon: "bug-outline",
+      iconBg: "#F3E8FF",
+      iconColor: "#7C3AED",
+      value: "Book page",
+      onPress: () => router.push("/demo/individuality" as never),
+    },
+    {
       id: "privacy",
       label: "Privacy Policy",
       icon: "shield-checkmark-outline",
