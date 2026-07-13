@@ -600,8 +600,8 @@ export default function ProfileScreen() {
       icon: "bug-outline",
       iconBg: "#F3E8FF",
       iconColor: "#7C3AED",
-      value: "Book page",
-      onPress: () => router.push("/demo/individuality" as never),
+      value: "Book pages",
+      onPress: () => router.push("/demo" as never),
     },
     {
       id: "privacy",

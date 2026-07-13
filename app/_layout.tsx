@@ -46,6 +46,9 @@ function AppShell() {
           <Stack.Screen name="ielts/listening/[id]" />
           <Stack.Screen name="podcast/[slug]" />
           <Stack.Screen name="live-lesson/index" />
+          <Stack.Screen name="demo/index" />
+          <Stack.Screen name="demo/unit/[unit]" />
+          <Stack.Screen name="demo/[slug]" />
           <Stack.Screen name="demo/individuality" />
           <Stack.Screen name="privacy-policy" />
         </Stack>

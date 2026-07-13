@@ -1122,35 +1122,53 @@ export function LiveExerciseView({
   unitSteps,
   locked = false,
   onAnswersChange,
+  embedded = false,
 }: {
   step: LessonStep
   /** Full unit flow — used to resolve "words in the box in X.Y". */
   unitSteps?: LessonStep[]
   locked?: boolean
   onAnswersChange?: (answers: Record<string, unknown>) => void
+  /** When true, omit outer ScrollView (for stacking exercises on a book page). */
+  embedded?: boolean
 }) {
   const exerciseKey = `${step.unitNumber}-${step.exerciseId}-${step.uiType}`
   const [dock, setDock] = useState<DockState>(null)
   const dockApi = useMemo(() => ({ setDock }), [])
 
+  const body = (
+    <>
+      <View style={styles.metaRow}>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{step.uiLabel}</Text>
+        </View>
+        <Text style={styles.meta}>Ex {step.exerciseId}</Text>
+      </View>
+      {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
+      {renderBody(step.raw, step.uiType, exerciseKey, onAnswersChange, unitSteps)}
+    </>
+  )
+
   return (
     <WordBankDockContext.Provider value={dockApi}>
-      <View style={{ flex: 1 }}>
-        <ScrollView
-          contentContainerStyle={[styles.wrap, dock ? { paddingBottom: 8 } : null]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          pointerEvents={locked ? "none" : "auto"}
-        >
-          <View style={styles.metaRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{step.uiLabel}</Text>
-            </View>
-            <Text style={styles.meta}>Ex {step.exerciseId}</Text>
+      <View style={embedded ? undefined : { flex: 1 }}>
+        {embedded ? (
+          <View
+            style={[styles.wrap, styles.embeddedCard, locked && { opacity: 0.7 }]}
+            pointerEvents={locked ? "none" : "auto"}
+          >
+            {body}
           </View>
-          {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
-          {renderBody(step.raw, step.uiType, exerciseKey, onAnswersChange, unitSteps)}
-        </ScrollView>
+        ) : (
+          <ScrollView
+            contentContainerStyle={[styles.wrap, dock ? { paddingBottom: 8 } : null]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            pointerEvents={locked ? "none" : "auto"}
+          >
+            {body}
+          </ScrollView>
+        )}
         {dock && !locked ? (
           <View style={styles.wordDock}>
             <Text style={styles.wordDockHint}>{dock.hint}</Text>
@@ -1183,6 +1201,15 @@ export function LiveExerciseView({
 
 const styles = StyleSheet.create({
   wrap: { paddingBottom: spacing.xxl, gap: spacing.md },
+  embeddedCard: {
+    paddingBottom: spacing.md,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
   metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
   badge: {
     backgroundColor: colors.primaryLight,

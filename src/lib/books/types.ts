@@ -40,6 +40,13 @@ export interface BookDocument {
   book: BookMeta
   units: BookUnitRaw[]
   answer_key?: Record<string, unknown>
+  pages?: Array<{
+    page: number
+    unit: number
+    title: string
+    label: string
+    exercise_ids: string[]
+  }>
 }
 
 /** Inferred UI renderer for a normalized lesson step. */

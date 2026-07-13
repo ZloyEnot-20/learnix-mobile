@@ -35,6 +35,45 @@ export const liveLessonsApi = {
     body: { progress: number; score?: number | null; status?: string; answers?: unknown },
   ) => api.post<LiveLessonState>(`/live-lessons/${id}/progress`, body),
   heartbeat: (id: string) => api.post(`/live-lessons/${id}/heartbeat`),
+  listBooks: () =>
+    api.get<
+      Array<{
+        id: string
+        bookId?: string
+        title: string
+        author?: string | null
+        year?: number | null
+        unitCount: number
+        readyUnitCount?: number
+      }>
+    >("/live-lessons/books"),
+  getBook: (bookId: string) =>
+    api.get<{
+      bookId: string
+      book: { title: string; author?: string; year?: number }
+      pages?: Array<{
+        page: number
+        unit: number
+        title: string
+        label: string
+        exercise_ids: string[]
+      }>
+      units: Array<{
+        unit_number: number
+        title: string
+        subtitle?: string | null
+        ready?: boolean
+        exerciseIds: string[]
+        pages?: Array<{
+          page: number
+          unit: number
+          title: string
+          label: string
+          exercise_ids: string[]
+        }>
+      }>
+      answer_key?: Record<string, unknown>
+    }>(`/live-lessons/books/${bookId}`),
   getUnit: (bookId: string, unitNumber: number) =>
     api.get<{
       bookId: string
