@@ -279,9 +279,7 @@ function ChecklistSelect({
           onPress={() => {
             const next = { ...picked, [item]: !picked[item] }
             setPicked(next)
-            const selected = Object.keys(next).filter((k) => next[k])
-            // Defer so we never update LiveLessonScreen during ChecklistSelect render.
-            queueMicrotask(() => onChange?.(selected))
+            onChange?.(Object.keys(next).filter((k) => next[k]))
           }}
         />
       ))}
@@ -624,7 +622,7 @@ function renderBody(
           labels={labels}
           exerciseKey={exerciseKey}
           placeholder="Type the form / word"
-          onChange={(values) => onAnswersChange?.({ kind: "list", values })}
+          onChange={(values) => emit({ kind: "list", values })}
         />
       )
     }
@@ -636,7 +634,7 @@ function renderBody(
           bank={asStringArray(raw.items)}
           buckets={Object.keys(table)}
           exerciseKey={exerciseKey}
-          onChange={(placement) => onAnswersChange?.({ kind: "buckets", placement })}
+          onChange={(placement) => emit({ kind: "buckets", placement })}
         />
       )
     }
@@ -650,7 +648,7 @@ function renderBody(
           bank={asStringArray(raw.items)}
           buckets={buckets.length ? buckets : ["Group A", "Group B"]}
           exerciseKey={exerciseKey}
-          onChange={(placement) => onAnswersChange?.({ kind: "buckets", placement })}
+          onChange={(placement) => emit({ kind: "buckets", placement })}
         />
       )
     }
@@ -658,14 +656,14 @@ function renderBody(
     case "fill-blank-sentences": {
       const items = Array.isArray(raw.items) ? raw.items.filter(isRecord) : []
       const labels = items.map((it, i) => `${i + 1}. ${String(it.sentence ?? "")}`)
-      const bank = extractWordBank(raw.instruction)
+      const bank = resolveFillBlankWordBank(raw.instruction, unitSteps)
       return (
         <ListAnswers
           labels={labels}
           exerciseKey={exerciseKey}
           placeholder="Fill the blank"
-          wordBank={bank}
-          onChange={(values) => onAnswersChange?.({ kind: "list", values })}
+          wordBank={bank.length ? bank : undefined}
+          onChange={(values) => emit({ kind: "list", values })}
         />
       )
     }
@@ -677,7 +675,7 @@ function renderBody(
           passage={String(raw.passage ?? "")}
           questions={questions}
           exerciseKey={exerciseKey}
-          onChange={(byNumber) => onAnswersChange?.({ kind: "tfng", byNumber })}
+          onChange={(byNumber) => emit({ kind: "tfng", byNumber })}
         />
       )
     }
@@ -692,7 +690,7 @@ function renderBody(
           labels={labels.length ? labels : ["Write the paraphrase"]}
           exerciseKey={exerciseKey}
           placeholder="Paraphrase / matching phrase"
-          onChange={(values) => onAnswersChange?.({ kind: "list", values })}
+          onChange={(values) => emit({ kind: "list", values })}
         />
       )
     }
@@ -718,7 +716,7 @@ function renderBody(
             exerciseKey={exerciseKey}
             title="Your notes"
             placeholder="Write what you hear / key points"
-            onChange={(text) => onAnswersChange?.({ kind: "open", notes: text })}
+            onChange={(text) => emit({ kind: "open", notes: text })}
           />
         </View>
       )
@@ -731,7 +729,7 @@ function renderBody(
           labels={qs.map((q, i) => `${i + 1}. ${q}`)}
           exerciseKey={exerciseKey}
           placeholder="Your ideas / answer"
-          onChange={(values) => onAnswersChange?.({ kind: "list", values })}
+          onChange={(values) => emit({ kind: "list", values })}
         />
       )
     }
@@ -742,7 +740,7 @@ function renderBody(
         <ListeningStructured
           items={items}
           exerciseKey={exerciseKey}
-          onChange={(rows) => onAnswersChange?.({ kind: "speakers_detail", rows })}
+          onChange={(rows) => emit({ kind: "speakers_detail", rows })}
         />
       )
     }
@@ -757,7 +755,7 @@ function renderBody(
           <ListeningMatch
             exerciseKey={exerciseKey}
             questionOptions={qs}
-            onChange={(payload) => onAnswersChange?.({ kind: "speakers", ...payload })}
+            onChange={(payload) => emit({ kind: "speakers", ...payload })}
           />
         </View>
       )
@@ -769,7 +767,7 @@ function renderBody(
           <Text style={styles.hint}>Listen again and note time expressions</Text>
           <ExpressionPair
             exerciseKey={exerciseKey}
-            onChange={(payload) => onAnswersChange?.({ kind: "expressions", ...payload })}
+            onChange={(payload) => emit({ kind: "expressions", ...payload })}
           />
         </View>
       )
@@ -791,7 +789,7 @@ function renderBody(
             labels={labels}
             exerciseKey={exerciseKey}
             placeholder="NO MORE THAN TWO WORDS"
-            onChange={(values) => onAnswersChange?.({ kind: "list", values })}
+            onChange={(values) => emit({ kind: "list", values })}
           />
         </View>
       )
@@ -807,7 +805,7 @@ function renderBody(
           bank={bank}
           sentences={sentences}
           exerciseKey={exerciseKey}
-          onChange={(values) => onAnswersChange?.({ kind: "list", values })}
+          onChange={(values) => emit({ kind: "list", values })}
         />
       )
     }
@@ -831,7 +829,7 @@ function renderBody(
             labels={Array.from({ length: gapCount }, (_, i) => `Gap ${i + 1}`)}
             exerciseKey={exerciseKey}
             placeholder="Word for this gap"
-            onChange={(values) => onAnswersChange?.({ kind: "list", values })}
+            onChange={(values) => emit({ kind: "list", values })}
           />
         </View>
       )
@@ -847,7 +845,7 @@ function renderBody(
             exerciseKey={exerciseKey}
             title="Your notes / outline"
             placeholder="Key points before you speak"
-            onChange={(notes) => onAnswersChange?.({ kind: "open", notes })}
+            onChange={(notes) => emit({ kind: "open", notes })}
           />
         </View>
       )
@@ -866,7 +864,7 @@ function renderBody(
             exerciseKey={exerciseKey}
             title="Your mind map notes"
             placeholder="Write ideas for each branch"
-            onChange={(notes) => onAnswersChange?.({ kind: "open", notes })}
+            onChange={(notes) => emit({ kind: "open", notes })}
           />
         </View>
       )
@@ -881,7 +879,7 @@ function renderBody(
             exerciseKey={exerciseKey}
             title="Your answers / description"
             placeholder="Write your response"
-            onChange={(notes) => onAnswersChange?.({ kind: "open", notes })}
+            onChange={(notes) => emit({ kind: "open", notes })}
           />
         </View>
       )
@@ -893,7 +891,7 @@ function renderBody(
           exerciseKey={exerciseKey}
           title="Your response"
           placeholder="Write your answer or notes for the class"
-          onChange={(notes) => onAnswersChange?.({ kind: "open", notes })}
+          onChange={(notes) => emit({ kind: "open", notes })}
         />
       )
   }
@@ -948,10 +946,13 @@ function ExpressionPair({
 
 export function LiveExerciseView({
   step,
+  unitSteps,
   locked = false,
   onAnswersChange,
 }: {
   step: LessonStep
+  /** Full unit flow — used to resolve "words in the box in X.Y". */
+  unitSteps?: LessonStep[]
   locked?: boolean
   onAnswersChange?: (answers: Record<string, unknown>) => void
 }) {
@@ -971,7 +972,7 @@ export function LiveExerciseView({
           <Text style={styles.meta}>Ex {step.exerciseId}</Text>
         </View>
         {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
-        {renderBody(step.raw, step.uiType, exerciseKey, onAnswersChange)}
+        {renderBody(step.raw, step.uiType, exerciseKey, onAnswersChange, unitSteps)}
       </ScrollView>
       {locked ? (
         <View style={styles.lockedBanner} pointerEvents="none">

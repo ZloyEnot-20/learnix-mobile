@@ -317,8 +317,12 @@ export default function LiveLessonScreen() {
             <LiveExerciseView
               key={`${live.currentExercise}-${live.currentUnit}`}
               step={currentStep}
+              unitSteps={steps}
               locked={isDone}
-              onAnswersChange={setExerciseAnswers}
+              onAnswersChange={(answers) => {
+                // Defer — child must never update parent synchronously during its render.
+                queueMicrotask(() => setExerciseAnswers(answers))
+              }}
             />
           </View>
           <View style={styles.actions}>
