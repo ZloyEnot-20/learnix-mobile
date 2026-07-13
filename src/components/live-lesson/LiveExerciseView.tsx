@@ -137,7 +137,55 @@ function AnswerInput({
   )
 }
 
-/** Tap a word, then tap a bucket to place it. */
+/** Words listed inline in the instruction (e.g. "form of personality, character or characteristic"). */
+function extractInlineWordBank(instruction: unknown): string[] {
+  if (typeof instruction !== "string") return []
+  // Prefer "form(s) of A, B or C" — ignore "words in the box in 2.1" (resolved via unitSteps).
+  const formOf = instruction.match(
+    /(?:singular or plural\s+)?forms?\s+of\s+([^.]+?)(?:\.|$)/i,
+  )
+  const withWords = !formOf
+    ? instruction.match(/with the words?\s+([^.]+?)(?:\.|$)/i)
+    : null
+  const chunk = (formOf?.[1] ?? withWords?.[1] ?? "").trim()
+  if (!chunk || /^in\s+\d/i.test(chunk)) return []
+  return chunk
+    .split(/\s*(?:,|\/|\bor\b)\s*/i)
+    .map((w) => w.replace(/^[^a-zA-Z]+|[^a-zA-Z'-]+$/g, "").trim())
+    .filter((w) => w.length > 1 && !/^\d/.test(w))
+}
+
+/** "words in the box in 2.1" → pull string items from that exercise in the unit. */
+function wordBankFromBoxRef(
+  instruction: unknown,
+  unitSteps?: LessonStep[],
+): string[] {
+  if (typeof instruction !== "string" || !unitSteps?.length) return []
+  const ref = instruction.match(
+    /(?:words?|adjectives|phrases)\s+in\s+the\s+box(?:\s+in)?\s+(\d+\.\d+)/i,
+  )
+  if (!ref?.[1]) return []
+  const refStep = unitSteps.find((s) => s.exerciseId === ref[1])
+  if (!refStep) return []
+  const fromItems = asStringArray(refStep.raw.items)
+  if (fromItems.length) return fromItems
+  // Classification bank may live only as emptied answer keys after strip — try items on answers keys' sibling
+  if (isRecord(refStep.raw.answers)) {
+    const nested = Object.values(refStep.raw.answers).flatMap((v) => asStringArray(v))
+    if (nested.length) return nested
+  }
+  return []
+}
+
+function resolveFillBlankWordBank(
+  instruction: unknown,
+  unitSteps?: LessonStep[],
+): string[] {
+  const fromBox = wordBankFromBoxRef(instruction, unitSteps)
+  if (fromBox.length) return fromBox
+  return extractInlineWordBank(instruction)
+}
+
 function SortIntoBuckets({
   bank,
   buckets,
@@ -155,12 +203,11 @@ function SortIntoBuckets({
   useEffect(() => {
     setSelected(null)
     setPlacement({})
-    onChange?.({})
   }, [exerciseKey])
 
   const updatePlacement = (next: Record<string, string>) => {
     setPlacement(next)
-    onChange?.(next)
+    queueMicrotask(() => onChange?.(next))
   }
 
   const remaining = useMemo(() => bank.filter((w) => !placement[w]), [bank, placement])
@@ -220,7 +267,6 @@ function ChecklistSelect({
   const [picked, setPicked] = useState<Record<string, boolean>>({})
   useEffect(() => {
     setPicked({})
-    onChange?.([])
   }, [exerciseKey])
 
   return (
@@ -231,11 +277,11 @@ function ChecklistSelect({
           label={item}
           selected={Boolean(picked[item])}
           onPress={() => {
-            setPicked((p) => {
-              const next = { ...p, [item]: !p[item] }
-              onChange?.(Object.keys(next).filter((k) => next[k]))
-              return next
-            })
+            const next = { ...picked, [item]: !picked[item] }
+            setPicked(next)
+            const selected = Object.keys(next).filter((k) => next[k])
+            // Defer so we never update LiveLessonScreen during ChecklistSelect render.
+            queueMicrotask(() => onChange?.(selected))
           }}
         />
       ))}
@@ -257,7 +303,6 @@ function TfngQuestions({
   const [answers, setAnswers] = useState<Record<string, string>>({})
   useEffect(() => {
     setAnswers({})
-    onChange?.({})
   }, [exerciseKey])
   const options = ["True", "False", "Not given"]
 
@@ -282,11 +327,9 @@ function TfngQuestions({
                   label={opt}
                   selected={answers[num] === opt}
                   onPress={() => {
-                    setAnswers((a) => {
-                      const next = { ...a, [num]: opt }
-                      onChange?.(next)
-                      return next
-                    })
+                    const next = { ...answers, [num]: opt }
+                    setAnswers(next)
+                    queueMicrotask(() => onChange?.(next))
                   }}
                 />
               ))}
@@ -304,39 +347,62 @@ function ListAnswers({
   exerciseKey,
   onChange,
   placeholder,
+  wordBank,
 }: {
   labels: string[]
   exerciseKey: string
   onChange?: (values: string[]) => void
   placeholder?: string
+  wordBank?: string[]
 }) {
   const [values, setValues] = useState<string[]>(() => labels.map(() => ""))
+  const [selectedWord, setSelectedWord] = useState<string | null>(null)
+
   useEffect(() => {
-    const next = labels.map(() => "")
-    setValues(next)
-    onChange?.(next)
-  }, [exerciseKey])
+    setValues(labels.map(() => ""))
+    setSelectedWord(null)
+  }, [exerciseKey, labels.length])
 
   const update = (index: number, text: string) => {
-    setValues((prev) => {
-      const next = [...prev]
-      next[index] = text
-      onChange?.(next)
-      return next
-    })
+    const next = [...values]
+    next[index] = text
+    setValues(next)
+    queueMicrotask(() => onChange?.(next))
   }
 
   return (
     <View style={styles.gap}>
+      {wordBank && wordBank.length > 0 ? (
+        <>
+          <Text style={styles.hint}>
+            {selectedWord
+              ? `Selected: ${selectedWord} — tap a sentence to fill`
+              : "Tap a word, then tap a sentence — or type"}
+          </Text>
+          <ChipRow
+            items={wordBank}
+            selected={selectedWord}
+            onSelect={(item) => setSelectedWord((cur) => (cur === item ? null : item))}
+          />
+        </>
+      ) : null}
       {labels.map((label, i) => (
-        <Block key={`${exerciseKey}-${i}`}>
+        <Pressable
+          key={`${exerciseKey}-${i}`}
+          onPress={() => {
+            if (!selectedWord) return
+            update(i, selectedWord)
+            setSelectedWord(null)
+          }}
+          style={[styles.block, selectedWord ? styles.blockActive : null]}
+        >
           <Text style={styles.body}>{label}</Text>
           <AnswerInput
             value={values[i] ?? ""}
             onChangeText={(t) => update(i, t)}
             placeholder={placeholder ?? "Type your answer"}
           />
-        </Block>
+        </Pressable>
       ))}
     </View>
   )
@@ -356,7 +422,6 @@ function NotesAnswers({
   const [notes, setNotes] = useState("")
   useEffect(() => {
     setNotes("")
-    onChange?.("")
   }, [exerciseKey])
 
   return (
@@ -365,7 +430,7 @@ function NotesAnswers({
         value={notes}
         onChangeText={(t) => {
           setNotes(t)
-          onChange?.(t)
+          queueMicrotask(() => onChange?.(t))
         }}
         placeholder={placeholder ?? "Write your notes / answer here"}
         multiline
@@ -386,7 +451,6 @@ function ListeningMatch({
   const [answers, setAnswers] = useState<Record<string, string>>({})
   useEffect(() => {
     setAnswers({})
-    onChange?.({})
   }, [exerciseKey])
 
   const speakers = ["speaker_1", "speaker_2"]
@@ -396,11 +460,9 @@ function ListeningMatch({
       : ["question 1", "question 2", "question 3", "question 4", "question 5"]
 
   const setSpeaker = (speaker: string, value: string) => {
-    setAnswers((prev) => {
-      const next = { ...prev, [speaker]: value }
-      onChange?.(next)
-      return next
-    })
+    const next = { ...answers, [speaker]: value }
+    setAnswers(next)
+    queueMicrotask(() => onChange?.(next))
   }
 
   return (
@@ -440,19 +502,15 @@ function SentenceWordbox({
 
   useEffect(() => {
     setSelected(null)
-    const next = sentences.map(() => "")
-    setValues(next)
-    onChange?.(next)
+    setValues(sentences.map(() => ""))
   }, [exerciseKey])
 
   const place = (index: number) => {
     if (!selected) return
-    setValues((prev) => {
-      const next = [...prev]
-      next[index] = selected
-      onChange?.(next)
-      return next
-    })
+    const next = [...values]
+    next[index] = selected
+    setValues(next)
+    queueMicrotask(() => onChange?.(next))
     setSelected(null)
   }
 
@@ -476,12 +534,10 @@ function SentenceWordbox({
           <AnswerInput
             value={values[i] ?? ""}
             onChangeText={(t) => {
-              setValues((prev) => {
-                const next = [...prev]
-                next[i] = t
-                onChange?.(next)
-                return next
-              })
+              const next = [...values]
+              next[i] = t
+              setValues(next)
+              queueMicrotask(() => onChange?.(next))
             }}
             placeholder="Or type the word"
           />
@@ -502,17 +558,13 @@ function ListeningStructured({
 }) {
   const [rows, setRows] = useState(() => items.map(() => ({ person: "", adjectives: "" })))
   useEffect(() => {
-    const next = items.map(() => ({ person: "", adjectives: "" }))
-    setRows(next)
-    onChange?.(next)
+    setRows(items.map(() => ({ person: "", adjectives: "" })))
   }, [exerciseKey])
 
   const update = (index: number, patch: Partial<{ person: string; adjectives: string }>) => {
-    setRows((prev) => {
-      const next = prev.map((r, i) => (i === index ? { ...r, ...patch } : r))
-      onChange?.(next)
-      return next
-    })
+    const next = rows.map((r, i) => (i === index ? { ...r, ...patch } : r))
+    setRows(next)
+    queueMicrotask(() => onChange?.(next))
   }
 
   return (
@@ -543,14 +595,19 @@ function renderBody(
   uiType: LessonStep["uiType"],
   exerciseKey: string,
   onAnswersChange?: (answers: Record<string, unknown>) => void,
+  unitSteps?: LessonStep[],
 ) {
+  const emit = (answers: Record<string, unknown>) => {
+    queueMicrotask(() => onAnswersChange?.(answers))
+  }
+
   switch (uiType) {
     case "vocab-checklist":
       return (
         <ChecklistSelect
           items={asStringArray(raw.items)}
           exerciseKey={exerciseKey}
-          onChange={(selected) => onAnswersChange?.({ kind: "checklist", selected })}
+          onChange={(selected) => emit({ kind: "checklist", selected })}
         />
       )
 
@@ -601,11 +658,13 @@ function renderBody(
     case "fill-blank-sentences": {
       const items = Array.isArray(raw.items) ? raw.items.filter(isRecord) : []
       const labels = items.map((it, i) => `${i + 1}. ${String(it.sentence ?? "")}`)
+      const bank = extractWordBank(raw.instruction)
       return (
         <ListAnswers
           labels={labels}
           exerciseKey={exerciseKey}
           placeholder="Fill the blank"
+          wordBank={bank}
           onChange={(values) => onAnswersChange?.({ kind: "list", values })}
         />
       )
@@ -853,10 +912,11 @@ function ExpressionPair({
   useEffect(() => {
     setS1("")
     setS2("")
-    onChange?.({ speaker_1: "", speaker_2: "" })
   }, [exerciseKey])
 
-  const emit = (a: string, b: string) => onChange?.({ speaker_1: a, speaker_2: b })
+  const emit = (a: string, b: string) => {
+    queueMicrotask(() => onChange?.({ speaker_1: a, speaker_2: b }))
+  }
 
   return (
     <View style={styles.gap}>

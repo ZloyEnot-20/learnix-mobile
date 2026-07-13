@@ -7,16 +7,14 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function itemsAreFillBlanks(items: unknown): boolean {
   if (!Array.isArray(items) || items.length === 0) return false
-  return items.every(
-    (it) => isRecord(it) && typeof it.sentence === "string" && "answer" in it,
-  )
+  // After student strip, `answer` is removed — detect by sentence shape only.
+  return items.every((it) => isRecord(it) && typeof it.sentence === "string")
 }
 
 function itemsAreParaphrasePairs(items: unknown): boolean {
   if (!Array.isArray(items) || items.length === 0) return false
-  return items.every(
-    (it) => isRecord(it) && "original" in it && ("paraphrase" in it || "answer" in it),
-  )
+  // After student strip, paraphrase/answer may be gone — keep original.
+  return items.every((it) => isRecord(it) && typeof it.original === "string")
 }
 
 function itemsAreSpeakerRows(items: unknown): boolean {

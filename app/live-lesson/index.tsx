@@ -32,6 +32,8 @@ export default function LiveLessonScreen() {
   const [localProgress, setLocalProgress] = useState(0)
   const [idle, setIdle] = useState(false)
   const [exerciseAnswers, setExerciseAnswers] = useState<Record<string, unknown> | null>(null)
+  const exerciseAnswersRef = useRef<Record<string, unknown> | null>(null)
+  exerciseAnswersRef.current = exerciseAnswers
   const [finishedSummary, setFinishedSummary] = useState<{
     unitNumber: number | null
     score: number | null
@@ -190,12 +192,12 @@ export default function LiveLessonScreen() {
     setSubmitting(true)
     setError(null)
     try {
+      const answers = exerciseAnswersRef.current ?? { kind: "open", notes: "" }
       const next = await liveLessonsApi.progress(live.id, {
         progress,
         status: nextStatus,
-        // Server grades from answers — do not send fake score: 100
-        score: nextStatus === "done" ? undefined : null,
-        ...(exerciseAnswers ? { answers: exerciseAnswers } : {}),
+        answers,
+        // Never send client score — server grades from answers
       })
       applyState(next)
     } catch (e) {
