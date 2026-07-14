@@ -5,9 +5,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { router } from "expo-router"
 import { liveLessonsApi } from "../../src/lib/live-lesson-api"
 import { Skeleton, SkeletonCard } from "../../src/components/ui/Skeleton"
-import { colors, radius, spacing, typography } from "../../src/theme/tokens"
-
 import { DEMO_BOOK_ID } from "../../src/demo/book-id"
+import { PURPLE } from "../../src/demo/theme"
 
 type UnitCard = {
   unitNumber: number
@@ -23,7 +22,7 @@ function HubSkeleton() {
     <View style={styles.scroll}>
       <Skeleton height={40} borderRadius={8} style={{ marginBottom: 12 }} />
       {[0, 1, 2].map((i) => (
-        <SkeletonCard key={i} style={{ marginBottom: 10, gap: 10 }}>
+        <SkeletonCard key={i} style={{ marginBottom: 10, gap: 10, backgroundColor: "#fff" }}>
           <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
             <Skeleton width={44} height={44} borderRadius={8} />
             <View style={{ flex: 1, gap: 8 }}>
@@ -39,7 +38,7 @@ function HubSkeleton() {
 }
 
 /**
- * Debug demo hub — units from CurriculumBook in Mongo via API.
+ * Debug demo hub — units from CurriculumBook (Cambridge textbook look).
  */
 export default function DemoHubScreen() {
   const [loading, setLoading] = useState(true)
@@ -79,7 +78,7 @@ export default function DemoHubScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <View style={styles.topBar}>
         <Pressable onPress={() => router.back()} hitSlop={12} style={styles.topBtn}>
-          <Ionicons name="close" size={22} color={colors.text} />
+          <Ionicons name="close" size={22} color={PURPLE.deep} />
         </Pressable>
         <View style={styles.topCenter}>
           <Text style={styles.topEyebrow}>DEBUG DEMO</Text>
@@ -88,7 +87,7 @@ export default function DemoHubScreen() {
           </Text>
         </View>
         <Pressable onPress={() => void load()} hitSlop={8} style={styles.iconBtn}>
-          <Ionicons name="refresh" size={18} color={colors.textSecondary} />
+          <Ionicons name="refresh" size={18} color={PURPLE.note} />
         </Pressable>
       </View>
 
@@ -97,8 +96,8 @@ export default function DemoHubScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.lead}>
-            Units and pages come from the curriculum book in the database. Open a unit to browse
-            pages in book order.
+            Cambridge Vocabulary for IELTS Advanced — pages render from the database in textbook
+            layout. Open a unit to browse pages in book order.
           </Text>
 
           {error ? (
@@ -133,7 +132,7 @@ export default function DemoHubScreen() {
                   <Text style={styles.cardMeta}>
                     {u.ready
                       ? first != null
-                        ? `pp. ${first}–${last} · ${u.pages.length} pages · ${u.stepCount} exercises`
+                        ? `pp. ${first}–${last} · ${u.pages.length} pages`
                         : `${u.stepCount} exercises`
                       : "Coming soon"}
                   </Text>
@@ -141,7 +140,7 @@ export default function DemoHubScreen() {
                 <Ionicons
                   name="chevron-forward"
                   size={18}
-                  color={u.ready ? colors.primary : colors.textMuted}
+                  color={u.ready ? PURPLE.mid : "#9CA3AF"}
                 />
               </Pressable>
             )
@@ -153,15 +152,15 @@ export default function DemoHubScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
+  safe: { flex: 1, backgroundColor: PURPLE.pageBg },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: colors.card,
+    backgroundColor: "#fff",
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderLight,
+    borderBottomColor: "#E5E7EB",
     gap: 8,
   },
   topBtn: { padding: 4 },
@@ -170,33 +169,34 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
     letterSpacing: 1,
-    color: colors.primary,
+    color: PURPLE.mid,
   },
-  topTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
+  topTitle: { fontSize: 15, fontWeight: "700", color: "#111827" },
   iconBtn: {
     width: 34,
     height: 34,
     borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.borderLight,
+    backgroundColor: PURPLE.soft,
   },
   scroll: { padding: 16, paddingBottom: 40 },
   lead: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginBottom: 14,
+    fontSize: 13.5,
     lineHeight: 20,
+    color: "#4B5563",
+    marginBottom: 14,
+    fontFamily: "Georgia",
   },
   card: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
+    backgroundColor: "#fff",
+    borderRadius: 10,
     padding: 14,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: PURPLE.line,
     marginBottom: 10,
   },
   cardDisabled: { opacity: 0.55 },
@@ -204,17 +204,17 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 8,
-    backgroundColor: colors.primary,
+    backgroundColor: PURPLE.deep,
     alignItems: "center",
     justifyContent: "center",
   },
   unitBadgeText: { fontSize: 18, fontWeight: "800", color: "#fff" },
-  cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text },
-  cardSub: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  cardMeta: { fontSize: 12, color: colors.primary, marginTop: 4, fontWeight: "600" },
+  cardTitle: { fontSize: 16, fontWeight: "700", color: "#111827", fontFamily: "Georgia" },
+  cardSub: { fontSize: 13, color: "#6B7280", marginTop: 2, fontFamily: "Georgia" },
+  cardMeta: { fontSize: 12, color: PURPLE.mid, marginTop: 4, fontWeight: "600" },
   errorBox: {
     backgroundColor: "#FEF2F2",
-    borderRadius: radius.card,
+    borderRadius: 8,
     padding: 14,
     marginBottom: 12,
     gap: 10,
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   errorText: { color: "#991B1B", fontSize: 13, lineHeight: 18 },
   retryBtn: {
     alignSelf: "flex-start",
-    backgroundColor: colors.primary,
+    backgroundColor: PURPLE.mid,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,

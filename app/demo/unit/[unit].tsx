@@ -1,15 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
-import { Ionicons } from "@expo/vector-icons"
-import { useLocalSearchParams, router } from "expo-router"
+import { Pressable, StyleSheet, Text, View } from "react-native"
+import { router, useLocalSearchParams } from "expo-router"
 import { liveLessonsApi } from "../../../src/lib/live-lesson-api"
 import { flattenUnitToSteps } from "../../../src/lib/books/lesson-flow"
 import type { LessonStep } from "../../../src/lib/books/types"
-import { LiveExerciseView } from "../../../src/components/live-lesson/LiveExerciseView"
-import { Skeleton, SkeletonCard } from "../../../src/components/ui/Skeleton"
-import { colors, radius, spacing, typography } from "../../../src/theme/tokens"
 import { DEMO_BOOK_ID } from "../../../src/demo/book-id"
+import { BookPageChrome, SectionBanner, UnitHeader } from "../../../src/demo/BookPageChrome"
+import { BookExerciseRenderer, shouldSkipExercise } from "../../../src/demo/BookExerciseRenderer"
+import { PURPLE } from "../../../src/demo/theme"
 
 type PageMeta = {
   page: number
@@ -17,26 +15,8 @@ type PageMeta = {
   exercise_ids: string[]
 }
 
-function PageSkeleton() {
-  return (
-    <View style={{ padding: 16, gap: 12 }}>
-      <Skeleton height={28} width="60%" />
-      <SkeletonCard style={{ gap: 10 }}>
-        <Skeleton height={14} width="40%" />
-        <Skeleton height={60} />
-        <Skeleton height={14} width="80%" />
-        <Skeleton height={40} />
-      </SkeletonCard>
-      <SkeletonCard style={{ gap: 10 }}>
-        <Skeleton height={14} width="35%" />
-        <Skeleton height={80} />
-      </SkeletonCard>
-    </View>
-  )
-}
-
 /**
- * Unit viewer — pages from DB `pages[]`, exercises rendered from unit JSON.
+ * Unit viewer — pages from DB, rendered in Cambridge textbook layout.
  */
 export default function DemoUnitScreen() {
   const { unit: unitParam } = useLocalSearchParams<{ unit: string }>()
@@ -45,6 +25,7 @@ export default function DemoUnitScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [unitTitle, setUnitTitle] = useState("")
+  const [unitSubtitle, setUnitSubtitle] = useState<string | undefined>()
   const [pages, setPages] = useState<PageMeta[]>([])
   const [allSteps, setAllSteps] = useState<LessonStep[]>([])
   const [pageIndex, setPageIndex] = useState(0)
@@ -64,23 +45,20 @@ export default function DemoUnitScreen() {
       ])
       const unitMeta = (meta.units ?? []).find((u) => Number(u.unit_number) === unitNum)
       setUnitTitle(unitMeta?.title || `Unit ${unitNum}`)
+      setUnitSubtitle(unitMeta?.subtitle ?? undefined)
 
-      const pageList =
-        (unitMeta?.pages?.length
+      const pageList = (
+        unitMeta?.pages?.length
           ? unitMeta.pages
           : (meta.pages ?? []).filter((p) => Number(p.unit) === unitNum)
-        ).map((p) => ({
-          page: p.page,
-          label: p.label,
-          exercise_ids: p.exercise_ids ?? [],
-        }))
+      ).map((p) => ({
+        page: p.page,
+        label: p.label,
+        exercise_ids: p.exercise_ids ?? [],
+      }))
 
-      const steps = flattenUnitToSteps(
-        unitPayload.unit,
-        unitPayload.answer_key ?? undefined,
-      )
+      const steps = flattenUnitToSteps(unitPayload.unit, unitPayload.answer_key ?? undefined)
 
-      // If DB has no page index yet, fall back to one virtual page per exercise.
       const resolvedPages: PageMeta[] =
         pageList.length > 0
           ? pageList
@@ -110,188 +88,135 @@ export default function DemoUnitScreen() {
   const pageSteps = useMemo(() => {
     if (!currentPage) return []
     const ids = new Set(currentPage.exercise_ids.map(String))
-    const matched = allSteps.filter((s) => ids.has(String(s.exerciseId)))
-    // Preserve book page order of exercise_ids
+    const matched = allSteps.filter(
+      (s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s),
+    )
     return currentPage.exercise_ids
       .map((id) => matched.find((s) => String(s.exerciseId) === String(id)))
       .filter((s): s is LessonStep => Boolean(s))
   }, [currentPage, allSteps])
 
-  const canPrev = pageIndex > 0
-  const canNext = pageIndex < pages.length - 1
+  // Pages that only had image/graph tasks become empty — jump past them when turning.
+  const visiblePageIndexes = useMemo(() => {
+    return pages
+      .map((p, idx) => {
+        const ids = new Set(p.exercise_ids.map(String))
+        const hasVisible = allSteps.some(
+          (s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s),
+        )
+        return hasVisible ? idx : -1
+      })
+      .filter((i) => i >= 0)
+  }, [pages, allSteps])
 
-  return (
-    <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-      <View style={styles.topBar}>
-        <Pressable
-          onPress={() => router.replace("/demo" as never)}
-          hitSlop={12}
-          style={styles.topBtn}
-        >
-          <Ionicons name="close" size={22} color={colors.text} />
-        </Pressable>
-        <View style={styles.topCenter}>
-          <Text style={styles.topEyebrow}>
-            {currentPage
-              ? `UNIT ${unitNum} · P.${currentPage.page} · ${pageIndex + 1}/${pages.length || 1}`
-              : `UNIT ${unitNum}`}
-          </Text>
-          <Text style={styles.topTitle} numberOfLines={1}>
-            {unitTitle}
-          </Text>
-        </View>
-        <Pressable onPress={() => void load()} hitSlop={8} style={styles.iconBtn}>
-          <Ionicons name="refresh" size={18} color={colors.textSecondary} />
-        </Pressable>
-      </View>
+  useEffect(() => {
+    if (!visiblePageIndexes.length) return
+    if (!visiblePageIndexes.includes(pageIndex)) {
+      setPageIndex(visiblePageIndexes[0])
+    }
+  }, [visiblePageIndexes, pageIndex])
 
-      {loading ? (
-        <PageSkeleton />
-      ) : error ? (
+  const canPrev = visiblePageIndexes.some((i) => i < pageIndex)
+  const canNext = visiblePageIndexes.some((i) => i > pageIndex)
+
+  const goPrev = () => {
+    const prev = [...visiblePageIndexes].reverse().find((i) => i < pageIndex)
+    if (prev != null) setPageIndex(prev)
+  }
+  const goNext = () => {
+    const next = visiblePageIndexes.find((i) => i > pageIndex)
+    if (next != null) setPageIndex(next)
+  }
+
+  const visibleOrdinal = Math.max(0, visiblePageIndexes.indexOf(pageIndex))
+
+  const sectionBannerTitle = useMemo(() => {
+    const label = currentPage?.label ?? ""
+    const head = label.split("·")[0]?.trim()
+    return head || pageSteps[0]?.sectionLabel || undefined
+  }, [currentPage, pageSteps])
+
+  if (error && !loading) {
+    return (
+      <BookPageChrome
+        title={unitTitle || "Error"}
+        unit={unitNum}
+        pageNum={0}
+        pageIndex={0}
+        pageCount={1}
+        onClose={() => router.replace("/demo" as never)}
+        onPrev={() => {}}
+        onNext={() => {}}
+        canPrev={false}
+        canNext={false}
+        onRefresh={() => void load()}
+      >
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
           <Pressable onPress={() => void load()} style={styles.retryBtn}>
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>
         </View>
+      </BookPageChrome>
+    )
+  }
+
+  return (
+    <BookPageChrome
+      title={unitTitle}
+      unit={unitNum}
+      subtitle={unitSubtitle}
+      pageNum={currentPage?.page ?? 0}
+      pageLabel={currentPage?.label}
+      pageIndex={visibleOrdinal}
+      pageCount={visiblePageIndexes.length || 1}
+      onClose={() => router.replace("/demo" as never)}
+      onPrev={goPrev}
+      onNext={goNext}
+      canPrev={canPrev}
+      canNext={canNext}
+      onRefresh={() => void load()}
+      loading={loading}
+    >
+      {pageIndex === 0 ? (
+        <UnitHeader unit={unitNum} title={unitTitle} subtitle={unitSubtitle} />
+      ) : null}
+
+      {sectionBannerTitle ? <SectionBanner title={sectionBannerTitle} /> : null}
+
+      {pageSteps.length === 0 && !loading ? (
+        <Text style={styles.empty}>No exercises mapped to this page.</Text>
       ) : (
-        <>
-          <ScrollView
-            contentContainerStyle={styles.scroll}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {currentPage ? (
-              <View style={styles.pageHeader}>
-                <Text style={styles.pageNum}>Page {currentPage.page}</Text>
-                <Text style={styles.pageLabel}>{currentPage.label}</Text>
-              </View>
-            ) : null}
-
-            {pageSteps.length === 0 ? (
-              <Text style={styles.empty}>No exercises mapped to this page.</Text>
-            ) : (
-              pageSteps.map((step) => (
-                <LiveExerciseView
-                  key={step.id}
-                  step={step}
-                  unitSteps={allSteps}
-                  embedded
-                />
-              ))
-            )}
-          </ScrollView>
-
-          <View style={styles.turner}>
-            <Pressable
-              onPress={() => setPageIndex((i) => Math.max(0, i - 1))}
-              disabled={!canPrev}
-              style={[styles.turnerBtn, !canPrev && styles.turnerDisabled]}
-            >
-              <Ionicons
-                name="chevron-back"
-                size={18}
-                color={canPrev ? colors.primaryDark : colors.textMuted}
-              />
-              <Text style={[styles.turnerBtnText, !canPrev && { color: colors.textMuted }]}>
-                Prev
-              </Text>
-            </Pressable>
-            <View style={styles.turnerCenter}>
-              <Text style={styles.turnerPage}>
-                {currentPage ? `p. ${currentPage.page}` : "—"}
-              </Text>
-              <Text style={styles.turnerLabel} numberOfLines={1}>
-                {currentPage?.label ?? ""}
-              </Text>
-            </View>
-            <Pressable
-              onPress={() => setPageIndex((i) => Math.min(pages.length - 1, i + 1))}
-              disabled={!canNext}
-              style={[styles.turnerBtn, !canNext && styles.turnerDisabled]}
-            >
-              <Text style={[styles.turnerBtnText, !canNext && { color: colors.textMuted }]}>
-                Next
-              </Text>
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color={canNext ? colors.primaryDark : colors.textMuted}
-              />
-            </Pressable>
-          </View>
-        </>
+        pageSteps.map((step) => (
+          <BookExerciseRenderer key={step.id} step={step} unitSteps={allSteps} />
+        ))
       )}
-    </SafeAreaView>
+    </BookPageChrome>
   )
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.background },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: colors.card,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderLight,
-    gap: 8,
+  empty: {
+    fontFamily: "Georgia",
+    fontSize: 14,
+    color: "#6B7280",
+    paddingVertical: 12,
   },
-  topBtn: { padding: 4 },
-  topCenter: { flex: 1 },
-  topEyebrow: {
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.6,
-    color: colors.primary,
+  errorBox: {
+    backgroundColor: "#FEF2F2",
+    borderRadius: 6,
+    padding: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
   },
-  topTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.borderLight,
-  },
-  scroll: { padding: 12, paddingBottom: 24 },
-  pageHeader: { marginBottom: 12, gap: 2 },
-  pageNum: { fontSize: 12, fontWeight: "800", color: colors.primary, letterSpacing: 0.5 },
-  pageLabel: { fontSize: 16, fontWeight: "700", color: colors.text },
-  empty: { ...typography.body, color: colors.textSecondary, padding: spacing.lg },
-  errorBox: { margin: 16, backgroundColor: "#FEF2F2", borderRadius: radius.card, padding: 14, gap: 10 },
-  errorText: { color: "#991B1B", fontSize: 13, lineHeight: 18 },
+  errorText: { color: "#991B1B", fontSize: 13, lineHeight: 18, fontFamily: "Georgia" },
   retryBtn: {
     alignSelf: "flex-start",
-    backgroundColor: colors.primary,
+    backgroundColor: PURPLE.mid,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
   },
   retryText: { color: "#fff", fontWeight: "700", fontSize: 13 },
-  turner: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: colors.card,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.borderLight,
-    gap: 8,
-  },
-  turnerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 2,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: colors.primaryLight,
-  },
-  turnerDisabled: { backgroundColor: colors.borderLight },
-  turnerBtnText: { fontSize: 13, fontWeight: "700", color: colors.primaryDark },
-  turnerCenter: { flex: 1, alignItems: "center" },
-  turnerPage: { fontSize: 13, fontWeight: "800", color: colors.text },
-  turnerLabel: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
 })
