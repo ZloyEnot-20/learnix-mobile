@@ -5,7 +5,12 @@ import { liveLessonsApi } from "../../../src/lib/live-lesson-api"
 import { flattenUnitToSteps } from "../../../src/lib/books/lesson-flow"
 import type { LessonStep } from "../../../src/lib/books/types"
 import { DEMO_BOOK_ID } from "../../../src/demo/book-id"
-import { BookPageChrome, SectionBanner, UnitHeader } from "../../../src/demo/BookPageChrome"
+import {
+  BookPageChrome,
+  PageCard,
+  SectionBanner,
+  UnitHeader,
+} from "../../../src/demo/BookPageChrome"
 import { BookExerciseRenderer, shouldSkipExercise } from "../../../src/demo/BookExerciseRenderer"
 import { PURPLE } from "../../../src/demo/theme"
 
@@ -15,8 +20,23 @@ type PageMeta = {
   exercise_ids: string[]
 }
 
+function stepsForPage(page: PageMeta, allSteps: LessonStep[]): LessonStep[] {
+  const ids = new Set(page.exercise_ids.map(String))
+  const matched = allSteps.filter(
+    (s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s),
+  )
+  return page.exercise_ids
+    .map((id) => matched.find((s) => String(s.exerciseId) === String(id)))
+    .filter((s): s is LessonStep => Boolean(s))
+}
+
+function sectionTitleFor(page: PageMeta, pageSteps: LessonStep[]): string | undefined {
+  const head = page.label.split("·")[0]?.trim()
+  return head || pageSteps[0]?.sectionLabel || undefined
+}
+
 /**
- * Unit viewer — pages from DB, rendered in Cambridge textbook layout.
+ * Unit viewer — all pages stacked top-to-bottom (PDF-viewer style).
  */
 export default function DemoUnitScreen() {
   const { unit: unitParam } = useLocalSearchParams<{ unit: string }>()
@@ -28,7 +48,6 @@ export default function DemoUnitScreen() {
   const [unitSubtitle, setUnitSubtitle] = useState<string | undefined>()
   const [pages, setPages] = useState<PageMeta[]>([])
   const [allSteps, setAllSteps] = useState<LessonStep[]>([])
-  const [pageIndex, setPageIndex] = useState(0)
 
   const load = useCallback(async () => {
     if (!Number.isFinite(unitNum) || unitNum < 1) {
@@ -70,7 +89,6 @@ export default function DemoUnitScreen() {
 
       setPages(resolvedPages)
       setAllSteps(steps)
-      setPageIndex(0)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load unit")
       setPages([])
@@ -84,79 +102,32 @@ export default function DemoUnitScreen() {
     void load()
   }, [load])
 
-  const currentPage = pages[pageIndex] ?? null
-  const pageSteps = useMemo(() => {
-    if (!currentPage) return []
-    const ids = new Set(currentPage.exercise_ids.map(String))
-    const matched = allSteps.filter(
-      (s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s),
-    )
-    return currentPage.exercise_ids
-      .map((id) => matched.find((s) => String(s.exerciseId) === String(id)))
-      .filter((s): s is LessonStep => Boolean(s))
-  }, [currentPage, allSteps])
-
-  // Pages that only had image/graph tasks become empty — jump past them when turning.
-  const visiblePageIndexes = useMemo(() => {
-    return pages
-      .map((p, idx) => {
-        const ids = new Set(p.exercise_ids.map(String))
-        const hasVisible = allSteps.some(
-          (s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s),
-        )
-        return hasVisible ? idx : -1
-      })
-      .filter((i) => i >= 0)
+  // Skip pages that only had image/graph tasks.
+  const visiblePages = useMemo(() => {
+    return pages.filter((p) => {
+      const ids = new Set(p.exercise_ids.map(String))
+      return allSteps.some((s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s))
+    })
   }, [pages, allSteps])
-
-  useEffect(() => {
-    if (!visiblePageIndexes.length) return
-    if (!visiblePageIndexes.includes(pageIndex)) {
-      setPageIndex(visiblePageIndexes[0])
-    }
-  }, [visiblePageIndexes, pageIndex])
-
-  const canPrev = visiblePageIndexes.some((i) => i < pageIndex)
-  const canNext = visiblePageIndexes.some((i) => i > pageIndex)
-
-  const goPrev = () => {
-    const prev = [...visiblePageIndexes].reverse().find((i) => i < pageIndex)
-    if (prev != null) setPageIndex(prev)
-  }
-  const goNext = () => {
-    const next = visiblePageIndexes.find((i) => i > pageIndex)
-    if (next != null) setPageIndex(next)
-  }
-
-  const visibleOrdinal = Math.max(0, visiblePageIndexes.indexOf(pageIndex))
-
-  const sectionBannerTitle = useMemo(() => {
-    const label = currentPage?.label ?? ""
-    const head = label.split("·")[0]?.trim()
-    return head || pageSteps[0]?.sectionLabel || undefined
-  }, [currentPage, pageSteps])
 
   if (error && !loading) {
     return (
       <BookPageChrome
         title={unitTitle || "Error"}
         unit={unitNum}
-        pageNum={0}
-        pageIndex={0}
         pageCount={1}
         onClose={() => router.replace("/demo" as never)}
-        onPrev={() => {}}
-        onNext={() => {}}
-        canPrev={false}
-        canNext={false}
         onRefresh={() => void load()}
+        stacked
       >
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable onPress={() => void load()} style={styles.retryBtn}>
-            <Text style={styles.retryText}>Retry</Text>
-          </Pressable>
-        </View>
+        <PageCard>
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+            <Pressable onPress={() => void load()} style={styles.retryBtn}>
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          </View>
+        </PageCard>
       </BookPageChrome>
     )
   }
@@ -166,30 +137,38 @@ export default function DemoUnitScreen() {
       title={unitTitle}
       unit={unitNum}
       subtitle={unitSubtitle}
-      pageNum={currentPage?.page ?? 0}
-      pageLabel={currentPage?.label}
-      pageIndex={visibleOrdinal}
-      pageCount={visiblePageIndexes.length || 1}
+      pageCount={visiblePages.length || 1}
       onClose={() => router.replace("/demo" as never)}
-      onPrev={goPrev}
-      onNext={goNext}
-      canPrev={canPrev}
-      canNext={canNext}
       onRefresh={() => void load()}
       loading={loading}
+      stacked
     >
-      {pageIndex === 0 ? (
-        <UnitHeader unit={unitNum} title={unitTitle} subtitle={unitSubtitle} />
-      ) : null}
-
-      {sectionBannerTitle ? <SectionBanner title={sectionBannerTitle} /> : null}
-
-      {pageSteps.length === 0 && !loading ? (
-        <Text style={styles.empty}>No exercises mapped to this page.</Text>
+      {visiblePages.length === 0 && !loading ? (
+        <PageCard>
+          <Text style={styles.empty}>No exercises mapped to this unit.</Text>
+        </PageCard>
       ) : (
-        pageSteps.map((step) => (
-          <BookExerciseRenderer key={step.id} step={step} unitSteps={allSteps} />
-        ))
+        visiblePages.map((page, i) => {
+          const pageSteps = stepsForPage(page, allSteps)
+          const banner = sectionTitleFor(page, pageSteps)
+          return (
+            <PageCard key={`${page.page}-${page.label}`} pageNum={page.page}>
+              {i === 0 ? (
+                <UnitHeader unit={unitNum} title={unitTitle} subtitle={unitSubtitle} />
+              ) : null}
+
+              {banner ? <SectionBanner title={banner} /> : null}
+
+              {pageSteps.length === 0 ? (
+                <Text style={styles.empty}>No exercises mapped to this page.</Text>
+              ) : (
+                pageSteps.map((step) => (
+                  <BookExerciseRenderer key={step.id} step={step} unitSteps={allSteps} />
+                ))
+              )}
+            </PageCard>
+          )
+        })
       )}
     </BookPageChrome>
   )

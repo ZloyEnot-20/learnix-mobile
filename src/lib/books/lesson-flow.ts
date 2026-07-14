@@ -6,6 +6,7 @@ import type {
   LessonStep,
 } from "./types"
 import { inferExerciseUiType, sectionDisplayLabel, uiLabelFor } from "./infer-exercise-type"
+import { normalizeBookExercise } from "./normalize-book-exercise"
 
 function isExerciseNode(node: BookSectionRaw | BookExerciseRaw): boolean {
   return Boolean(node.exercise_id) || node.section_type === "test_practice" || Boolean(node.notes)
@@ -32,23 +33,25 @@ export function flattenUnitToSteps(
     raw: BookExerciseRaw,
     sectionType: string,
     subtype?: string,
+    sectionTitle?: string,
   ) => {
     const exerciseId =
       (typeof raw.exercise_id === "string" && raw.exercise_id) ||
       (sectionType === "test_practice" ? "test_practice" : `step-${order + 1}`)
-    const uiType = inferExerciseUiType({ ...raw, section_type: sectionType, subtype })
+    const normalized = normalizeBookExercise({ ...raw, section_type: sectionType, subtype })
+    const uiType = inferExerciseUiType(normalized)
     const key = answerKey?.[exerciseId] ?? (exerciseId === "test_practice" ? answerKey?.test_practice : undefined)
     steps.push({
       id: `u${unit.unit_number}-${exerciseId}`,
       unitNumber: unit.unit_number,
       exerciseId,
       sectionType,
-      sectionLabel: sectionDisplayLabel(sectionType, subtype),
+      sectionLabel: sectionDisplayLabel(sectionType, subtype, sectionTitle),
       order: order++,
-      instruction: typeof raw.instruction === "string" ? raw.instruction : "",
+      instruction: typeof normalized.instruction === "string" ? normalized.instruction : "",
       uiType,
       uiLabel: uiLabelFor(uiType),
-      raw: { ...raw, section_type: sectionType, subtype, exercise_id: exerciseId },
+      raw: { ...normalized, section_type: sectionType, subtype, exercise_id: exerciseId },
       answers: key,
       ready: true,
     })
@@ -57,16 +60,22 @@ export function flattenUnitToSteps(
   for (const section of sections) {
     const sectionType = (section.section_type as string) || "vocabulary"
     const subtype = typeof section.subtype === "string" ? section.subtype : undefined
+    const sectionTitle = typeof section.title === "string" ? section.title : undefined
 
     if (Array.isArray(section.exercises) && section.exercises.length > 0) {
       for (const ex of section.exercises) {
-        pushStep(ex, sectionType, subtype)
+        pushStep(ex, sectionType, subtype, sectionTitle)
       }
       continue
     }
 
     if (isExerciseNode(section)) {
-      pushStep(asExerciseRaw(section), sectionType === "test_practice" ? "test_practice" : sectionType || "vocabulary", subtype)
+      pushStep(
+        asExerciseRaw(section),
+        sectionType === "test_practice" ? "test_practice" : sectionType || "vocabulary",
+        subtype,
+        sectionTitle,
+      )
     }
   }
 

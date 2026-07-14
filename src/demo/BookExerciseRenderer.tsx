@@ -1,17 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { Pressable, Text, TextInput, View } from "react-native"
+import { Pressable, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import type { BookExerciseRaw, LessonStep } from "../lib/books/types"
 import { parseNumberedGaps } from "../lib/books/gap-text"
 import {
-  BlankSlot,
   ChoiceChip,
-  ExNum,
+  InlineBlankText,
   Instruction,
+  OptionsPickerSheet,
   Section,
+  SentenceTokens,
   TipBox,
   TextBlank,
   WordBank,
+  WritableInlineBlank,
+  WritableSentenceRow,
   styles,
 } from "./BookPageChrome"
 
@@ -43,6 +46,33 @@ function extractInlineWordBank(instruction: unknown): string[] {
     .filter((w) => w.length > 1 && !/^\d/.test(w))
 }
 
+function simplePlural(word: string): string {
+  const w = word.trim()
+  if (!w) return w
+  if (/[sxz]$/i.test(w) || /(ch|sh)$/i.test(w)) return `${w}es`
+  if (/[^aeiou]y$/i.test(w)) return `${w.slice(0, -1)}ies`
+  if (/s$/i.test(w)) return w
+  return `${w}s`
+}
+
+/** Expand lemmas with common singular/plural variants for closed-choice menus. */
+function expandFormVariants(lemmas: string[], instruction?: string): string[] {
+  const needsForms =
+    typeof instruction === "string" &&
+    /singular or plural|plural or singular|form(?:s)? of/i.test(instruction)
+  const out = new Set<string>()
+  for (const lemma of lemmas) {
+    const base = lemma.trim()
+    if (!base) continue
+    out.add(base)
+    if (needsForms) {
+      out.add(simplePlural(base))
+      // also keep uninflected lemma if pluralization produced something else
+    }
+  }
+  return [...out]
+}
+
 function wordBankFromBoxRef(instruction: unknown, unitSteps?: LessonStep[]): string[] {
   if (typeof instruction !== "string" || !unitSteps?.length) return []
   const ref = instruction.match(
@@ -72,15 +102,53 @@ function resolveFillBlankWordBank(
   return extractInlineWordBank(raw.instruction)
 }
 
-/** Skip mind maps, graphs, and other image-dependent tasks. */
+/**
+ * Closed option list for dropdown blanks: word bank + form variants + known answers.
+ * Prefer this whenever the learner must pick from a fixed set (e.g. unit 1 · 2.2).
+ */
+function resolveChoiceOptions(
+  raw: BookExerciseRaw,
+  unitSteps?: LessonStep[],
+  extraAnswers?: string[],
+): string[] {
+  const bank = resolveFillBlankWordBank(raw, unitSteps)
+  const instruction = typeof raw.instruction === "string" ? raw.instruction : stepInstructionLike(raw)
+  const expanded = expandFormVariants(bank, instruction)
+  const fromItems =
+    Array.isArray(raw.items)
+      ? raw.items
+          .filter(isRecord)
+          .map((it) => (typeof it.answer === "string" ? it.answer : ""))
+          .filter(Boolean)
+      : []
+  const merged = new Set<string>()
+  for (const w of [...expanded, ...fromItems, ...(extraAnswers ?? [])]) {
+    const t = w.trim()
+    if (t) merged.add(t)
+  }
+  return [...merged].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+}
+
+function stepInstructionLike(raw: BookExerciseRaw): string {
+  return typeof raw.instruction === "string" ? raw.instruction : ""
+}
+
+const SKIP_TYPES = new Set(["crossword", "diagram_labels", "graph_vocabulary"])
+
+const SKIP_INSTRUCTION_RE =
+  /mind\s*map|photograph|pie\s*chart|look at the (graph|picture|pictures|chart|diagram)|look at pictures/i
+
+/** Skip mind maps, graphs, crosswords, diagrams, and other image-dependent tasks. */
 export function shouldSkipExercise(step: LessonStep): boolean {
   const raw = step.raw
   if (raw.has_image === true || raw.has_graph === true) return true
   if (step.uiType === "image-prompt" || step.uiType === "graph-task") return true
+  const type = String(raw.type ?? "").toLowerCase()
+  if (SKIP_TYPES.has(type)) return true
+  const text = `${typeof raw.instruction === "string" ? raw.instruction : ""} ${typeof raw.title === "string" ? raw.title : ""}`
+  if (SKIP_INSTRUCTION_RE.test(text)) return true
   // Passage-only reading block with no questions — show on dedicated page, keep
   if (step.uiType === "reading-tfng") {
-    const qs = Array.isArray(raw.questions) ? raw.questions : []
-    // Keep even empty if it has a passage title (page 15)
     return false
   }
   return false
@@ -169,12 +237,9 @@ function VocabChecklist({
                   selected: Object.keys(next).filter((k) => next[k]),
                 })
               }}
-              style={styles.checkRow}
+              style={[styles.checkRow, on && styles.checkRowOn]}
             >
-              <View style={[styles.checkbox, on && styles.checkboxOn]}>
-                {on ? <Ionicons name="checkmark" size={11} color="#fff" /> : null}
-              </View>
-              <Text style={styles.checkLabel}>{item}</Text>
+              <Text style={[styles.checkLabel, on && styles.checkLabelOn]}>{item}</Text>
             </Pressable>
           )
         })}
@@ -220,13 +285,17 @@ function SortIntoBuckets({
       </Instruction>
       <WordBank
         words={remaining}
-        title="Word bank"
+        title="Options"
         onPick={(w) => setSelected((cur) => (cur === w ? null : w))}
         selected={selected}
         placed={placed}
       />
       <Text style={styles.hint}>
-        {selected ? `Selected: ${selected} — tap a column` : "Tap a word, then tap a column"}
+        {selected
+          ? `Selected — tap a column below to place it`
+          : remaining.length
+            ? "Tap an option above, then tap a column"
+            : "All options placed — tap a chip in a column to move it"}
       </Text>
       <View style={styles.table}>
         <View style={styles.tableRow}>
@@ -243,24 +312,40 @@ function SortIntoBuckets({
               <Pressable
                 key={bucket}
                 onPress={() => placeIn(bucket)}
+                accessibilityRole="button"
+                accessibilityLabel={`Place in ${bucket}`}
                 style={[styles.tableCell, selected && styles.tableCellActive]}
               >
                 {words.length === 0 ? (
-                  <Text style={styles.muted}>Tap to place</Text>
+                  <Text style={styles.muted}>
+                    {selected ? "Tap to place here" : "Empty"}
+                  </Text>
                 ) : (
                   <View style={styles.tableCellWords}>
                     {words.map((w) => (
                       <Pressable
                         key={w}
                         onPress={() => {
+                          // While an options-box word is selected, tapping a cell
+                          // (even on an existing chip) places the active word.
+                          if (selected) {
+                            placeIn(bucket)
+                            return
+                          }
                           const next = { ...placement }
                           delete next[w]
                           setPlacement(next)
                           setSelected(w)
                           emitChange(onChange, { kind: "buckets", placement: next })
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          selected ? `Place selected word in ${bucket}` : `Move ${w}`
+                        }
                       >
-                        <Text style={styles.tableWord}>{w}</Text>
+                        <Text style={styles.tableWord} numberOfLines={1}>
+                          {w}
+                        </Text>
                       </Pressable>
                     ))}
                   </View>
@@ -275,8 +360,10 @@ function SortIntoBuckets({
 }
 
 function stepInstruction(step: LessonStep) {
-  if (step.instruction) return step.instruction
-  return typeof step.raw.instruction === "string" ? step.raw.instruction : ""
+  const raw =
+    step.instruction ||
+    (typeof step.raw.instruction === "string" ? step.raw.instruction : "")
+  return typeof raw === "string" ? raw : ""
 }
 
 function ListeningStructuredExercise({
@@ -316,22 +403,24 @@ function ListeningStructuredExercise({
       {items.map((it, i) => {
         const pronoun = pronouns[i] ?? "their"
         return (
-          <View key={i} style={[styles.sentenceRow, { marginTop: 10 }]}>
-            <Text style={styles.sentenceText}>
-              Speaker {String(it.speaker ?? i + 1)} is describing {pronoun}{" "}
-            </Text>
-            <TextBlank
-              value={rows[i]?.person ?? ""}
-              onChangeText={(t) => update(i, { person: t })}
-              placeholder="________"
-            />
-            <Text style={styles.sentenceText}>, who sounds </Text>
-            <TextBlank
-              value={rows[i]?.adjectives ?? ""}
-              onChangeText={(t) => update(i, { adjectives: t })}
-              placeholder="________"
-            />
-            <Text style={styles.sentenceText}>.</Text>
+          <View key={i} style={{ gap: 6, marginTop: i === 0 ? 0 : 10 }}>
+            <View style={[styles.sentenceRow, styles.sentenceRowWritable]}>
+              <SentenceTokens
+                text={`Speaker ${String(it.speaker ?? i + 1)} is describing ${pronoun} `}
+              />
+              <WritableInlineBlank
+                value={rows[i]?.person ?? ""}
+                onChangeText={(t) => update(i, { person: t })}
+                placeholder="person"
+              />
+              <SentenceTokens text=", who sounds " />
+              <WritableInlineBlank
+                value={rows[i]?.adjectives ?? ""}
+                onChangeText={(t) => update(i, { adjectives: t })}
+                placeholder="adjectives"
+              />
+              <Text style={styles.sentenceText}>.</Text>
+            </View>
           </View>
         )
       })}
@@ -340,8 +429,12 @@ function ListeningStructuredExercise({
 }
 
 /**
- * Sentences with an inline blank (_____ / …) — word bank tap-to-fill or type.
- * For replace-underlined tasks, pass `tip` / `original` so empty blank shows the phrase to replace.
+ * Sentences with an inline blank (_____ / …).
+ * Closed option set → dropdown on each blank.
+ * Free response → type in place (platform IELTS-style inline TextInput).
+ *
+ * Dropdown blanks nest inside one parent <Text>.
+ * Writable blanks use a flexWrap row of word tokens + TextInput (do not nest TextInput in Text).
  */
 function InlineSentenceBlanks({
   rows,
@@ -356,12 +449,13 @@ function InlineSentenceBlanks({
 }) {
   const key = exerciseKey(step)
   const [values, setValues] = useState<string[]>(() => rows.map(() => ""))
-  const [selectedBlank, setSelectedBlank] = useState<number | null>(null)
-  const hasBank = Boolean(wordBank?.length)
+  const [openBlank, setOpenBlank] = useState<number | null>(null)
+  const options = wordBank?.length ? wordBank : []
+  const hasDropdown = options.length > 0
 
   useEffect(() => {
     setValues(rows.map(() => ""))
-    setSelectedBlank(null)
+    setOpenBlank(null)
   }, [key, rows.length])
 
   const commit = (next: string[]) => {
@@ -369,97 +463,74 @@ function InlineSentenceBlanks({
     emitChange(onChange, { kind: "list", values: next })
   }
 
-  const onPickWord = (word: string) => {
-    if (selectedBlank == null) return
-    const next = [...values]
-    next[selectedBlank] = word
-    commit(next)
-    const nextEmpty = next.findIndex((v, i) => i !== selectedBlank && !v.trim())
-    setSelectedBlank(nextEmpty >= 0 ? nextEmpty : null)
-  }
-
-  const used = new Set(values.filter(Boolean).map((v) => v.trim().toLowerCase()))
-
   return (
     <View style={{ gap: 10 }}>
-      {hasBank ? (
-        <>
-          <WordBank
-            words={(wordBank ?? []).filter((w) => !used.has(w.trim().toLowerCase()))}
-            title="Word bank"
-            onPick={onPickWord}
-          />
-          <View style={styles.dock}>
-            <Text style={styles.dockHint}>
-              {selectedBlank != null
-                ? `Blank ${selectedBlank + 1} selected — tap a word`
-                : "Tap a blank in the sentence, then choose a word"}
-            </Text>
-          </View>
-        </>
+      {hasDropdown ? (
+        <View style={styles.dock}>
+          <Text style={styles.dockHint}>Tap a blank and choose from the list</Text>
+        </View>
       ) : null}
 
       {rows.map((row, i) => {
         const cleaned = row.sentence.replace(/^\d+\.\s*/, "")
         const { before, after, hasBlank } = splitSentenceAroundBlank(cleaned)
         const num = row.num ?? i + 1
-        const placeholder = row.original || "…………"
+        const placeholder = row.original || "……"
         const filled = values[i]?.trim()
+
+        if (!hasDropdown) {
+          return (
+            <WritableSentenceRow
+              key={`${key}-${i}`}
+              num={num}
+              before={hasBlank ? before : `${cleaned} `}
+              after={hasBlank ? after : undefined}
+              value={values[i] ?? ""}
+              placeholder={placeholder}
+              onChangeText={(t) => {
+                const next = [...values]
+                next[i] = t
+                commit(next)
+              }}
+            />
+          )
+        }
 
         return (
           <View key={`${key}-${i}`} style={styles.sentenceRow}>
-            <Text style={styles.sentNum}>{num} </Text>
-            {hasBlank ? (
-              <>
-                <Text style={styles.sentenceText}>{before}</Text>
-                {hasBank ? (
-                  <BlankSlot
-                    selected={selectedBlank === i}
-                    value={filled}
-                    underlined={placeholder}
-                    onSelect={() => setSelectedBlank((c) => (c === i ? null : i))}
-                  />
-                ) : (
-                  <TextBlank
-                    value={values[i] ?? ""}
-                    onChangeText={(t) => {
-                      const next = [...values]
-                      next[i] = t
-                      commit(next)
-                    }}
-                    placeholder={placeholder}
-                    selected={selectedBlank === i}
-                    onSelect={() => setSelectedBlank((c) => (c === i ? null : i))}
-                  />
-                )}
-                {after ? <Text style={styles.sentenceText}>{after}</Text> : null}
-              </>
-            ) : (
-              <>
-                <Text style={styles.sentenceText}>{cleaned} </Text>
-                {hasBank ? (
-                  <BlankSlot
-                    selected={selectedBlank === i}
-                    value={filled}
-                    underlined={placeholder}
-                    onSelect={() => setSelectedBlank((c) => (c === i ? null : i))}
-                  />
-                ) : (
-                  <TextBlank
-                    value={values[i] ?? ""}
-                    onChangeText={(t) => {
-                      const next = [...values]
-                      next[i] = t
-                      commit(next)
-                    }}
-                    placeholder={placeholder}
-                  />
-                )}
-              </>
-            )}
+            <Text style={styles.sentenceText}>
+              <Text style={styles.sentNum}>{num} </Text>
+              {hasBlank ? before : `${cleaned} `}
+              <InlineBlankText
+                value={filled}
+                placeholder={placeholder}
+                dropdown
+                selected={openBlank === i}
+                onSelect={() => setOpenBlank(i)}
+              />
+              {hasBlank ? after : null}
+            </Text>
           </View>
         )
       })}
+
+      {hasDropdown ? (
+        <OptionsPickerSheet
+          visible={openBlank != null}
+          title={
+            openBlank != null ? `Blank ${openBlank + 1} — choose` : "Choose an option"
+          }
+          options={options}
+          selected={openBlank != null ? values[openBlank] : undefined}
+          onSelect={(opt) => {
+            if (openBlank == null) return
+            const next = [...values]
+            next[openBlank] = opt
+            commit(next)
+          }}
+          onClose={() => setOpenBlank(null)}
+        />
+      ) : null}
     </View>
   )
 }
@@ -476,25 +547,26 @@ function WordFormationBlanks({
 }) {
   const key = exerciseKey(step)
   const [values, setValues] = useState<string[]>(() => items.map(() => ""))
-  useEffect(() => setValues(items.map(() => "")), [key, items.length])
+  useEffect(() => {
+    setValues(items.map(() => ""))
+  }, [key, items.length])
 
   return (
     <View style={{ gap: 10 }}>
       {items.map((item, i) => (
-        <View key={`${key}-${i}`} style={styles.sentenceRow}>
-          <Text style={styles.sentNum}>{i + 1} </Text>
-          <Text style={styles.sentenceText}>{item} → </Text>
-          <TextBlank
-            value={values[i] ?? ""}
-            onChangeText={(t) => {
-              const next = [...values]
-              next[i] = t
-              setValues(next)
-              emitChange(onChange, { kind: "list", values: next })
-            }}
-            placeholder="________"
-          />
-        </View>
+        <WritableSentenceRow
+          key={`${key}-${i}`}
+          num={i + 1}
+          before={`${item} → `}
+          value={values[i] ?? ""}
+          placeholder="word form"
+          onChangeText={(t) => {
+            const next = [...values]
+            next[i] = t
+            setValues(next)
+            emitChange(onChange, { kind: "list", values: next })
+          }}
+        />
       ))}
     </View>
   )
@@ -551,12 +623,13 @@ function InlineGapPassage({
   )
   const count = Math.max(gapCount, expectedCount ?? 0)
   const [values, setValues] = useState<string[]>(() => Array.from({ length: count }, () => ""))
-  const [selectedBlank, setSelectedBlank] = useState<number | null>(null)
-  const hasBank = Boolean(wordBank?.length)
+  const [openBlank, setOpenBlank] = useState<number | null>(null)
+  const options = wordBank?.length ? wordBank : []
+  const hasDropdown = options.length > 0
 
   useEffect(() => {
     setValues(Array.from({ length: count }, () => ""))
-    setSelectedBlank(null)
+    setOpenBlank(null)
   }, [key, count])
 
   const commit = useCallback(
@@ -566,15 +639,6 @@ function InlineGapPassage({
     },
     [onChange],
   )
-
-  const onPickWord = (word: string) => {
-    if (selectedBlank == null) return
-    const next = [...values]
-    next[selectedBlank] = word
-    commit(next)
-    const nextEmpty = next.findIndex((v, i) => i !== selectedBlank && !v.trim())
-    setSelectedBlank(nextEmpty >= 0 ? nextEmpty : null)
-  }
 
   if (gapCount === 0) {
     return (
@@ -591,62 +655,75 @@ function InlineGapPassage({
 
   return (
     <View style={{ gap: 8 }}>
-      {hasBank ? <WordBank words={wordBank!} onPick={onPickWord} /> : null}
-      <Text style={styles.hint}>
-        {hasBank
-          ? selectedBlank != null
-            ? `Gap ${selectedBlank + 1} selected`
-            : "Tap a numbered blank in the text"
-          : "Tap a number, then type your answer"}
-      </Text>
-      <View style={styles.inlineWrap}>
-        {segments.map((seg, i) => {
-          if (seg.type === "text") {
-            return (
-              <Text key={`t-${i}`} style={styles.inlineText}>
-                {seg.text}
-              </Text>
-            )
-          }
-          const filled = values[seg.index]?.trim()
-          const selected = selectedBlank === seg.index
-          return (
-            <Pressable
-              key={`g-${seg.index}-${i}`}
-              onPress={() =>
-                setSelectedBlank((c) => (c === seg.index ? null : seg.index))
+      {hasDropdown ? (
+        <Text style={styles.hint}>Tap a numbered blank and choose from the list</Text>
+      ) : null}
+      {hasDropdown ? (
+        <View style={styles.inlineWrap}>
+          <Text style={styles.inlineText}>
+            {segments.map((seg, i) => {
+              if (seg.type === "text") {
+                return (
+                  <Text key={`t-${i}`} style={styles.inlineText}>
+                    {seg.text}
+                  </Text>
+                )
               }
-              style={[styles.inlineBlank, selected && styles.inlineBlankSelected]}
-            >
-              <Text
-                style={[
-                  styles.inlineBlankText,
-                  filled && styles.inlineBlankTextFilled,
-                  selected && styles.inlineBlankTextSelected,
-                ]}
-              >
-                {filled || String(seg.index + 1)}
-              </Text>
-            </Pressable>
-          )
-        })}
-      </View>
-      {!hasBank && selectedBlank != null ? (
-        <TextInput
-          value={values[selectedBlank] ?? ""}
-          onChangeText={(t) => {
+              const filled = values[seg.index]?.trim()
+              const selected = openBlank === seg.index
+              return (
+                <Text
+                  key={`g-${seg.index}-${i}`}
+                  onPress={() => setOpenBlank(seg.index)}
+                  style={[
+                    styles.inlineBlank,
+                    selected && styles.inlineBlankSelected,
+                    filled ? styles.inlineBlankTextFilled : null,
+                  ]}
+                >
+                  {filled || `▾ ${seg.index + 1}`}
+                </Text>
+              )
+            })}
+          </Text>
+        </View>
+      ) : (
+        <View style={[styles.inlineWrap, styles.sentenceRowWritable]}>
+          {segments.map((seg, i) => {
+            if (seg.type === "text") {
+              return <SentenceTokens key={`t-${i}`} text={seg.text} />
+            }
+            return (
+              <WritableInlineBlank
+                key={`g-${seg.index}-${i}`}
+                number={seg.index + 1}
+                value={values[seg.index] ?? ""}
+                placeholder="……"
+                onChangeText={(t) => {
+                  const next = [...values]
+                  next[seg.index] = t
+                  commit(next)
+                }}
+              />
+            )
+          })}
+        </View>
+      )}
+      {hasDropdown ? (
+        <OptionsPickerSheet
+          visible={openBlank != null}
+          title={
+            openBlank != null ? `Gap ${openBlank + 1} — choose` : "Choose an option"
+          }
+          options={options}
+          selected={openBlank != null ? values[openBlank] : undefined}
+          onSelect={(opt) => {
+            if (openBlank == null) return
             const next = [...values]
-            next[selectedBlank] = t
+            next[openBlank] = opt
             commit(next)
           }}
-          placeholder={`Gap ${selectedBlank + 1}`}
-          style={{
-            borderWidth: 1,
-            borderColor: "#C4A8E0",
-            borderRadius: 4,
-            padding: 10,
-            fontFamily: "Georgia",
-          }}
+          onClose={() => setOpenBlank(null)}
         />
       ) : null}
     </View>
@@ -710,7 +787,7 @@ function ReadingTfng({
       {typeof raw.test_tip === "string" ? <TipBox title="Test tip">{raw.test_tip}</TipBox> : null}
       {questions.map((q) => {
         const num = String(q.number ?? "")
-        const statement = String(q.statement ?? "")
+        const statement = String(q.statement ?? q.text ?? "")
         return (
           <View key={num} style={styles.questionBlock}>
             <Text style={styles.body}>
@@ -771,7 +848,7 @@ function DiscussionQuestionsList({
   return (
     <Section>
       <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
-      <View style={{ gap: 12 }}>
+      <View style={{ gap: 8 }}>
         {questions.map((q, i) => (
           <View key={i} style={{ gap: 6 }}>
             <Text style={styles.body}>
@@ -999,6 +1076,285 @@ function DiscussionOrSpeaking({
   )
 }
 
+function matchingColumnLabel(item: unknown, i: number, side: "left" | "right"): string {
+  if (typeof item === "string") {
+    return side === "left" ? `${i + 1}. ${item}` : item
+  }
+  if (!isRecord(item)) return String(item ?? "")
+  const prefix = String(item.letter ?? item.number ?? i + 1)
+  const text = String(item.text ?? item.name ?? "")
+  return text ? `${prefix}. ${text}` : prefix
+}
+
+function MultipleChoiceExercise({
+  raw,
+  step,
+  onChange,
+}: {
+  raw: BookExerciseRaw
+  step: LessonStep
+  onChange?: (payload: unknown) => void
+}) {
+  const key = exerciseKey(step)
+  const questions = Array.isArray(raw.questions) ? raw.questions.filter(isRecord) : []
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  useEffect(() => setAnswers({}), [key])
+
+  const optionLabel = (opt: unknown, oi: number): string => {
+    if (typeof opt === "string") return opt
+    if (isRecord(opt)) {
+      const letter = typeof opt.letter === "string" ? opt.letter : String.fromCharCode(65 + oi)
+      const text = String(opt.text ?? opt.label ?? "")
+      return text ? `${letter}. ${text}` : letter
+    }
+    return String(opt ?? "")
+  }
+
+  const pickValue = (opt: unknown, oi: number, label: string): string => {
+    if (typeof opt === "string") {
+      const letterMatch = opt.match(/^([A-D])[.)]\s*/i)
+      return letterMatch ? letterMatch[1].toUpperCase() : opt
+    }
+    if (isRecord(opt) && typeof opt.letter === "string") return opt.letter
+    const letterMatch = label.match(/^([A-D])[.)]\s*/i)
+    return letterMatch ? letterMatch[1].toUpperCase() : label || String.fromCharCode(65 + oi)
+  }
+
+  const setAnswer = (num: string, value: string) => {
+    const next = { ...answers, [num]: value }
+    setAnswers(next)
+    emitChange(onChange, { kind: "mcq", byNumber: next })
+  }
+
+  return (
+    <Section>
+      <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
+      {questions.map((q, i) => {
+        const num = String(q.number ?? i + 1)
+        const opts = Array.isArray(q.options) ? q.options : []
+        return (
+          <View key={num} style={styles.questionBlock}>
+            <Text style={styles.body}>
+              <Text style={styles.questionNum}>{num}. </Text>
+              {String(q.text ?? q.statement ?? "")}
+            </Text>
+            <View style={styles.chipRow}>
+              {opts.map((opt, oi) => {
+                const label = optionLabel(opt, oi)
+                const value = pickValue(opt, oi, label)
+                const selected = answers[num] === value || answers[num] === label
+                return (
+                  <ChoiceChip
+                    key={`${num}-${oi}`}
+                    label={label}
+                    selected={selected}
+                    onPress={() => setAnswer(num, selected ? "" : value)}
+                  />
+                )
+              })}
+            </View>
+          </View>
+        )
+      })}
+    </Section>
+  )
+}
+
+function ShortAnswerExercise({
+  raw,
+  step,
+  onChange,
+}: {
+  raw: BookExerciseRaw
+  step: LessonStep
+  onChange?: (payload: unknown) => void
+}) {
+  const key = exerciseKey(step)
+  const questions = Array.isArray(raw.questions) ? raw.questions.filter(isRecord) : []
+  const options = Array.isArray(raw.options) ? raw.options : []
+  const [values, setValues] = useState<string[]>(() => questions.map(() => ""))
+  useEffect(() => setValues(questions.map(() => "")), [key, questions.length])
+
+  return (
+    <Section>
+      <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
+      {typeof raw.passage === "string" && raw.passage ? (
+        <View style={styles.passageBox}>
+          <Text style={styles.body}>{raw.passage}</Text>
+        </View>
+      ) : null}
+      {options.length > 0 ? (
+        <View style={styles.optionsList}>
+          <Text style={[styles.hint, { marginBottom: 4 }]}>Options</Text>
+          {options.map((opt, i) => {
+            if (typeof opt === "string") {
+              return (
+                <View key={i} style={styles.optionRow}>
+                  <Text style={styles.optionText}>{opt}</Text>
+                </View>
+              )
+            }
+            if (!isRecord(opt)) return null
+            return (
+              <View key={i} style={styles.optionRow}>
+                <Text style={styles.optionLetter}>{String(opt.letter ?? "")}</Text>
+                <Text style={styles.optionText}>{String(opt.text ?? opt.name ?? "")}</Text>
+              </View>
+            )
+          })}
+        </View>
+      ) : null}
+      <View style={{ gap: 8 }}>
+        {questions.map((q, i) => (
+          <View key={String(q.number ?? i)} style={{ gap: 6 }}>
+            <Text style={styles.body}>
+              <Text style={styles.sentNum}>{String(q.number ?? i + 1)} </Text>
+              {String(q.text ?? q.statement ?? "")}
+            </Text>
+            <TextBlank
+              value={values[i] ?? ""}
+              onChangeText={(t) => {
+                const next = [...values]
+                next[i] = t
+                setValues(next)
+                emitChange(onChange, { kind: "list", values: next })
+              }}
+              placeholder="Your answer…"
+            />
+          </View>
+        ))}
+      </View>
+    </Section>
+  )
+}
+
+function MatchingPairsExercise({
+  raw,
+  step,
+  onChange,
+}: {
+  raw: BookExerciseRaw
+  step: LessonStep
+  onChange?: (payload: unknown) => void
+}) {
+  const key = exerciseKey(step)
+  const left = Array.isArray(raw.beginnings)
+    ? raw.beginnings
+    : Array.isArray(raw.people)
+      ? raw.people
+      : Array.isArray(raw.left)
+        ? raw.left
+        : []
+  const right = Array.isArray(raw.endings)
+    ? raw.endings
+    : Array.isArray(raw.statements)
+      ? raw.statements
+      : Array.isArray(raw.right)
+        ? raw.right
+        : []
+  const [values, setValues] = useState<string[]>(() => left.map(() => ""))
+  useEffect(() => setValues(left.map(() => "")), [key, left.length])
+
+  return (
+    <Section>
+      <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
+      {left.length ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Match from</Text>
+          {left.map((item, i) => (
+            <Text key={i} style={styles.body}>
+              {matchingColumnLabel(item, i, "left")}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {right.length ? (
+        <View style={styles.optionsList}>
+          <Text style={[styles.hint, { marginBottom: 4 }]}>Options</Text>
+          {right.map((item, i) => (
+            <View key={i} style={styles.optionRow}>
+              <Text style={styles.optionText}>{matchingColumnLabel(item, i, "right")}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <View style={{ gap: 8 }}>
+        {left.map((item, i) => (
+          <View key={i} style={{ gap: 6 }}>
+            <Text style={styles.body}>{matchingColumnLabel(item, i, "left")}</Text>
+            <TextBlank
+              value={values[i] ?? ""}
+              onChangeText={(t) => {
+                const next = [...values]
+                next[i] = t
+                setValues(next)
+                emitChange(onChange, { kind: "list", values: next })
+              }}
+              placeholder="Letter / number"
+            />
+          </View>
+        ))}
+      </View>
+    </Section>
+  )
+}
+
+function PassageReadExercise({
+  raw,
+  step,
+  onChange,
+}: {
+  raw: BookExerciseRaw
+  step: LessonStep
+  onChange?: (payload: unknown) => void
+}) {
+  const key = exerciseKey(step)
+  const [notes, setNotes] = useState("")
+  useEffect(() => setNotes(""), [key])
+  const hasAdvantages = Array.isArray(raw.advantages)
+
+  return (
+    <Section>
+      {typeof raw.title === "string" ? (
+        <Text style={styles.passageTitle}>{raw.title}</Text>
+      ) : null}
+      <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
+      {typeof raw.passage === "string" && raw.passage ? (
+        <View style={styles.passageBox}>
+          <Text style={styles.body}>{raw.passage}</Text>
+        </View>
+      ) : null}
+      {hasAdvantages ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Advantages</Text>
+          {asStringArray(raw.advantages).map((a, i) => (
+            <Text key={i} style={styles.body}>
+              • {a}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+      {raw.disadvantage != null ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Disadvantage</Text>
+          <Text style={styles.body}>{String(raw.disadvantage)}</Text>
+        </View>
+      ) : null}
+      {!hasAdvantages ? (
+        <TextBlank
+          value={notes}
+          onChangeText={(t) => {
+            setNotes(t)
+            emitChange(onChange, { kind: "open", notes: t })
+          }}
+          placeholder="Write your notes"
+          multiline
+        />
+      ) : null}
+    </Section>
+  )
+}
+
 function GraphTask({ raw, step }: { raw: BookExerciseRaw; step: LessonStep }) {
   void raw
   void step
@@ -1082,22 +1438,17 @@ function renderExercise(
     }
 
     case "fill-blank-sentences": {
+      // e.g. unit 1 · 2.2 — student types the answer in the blank (not a dropdown)
       const items = Array.isArray(raw.items) ? raw.items.filter(isRecord) : []
       const rows = items.map((it, i) => ({
-        sentence: String(it.sentence ?? ""),
+        sentence: String(it.sentence ?? it.text ?? ""),
         original: typeof it.original === "string" ? it.original : undefined,
         num: i + 1,
       }))
-      const bank = resolveFillBlankWordBank(raw, unitSteps)
       return (
         <Section>
           <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
-          <InlineSentenceBlanks
-            rows={rows}
-            step={step}
-            wordBank={bank.length ? bank : undefined}
-            onChange={onChange}
-          />
+          <InlineSentenceBlanks rows={rows} step={step} onChange={onChange} />
         </Section>
       )
     }
@@ -1173,12 +1524,10 @@ function renderExercise(
     }
 
     case "sentence-wordbox": {
-      const bank = asStringArray(raw.adjectives).length
-        ? asStringArray(raw.adjectives)
-        : asStringArray(raw.words)
+      const bank = resolveChoiceOptions(raw, unitSteps)
       const sentences = Array.isArray(raw.sentences) ? raw.sentences.filter(isRecord) : []
       const rows = sentences.map((s, i) => ({
-        sentence: String(s.sentence ?? ""),
+        sentence: String(s.sentence ?? s.text ?? ""),
         num: i + 1,
       }))
       return (
@@ -1196,17 +1545,17 @@ function renderExercise(
 
     case "gap-fill-passage": {
       const text = String(raw.text ?? "")
-      const words = asStringArray(raw.words)
+      const bank = resolveChoiceOptions(raw, unitSteps, asStringArray(raw.answers))
       const answersLen = asStringArray(raw.answers).length
-      const parsed = parseNumberedGaps(text, answersLen || words.length || undefined)
-      const expected = Math.max(parsed.gapCount, answersLen, words.length, 1)
+      const parsed = parseNumberedGaps(text, answersLen || bank.length || undefined)
+      const expected = Math.max(parsed.gapCount, answersLen, bank.length, 1)
       return (
         <Section>
           <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
           <InlineGapPassage
             text={text}
             step={step}
-            wordBank={words.length ? words : undefined}
+            wordBank={bank.length ? bank : undefined}
             expectedCount={expected}
             onChange={onChange}
           />
@@ -1218,6 +1567,18 @@ function renderExercise(
       return (
         <DiscussionOrSpeaking raw={raw} step={step} onChange={onChange} mode="speaking" />
       )
+
+    case "multiple-choice":
+      return <MultipleChoiceExercise raw={raw} step={step} onChange={onChange} />
+
+    case "short-answer":
+      return <ShortAnswerExercise raw={raw} step={step} onChange={onChange} />
+
+    case "matching-pairs":
+      return <MatchingPairsExercise raw={raw} step={step} onChange={onChange} />
+
+    case "passage-read":
+      return <PassageReadExercise raw={raw} step={step} onChange={onChange} />
 
     case "image-prompt":
     case "graph-task":
@@ -1243,7 +1604,7 @@ export function BookExerciseRenderer({
   if (!body) return null
 
   return (
-    <View style={{ gap: 4, marginBottom: 14 }}>
+    <View style={{ gap: 4, marginBottom: 10 }}>
       {body}
       {typeof step.raw.test_tip === "string" &&
       step.uiType !== "reading-tfng" &&

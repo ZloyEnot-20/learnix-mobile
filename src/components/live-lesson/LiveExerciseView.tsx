@@ -77,11 +77,13 @@ function Chip({
   label,
   selected,
   placed,
+  compact,
   onPress,
 }: {
   label: string
   selected?: boolean
   placed?: boolean
+  compact?: boolean
   onPress?: () => void
 }) {
   return (
@@ -90,14 +92,17 @@ function Chip({
       disabled={!onPress}
       style={[
         styles.chip,
+        compact && styles.chipCompact,
         selected && styles.chipSelected,
         placed && styles.chipPlaced,
         !onPress && styles.chipStatic,
       ]}
     >
       <Text
+        numberOfLines={1}
         style={[
           styles.chipText,
+          compact && styles.chipTextCompact,
           selected && styles.chipTextSelected,
           placed && styles.chipTextPlaced,
         ]}
@@ -289,9 +294,23 @@ function SortIntoBuckets({
             {words.length === 0 ? (
               <Text style={styles.muted}>Tap here to place the selected word</Text>
             ) : (
-              <View style={styles.chipRow}>
+              <View style={styles.chipRowCompact}>
                 {words.map((w) => (
-                  <Chip key={w} label={w} placed onPress={() => unplace(w)} />
+                  <Chip
+                    key={w}
+                    label={w}
+                    placed
+                    compact
+                    onPress={() => {
+                      // While an options-box word is selected, tapping anywhere in the
+                      // column (including an existing chip) places the active word.
+                      if (selected) {
+                        placeIn(bucket)
+                        return
+                      }
+                      unplace(w)
+                    }}
+                  />
                 ))}
               </View>
             )}
@@ -363,7 +382,7 @@ function TfngQuestions({
         return (
           <Block key={num}>
             <Text style={styles.body}>
-              {num}. {String(q.statement ?? "")}
+              {num}. {String(q.statement ?? q.text ?? "")}
             </Text>
             <View style={[styles.chipRow, { marginTop: 8 }]}>
               {options.map((opt) => (
@@ -384,6 +403,85 @@ function TfngQuestions({
       })}
     </View>
   )
+}
+
+function McqQuestions({
+  questions,
+  exerciseKey,
+  onChange,
+}: {
+  questions: Array<Record<string, unknown>>
+  exerciseKey: string
+  onChange?: (byNumber: Record<string, string>) => void
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  useEffect(() => {
+    setAnswers({})
+  }, [exerciseKey])
+
+  const optionLabel = (opt: unknown, oi: number): string => {
+    if (typeof opt === "string") return opt
+    if (isRecord(opt)) {
+      const letter = typeof opt.letter === "string" ? opt.letter : String.fromCharCode(65 + oi)
+      const text = String(opt.text ?? opt.label ?? "")
+      return text ? `${letter}. ${text}` : letter
+    }
+    return String(opt ?? "")
+  }
+
+  const pickValue = (opt: unknown, oi: number, label: string): string => {
+    if (typeof opt === "string") {
+      const letterMatch = opt.match(/^([A-D])[.)]\s*/i)
+      return letterMatch ? letterMatch[1].toUpperCase() : opt
+    }
+    if (isRecord(opt) && typeof opt.letter === "string") return opt.letter
+    const letterMatch = label.match(/^([A-D])[.)]\s*/i)
+    return letterMatch ? letterMatch[1].toUpperCase() : label || String.fromCharCode(65 + oi)
+  }
+
+  return (
+    <View style={styles.gap}>
+      {questions.map((q, i) => {
+        const num = String(q.number ?? i + 1)
+        const opts = Array.isArray(q.options) ? q.options : []
+        return (
+          <Block key={num}>
+            <Text style={styles.body}>
+              {num}. {String(q.text ?? q.statement ?? "")}
+            </Text>
+            <View style={[styles.chipRow, { marginTop: 8 }]}>
+              {opts.map((opt, oi) => {
+                const label = optionLabel(opt, oi)
+                const value = pickValue(opt, oi, label)
+                return (
+                  <Chip
+                    key={`${num}-${oi}`}
+                    label={label}
+                    selected={answers[num] === value || answers[num] === label}
+                    onPress={() => {
+                      const next = { ...answers, [num]: value }
+                      setAnswers(next)
+                      queueMicrotask(() => onChange?.(next))
+                    }}
+                  />
+                )
+              })}
+            </View>
+          </Block>
+        )
+      })}
+    </View>
+  )
+}
+
+function matchingColumnLabel(item: unknown, i: number, side: "left" | "right"): string {
+  if (typeof item === "string") {
+    return side === "left" ? `${i + 1}. ${item}` : item
+  }
+  if (!isRecord(item)) return String(item ?? "")
+  const prefix = String(item.letter ?? item.number ?? (side === "left" ? i + 1 : i + 1))
+  const text = String(item.text ?? item.name ?? "")
+  return text ? `${prefix}. ${text}` : prefix
 }
 
 /** Indexed text answers → { kind: "list", values: string[] } */
@@ -714,7 +812,7 @@ function SentenceWordbox({
   exerciseKey: string
   onChange?: (values: string[]) => void
 }) {
-  const labels = sentences.map((s, i) => `${i + 1}. ${String(s.sentence ?? "")}`)
+  const labels = sentences.map((s, i) => `${i + 1}. ${String(s.sentence ?? s.text ?? "")}`)
   return (
     <ListAnswers
       labels={labels}
@@ -836,7 +934,7 @@ function renderBody(
 
     case "fill-blank-sentences": {
       const items = Array.isArray(raw.items) ? raw.items.filter(isRecord) : []
-      const labels = items.map((it, i) => `${i + 1}. ${String(it.sentence ?? "")}`)
+      const labels = items.map((it, i) => `${i + 1}. ${String(it.sentence ?? it.text ?? "")}`)
       const bank = resolveFillBlankWordBank(raw.instruction, unitSteps)
       return (
         <ListAnswers
@@ -1057,6 +1155,141 @@ function renderBody(
         </View>
       )
 
+    case "multiple-choice": {
+      const questions = Array.isArray(raw.questions) ? raw.questions.filter(isRecord) : []
+      return (
+        <McqQuestions
+          questions={questions}
+          exerciseKey={exerciseKey}
+          onChange={(byNumber) => emit({ kind: "mcq", byNumber })}
+        />
+      )
+    }
+
+    case "short-answer": {
+      const questions = Array.isArray(raw.questions) ? raw.questions.filter(isRecord) : []
+      const options = Array.isArray(raw.options) ? raw.options : []
+      const labels = questions.map(
+        (q, i) => `${String(q.number ?? i + 1)}. ${String(q.text ?? q.statement ?? "")}`,
+      )
+      return (
+        <View style={styles.gap}>
+          {typeof raw.passage === "string" && raw.passage ? (
+            <Block title="Passage">
+              <Text style={styles.body}>{raw.passage}</Text>
+            </Block>
+          ) : null}
+          {options.length > 0 ? (
+            <Block title="Options">
+              {options.map((opt, i) => {
+                if (typeof opt === "string") {
+                  return (
+                    <Text key={i} style={styles.body}>
+                      {opt}
+                    </Text>
+                  )
+                }
+                if (!isRecord(opt)) return null
+                return (
+                  <Text key={i} style={styles.body}>
+                    {String(opt.letter ?? "")} {String(opt.text ?? opt.name ?? "")}
+                  </Text>
+                )
+              })}
+            </Block>
+          ) : null}
+          <ListAnswers
+            labels={labels.length ? labels : ["Your answer"]}
+            exerciseKey={exerciseKey}
+            placeholder="Type your answer"
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+        </View>
+      )
+    }
+
+    case "matching-pairs": {
+      const left = Array.isArray(raw.beginnings)
+        ? raw.beginnings
+        : Array.isArray(raw.people)
+          ? raw.people
+          : Array.isArray(raw.left)
+            ? raw.left
+            : []
+      const right = Array.isArray(raw.endings)
+        ? raw.endings
+        : Array.isArray(raw.statements)
+          ? raw.statements
+          : Array.isArray(raw.right)
+            ? raw.right
+            : []
+      const labels = left.map((item, i) => matchingColumnLabel(item, i, "left"))
+      return (
+        <View style={styles.gap}>
+          {left.length ? (
+            <Block title="Match from">
+              {left.map((item, i) => (
+                <Text key={i} style={styles.body}>
+                  {matchingColumnLabel(item, i, "left")}
+                </Text>
+              ))}
+            </Block>
+          ) : null}
+          {right.length ? (
+            <Block title="Options">
+              {right.map((item, i) => (
+                <Text key={i} style={styles.body}>
+                  {matchingColumnLabel(item, i, "right")}
+                </Text>
+              ))}
+            </Block>
+          ) : null}
+          <ListAnswers
+            labels={labels.length ? labels : ["Match 1"]}
+            exerciseKey={exerciseKey}
+            placeholder="Letter / number"
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+        </View>
+      )
+    }
+
+    case "passage-read":
+      return (
+        <View style={styles.gap}>
+          {typeof raw.title === "string" ? (
+            <Text style={styles.blockTitle}>{raw.title}</Text>
+          ) : null}
+          {typeof raw.passage === "string" && raw.passage ? (
+            <Block title="Passage">
+              <Text style={styles.body}>{raw.passage}</Text>
+            </Block>
+          ) : null}
+          {Array.isArray(raw.advantages) ? (
+            <Block title="Advantages">
+              {asStringArray(raw.advantages).map((a, i) => (
+                <Text key={i} style={styles.body}>
+                  • {a}
+                </Text>
+              ))}
+            </Block>
+          ) : null}
+          {raw.disadvantage != null ? (
+            <Block title="Disadvantage">
+              <Text style={styles.body}>{String(raw.disadvantage)}</Text>
+            </Block>
+          ) : null}
+          {!Array.isArray(raw.advantages) ? (
+            <NotesAnswers
+              exerciseKey={exerciseKey}
+              title="Notes"
+              placeholder="Write your notes"
+              onChange={(notes) => emit({ kind: "open", notes })}
+            />
+          ) : null}
+        </View>
+      )
+
     case "instruction-only":
     default:
       return (
@@ -1200,11 +1433,11 @@ export function LiveExerciseView({
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingBottom: spacing.xxl, gap: spacing.md },
+  wrap: { paddingBottom: spacing.lg, gap: spacing.sm },
   embeddedCard: {
-    paddingBottom: spacing.md,
-    marginBottom: spacing.md,
-    padding: spacing.md,
+    paddingBottom: spacing.sm,
+    marginBottom: spacing.sm,
+    padding: spacing.sm,
     backgroundColor: colors.card,
     borderRadius: radius.card,
     borderWidth: 1,
@@ -1213,53 +1446,60 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
   badge: {
     backgroundColor: colors.primaryLight,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
   },
   badgeText: { ...typography.caption, color: colors.primaryDark, fontWeight: "600" },
   meta: { ...typography.caption, color: colors.textMuted },
-  instruction: { ...typography.body, color: colors.text, lineHeight: 22 },
+  instruction: { fontSize: 13, color: colors.text, lineHeight: 18 },
   gap: { gap: spacing.sm },
   block: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
-    padding: spacing.md,
+    padding: spacing.sm,
     borderWidth: 1,
     borderColor: colors.borderLight,
-    gap: 6,
+    gap: 4,
   },
   blockActive: {
     borderColor: colors.primary,
     backgroundColor: colors.primaryLight,
   },
   blockTitle: { ...typography.label, color: colors.text, fontWeight: "700" },
-  body: { ...typography.body, color: colors.text, lineHeight: 21 },
+  body: { fontSize: 13, color: colors.text, lineHeight: 18 },
   muted: { ...typography.caption, color: colors.textSecondary },
-  hint: { ...typography.caption, color: colors.primaryDark, marginTop: 4 },
+  hint: { ...typography.caption, color: colors.primaryDark, marginTop: 2 },
   input: {
-    marginTop: 8,
+    marginTop: 6,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    ...typography.body,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
     color: colors.text,
     backgroundColor: colors.background,
   },
   inputMulti: {
-    minHeight: 88,
+    minHeight: 72,
     textAlignVertical: "top",
   },
-  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chipRowCompact: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
   chip: {
     backgroundColor: colors.borderLight,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: "transparent",
+  },
+  chipCompact: {
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 6,
+    maxWidth: "100%",
   },
   chipStatic: {},
   chipSelected: {
@@ -1271,16 +1511,17 @@ const styles = StyleSheet.create({
     borderColor: "#059669",
   },
   chipText: { ...typography.caption, color: colors.text },
+  chipTextCompact: { fontSize: 11, lineHeight: 14, fontWeight: "600" },
   chipTextSelected: { color: colors.primaryDark, fontWeight: "700" },
   chipTextPlaced: { color: "#047857", fontWeight: "600" },
   blankPill: {
-    marginTop: 8,
+    marginTop: 6,
     borderWidth: 1,
     borderColor: colors.border,
     borderStyle: "dashed",
     borderRadius: radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     backgroundColor: colors.background,
   },
   blankPillActive: {
@@ -1288,7 +1529,7 @@ const styles = StyleSheet.create({
     borderStyle: "solid",
     backgroundColor: colors.primaryLight,
   },
-  blankPillText: { ...typography.body, color: colors.textMuted },
+  blankPillText: { fontSize: 13, color: colors.textMuted },
   blankPillFilled: { color: colors.text, fontWeight: "600" },
   inlineWrap: {
     flexDirection: "row",
@@ -1299,16 +1540,16 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.borderLight,
-    padding: spacing.md,
+    padding: spacing.sm,
   },
-  inlineText: { ...typography.body, color: colors.text, lineHeight: 24 },
+  inlineText: { fontSize: 13, color: colors.text, lineHeight: 18 },
   inlineBlank: {
     borderWidth: 1,
     borderColor: colors.primary,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    minWidth: 28,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 24,
     alignItems: "center",
     backgroundColor: colors.primaryLight,
   },

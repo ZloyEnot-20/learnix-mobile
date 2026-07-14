@@ -72,6 +72,10 @@ export type BookExerciseUiType =
   | "graph-task"
   | "answer-list"
   | "gap-fill-passage"
+  | "multiple-choice"
+  | "short-answer"
+  | "matching-pairs"
+  | "passage-read"
 
 export const BOOK_EXERCISE_UI_LABELS: Record<BookExerciseUiType, string> = {
   "vocab-checklist": "Vocabulary checklist",
@@ -95,6 +99,10 @@ export const BOOK_EXERCISE_UI_LABELS: Record<BookExerciseUiType, string> = {
   "graph-task": "Graph task",
   "answer-list": "Transformation",
   "gap-fill-passage": "Gap fill",
+  "multiple-choice": "Multiple choice",
+  "short-answer": "Short answer",
+  "matching-pairs": "Matching",
+  "passage-read": "Reading passage",
 }
 
 export type LessonStepStatus = "pending" | "current" | "open" | "done"
