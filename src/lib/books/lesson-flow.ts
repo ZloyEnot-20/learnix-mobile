@@ -64,15 +64,18 @@ export function flattenUnitToSteps(
       (typeof raw.exercise_id === "string" && raw.exercise_id) ||
       (sectionType === "test_practice" ? "test_practice" : `step-${order + 1}`)
     const withAudio = applyAudioOverride(raw, unit.unit_number, exerciseId)
-    const normalized = normalizeBookExercise({
-      ...withAudio,
-      section_type: sectionType,
-      subtype,
-    })
-    const uiType = inferExerciseUiType(normalized)
     const key =
       answerKey?.[exerciseId] ??
       (exerciseId === "test_practice" ? answerKey?.test_practice : undefined)
+    const normalized = normalizeBookExercise(
+      {
+        ...withAudio,
+        section_type: sectionType,
+        subtype,
+      },
+      key,
+    )
+    const uiType = inferExerciseUiType(normalized)
     steps.push({
       id: `u${unit.unit_number}-${exerciseId}`,
       unitNumber: unit.unit_number,

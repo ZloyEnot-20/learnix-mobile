@@ -5,6 +5,7 @@ import type { BookExerciseRaw, LessonStep } from "../lib/books/types"
 import { parseNumberedGaps } from "../lib/books/gap-text"
 import { requiresTypedWordForms } from "../lib/books/word-form-exercise"
 import { collectWordBoxItems, isCueWordBox } from "../lib/books/word-box"
+import { parseListeningTable, countTableGaps } from "../lib/books/listening-table"
 import {
   ChoiceChip,
   InlineBlankText,
@@ -245,7 +246,9 @@ function VocabChecklist({
   onChange?: (payload: unknown) => void
 }) {
   const key = exerciseKey(step)
-  const items = asStringArray(raw.items)
+  const items = asStringArray(raw.items).length
+    ? asStringArray(raw.items)
+    : collectWordBoxItems(raw)
   const [picked, setPicked] = useState<Record<string, boolean>>({})
   useEffect(() => setPicked({}), [key])
 
@@ -1309,13 +1312,15 @@ function MatchingPairsExercise({
         : []
   const [values, setValues] = useState<string[]>(() => left.map(() => ""))
   useEffect(() => setValues(left.map(() => "")), [key, left.length])
+  const leftTitle = Array.isArray(raw.jobs) ? "Jobs" : "Match from"
+  const rightTitle = Array.isArray(raw.jobs) ? "Definitions (a–f)" : "Options"
 
   return (
     <Section>
       <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
       {left.length ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Match from</Text>
+          <Text style={styles.cardTitle}>{leftTitle}</Text>
           {left.map((item, i) => (
             <Text key={i} style={styles.body}>
               {matchingColumnLabel(item, i, "left")}
@@ -1325,7 +1330,7 @@ function MatchingPairsExercise({
       ) : null}
       {right.length ? (
         <View style={styles.optionsList}>
-          <Text style={[styles.hint, { marginBottom: 4 }]}>Options</Text>
+          <Text style={[styles.hint, { marginBottom: 4 }]}>{rightTitle}</Text>
           {right.map((item, i) => (
             <View key={i} style={styles.optionRow}>
               <Text style={styles.optionText}>{matchingColumnLabel(item, i, "right")}</Text>
@@ -1345,7 +1350,92 @@ function MatchingPairsExercise({
                 setValues(next)
                 emitChange(onChange, { kind: "list", values: next })
               }}
-              placeholder="Letter / number"
+              placeholder="Letter (a–f)"
+            />
+          </View>
+        ))}
+      </View>
+    </Section>
+  )
+}
+
+function ListeningTableExercise({
+  raw,
+  step,
+  onChange,
+}: {
+  raw: BookExerciseRaw
+  step: LessonStep
+  onChange?: (payload: unknown) => void
+}) {
+  const key = exerciseKey(step)
+  const model = parseListeningTable(raw)
+  const gapCount = model
+    ? Math.max(countTableGaps(model), Array.isArray(raw.blanks) ? raw.blanks.length : 0)
+    : Array.isArray(raw.blanks)
+      ? raw.blanks.length
+      : 7
+  const labels = Array.from({ length: Math.max(gapCount, 1) }, (_, i) => ({
+    label: `${i + 1}.`,
+  }))
+  const [values, setValues] = useState<string[]>(() => labels.map(() => ""))
+  useEffect(() => setValues(labels.map(() => "")), [key, labels.length])
+
+  const titleCase = (s: string) =>
+    s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+
+  return (
+    <Section>
+      <Instruction
+        exNum={step.exerciseId}
+        audioTrack={raw.audio_track != null ? String(raw.audio_track) : undefined}
+      >
+        {stepInstruction(step)}
+      </Instruction>
+      {model ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Table</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
+            {model.columns.map((c) => (
+              <Text key={c} style={[styles.hint, { flex: 1, fontWeight: "700" }]}>
+                {titleCase(c)}
+              </Text>
+            ))}
+          </View>
+          {model.rows.map((row, ri) => (
+            <View
+              key={ri}
+              style={{
+                flexDirection: "row",
+                gap: 8,
+                marginBottom: 8,
+                borderTopWidth: 1,
+                borderTopColor: "#e5e7eb",
+                paddingTop: 8,
+              }}
+            >
+              {model.columns.map((c) => (
+                <Text key={c} style={[styles.body, { flex: 1 }]}>
+                  {String(row[c] ?? "")}
+                </Text>
+              ))}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <View style={{ gap: 8 }}>
+        {labels.map((row, i) => (
+          <View key={i} style={{ gap: 6 }}>
+            <Text style={styles.body}>{row.label}</Text>
+            <TextBlank
+              value={values[i] ?? ""}
+              onChangeText={(t) => {
+                const next = [...values]
+                next[i] = t
+                setValues(next)
+                emitChange(onChange, { kind: "list", values: next })
+              }}
+              placeholder="Max 2 words / a number"
             />
           </View>
         ))}
@@ -1654,6 +1744,9 @@ function renderExercise(
 
     case "matching-pairs":
       return <MatchingPairsExercise raw={raw} step={step} onChange={onChange} />
+
+    case "listening-table":
+      return <ListeningTableExercise raw={raw} step={step} onChange={onChange} />
 
     case "passage-read":
       return <PassageReadExercise raw={raw} step={step} onChange={onChange} />

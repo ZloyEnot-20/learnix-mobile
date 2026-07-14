@@ -20,6 +20,7 @@ import { parseNumberedGaps } from "../../lib/books/gap-text"
 import { requiresTypedWordForms } from "../../lib/books/word-form-exercise"
 import { displayListeningTrack } from "../../lib/books/repair-listening-audio"
 import { collectWordBoxItems, isCueWordBox } from "../../lib/books/word-box"
+import { parseListeningTable, countTableGaps } from "../../lib/books/listening-table"
 import { colors, radius, spacing, typography } from "../../theme/tokens"
 
 function asStringArray(v: unknown): string[] {
@@ -933,7 +934,11 @@ function renderBody(
     case "vocab-checklist":
       return (
         <ChecklistSelect
-          items={asStringArray(raw.items)}
+          items={
+            asStringArray(raw.items).length
+              ? asStringArray(raw.items)
+              : collectWordBoxItems(raw)
+          }
           exerciseKey={exerciseKey}
           onChange={(selected) => emit({ kind: "checklist", selected })}
         />
@@ -1309,10 +1314,12 @@ function renderBody(
             ? raw.right
             : []
       const labels = left.map((item, i) => matchingColumnLabel(item, i, "left"))
+      const leftTitle = Array.isArray(raw.jobs) ? "Jobs" : "Match from"
+      const rightTitle = Array.isArray(raw.jobs) ? "Definitions (a–f)" : "Options"
       return (
         <View style={styles.gap}>
           {left.length ? (
-            <Block title="Match from">
+            <Block title={leftTitle}>
               {left.map((item, i) => (
                 <Text key={i} style={styles.body}>
                   {matchingColumnLabel(item, i, "left")}
@@ -1321,7 +1328,7 @@ function renderBody(
             </Block>
           ) : null}
           {right.length ? (
-            <Block title="Options">
+            <Block title={rightTitle}>
               {right.map((item, i) => (
                 <Text key={i} style={styles.body}>
                   {matchingColumnLabel(item, i, "right")}
@@ -1332,7 +1339,64 @@ function renderBody(
           <ListAnswers
             labels={labels.length ? labels : ["Match 1"]}
             exerciseKey={exerciseKey}
-            placeholder="Letter / number"
+            placeholder="Letter (a–f)"
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+        </View>
+      )
+    }
+
+    case "listening-table": {
+      const model = parseListeningTable(raw)
+      const gapCount = model
+        ? Math.max(countTableGaps(model), Array.isArray(raw.blanks) ? raw.blanks.length : 0)
+        : Array.isArray(raw.blanks)
+          ? raw.blanks.length
+          : 7
+      const labels = Array.from({ length: Math.max(gapCount, 1) }, (_, i) => `${i + 1}.`)
+      const titleCase = (s: string) =>
+        s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+      return (
+        <View style={styles.gap}>
+          {displayListeningTrack(raw.audio_track ?? raw.audio) ? (
+            <Text style={styles.hint}>
+              Audio track {displayListeningTrack(raw.audio_track ?? raw.audio)}
+            </Text>
+          ) : null}
+          {model ? (
+            <Block title="Table">
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 6 }}>
+                {model.columns.map((c) => (
+                  <Text key={c} style={[styles.hint, { flex: 1, fontWeight: "700" }]}>
+                    {titleCase(c)}
+                  </Text>
+                ))}
+              </View>
+              {model.rows.map((row, ri) => (
+                <View
+                  key={ri}
+                  style={{
+                    flexDirection: "row",
+                    gap: 8,
+                    marginBottom: 8,
+                    borderTopWidth: 1,
+                    borderTopColor: "#e5e7eb",
+                    paddingTop: 8,
+                  }}
+                >
+                  {model.columns.map((c) => (
+                    <Text key={c} style={[styles.body, { flex: 1 }]}>
+                      {String(row[c] ?? "")}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </Block>
+          ) : null}
+          <ListAnswers
+            labels={labels}
+            exerciseKey={exerciseKey}
+            placeholder="Max 2 words / a number"
             onChange={(values) => emit({ kind: "list", values })}
           />
         </View>

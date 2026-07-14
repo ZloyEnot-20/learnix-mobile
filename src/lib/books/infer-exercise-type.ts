@@ -1,6 +1,7 @@
 import type { BookExerciseRaw, BookExerciseUiType } from "./types"
 import { BOOK_EXERCISE_UI_LABELS } from "./types"
 import { collectWordBoxItems, isCueWordBox } from "./word-box"
+import { isListeningTableShape } from "./listening-table"
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
@@ -97,7 +98,10 @@ export function inferExerciseUiType(raw: BookExerciseRaw): BookExerciseUiType {
   if (Array.isArray(raw.paraphrases) || itemsAreParaphrasePairs(raw.items)) {
     return "paraphrase-pairs"
   }
-  if (raw.table && isRecord(raw.table)) return "vocab-table"
+  if (isListeningTableShape(raw)) return "listening-table"
+  if (raw.table && isRecord(raw.table) && !Array.isArray((raw.table as { rows?: unknown }).rows)) {
+    return "vocab-table"
+  }
 
   if (Array.isArray(raw.questions) && raw.questions.every((q) => typeof q === "string")) {
     return "discussion-questions"
