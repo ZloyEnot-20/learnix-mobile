@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { Skeleton, SkeletonCard } from "../components/ui/Skeleton"
 import { PURPLE, TEXTBOOK } from "./theme"
+import { displayListeningTrack } from "../lib/books/repair-listening-audio"
 
 const SERIF = "Georgia"
 
@@ -206,10 +207,12 @@ export function ExNum({ n }: { n: string }) {
 }
 
 export function AudioPill({ track }: { track: string }) {
+  const label = displayListeningTrack(track)
+  if (!label) return null
   return (
     <View style={styles.audioPill}>
       <Ionicons name="headset" size={12} color="#e74c3c" />
-      <Text style={styles.audioPillText}>{track}</Text>
+      <Text style={styles.audioPillText}>{label}</Text>
     </View>
   )
 }

@@ -76,6 +76,7 @@ export type BookExerciseUiType =
   | "short-answer"
   | "matching-pairs"
   | "passage-read"
+  | "word-box-notes"
 
 export const BOOK_EXERCISE_UI_LABELS: Record<BookExerciseUiType, string> = {
   "vocab-checklist": "Vocabulary checklist",
@@ -103,6 +104,7 @@ export const BOOK_EXERCISE_UI_LABELS: Record<BookExerciseUiType, string> = {
   "short-answer": "Short answer",
   "matching-pairs": "Matching",
   "passage-read": "Reading passage",
+  "word-box-notes": "Word box",
 }
 
 export type LessonStepStatus = "pending" | "current" | "open" | "done"

@@ -1,5 +1,6 @@
 import type { BookExerciseRaw, BookExerciseUiType } from "./types"
 import { BOOK_EXERCISE_UI_LABELS } from "./types"
+import { collectWordBoxItems, isCueWordBox } from "./word-box"
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
@@ -84,6 +85,14 @@ export function inferExerciseUiType(raw: BookExerciseRaw): BookExerciseUiType {
   if (typeof raw.passage === "string" && Array.isArray(raw.words) && !raw.questions) {
     return "gap-fill-passage"
   }
+  // Numbered gaps in a passage (e.g. "1. ______ … 2. ______") even without an inline word bank
+  if (
+    typeof raw.passage === "string" &&
+    !raw.questions &&
+    /(?:\d+[.)]\s*)?_{2,}/.test(raw.passage)
+  ) {
+    return "gap-fill-passage"
+  }
 
   if (Array.isArray(raw.paraphrases) || itemsAreParaphrasePairs(raw.items)) {
     return "paraphrase-pairs"
@@ -100,6 +109,19 @@ export function inferExerciseUiType(raw: BookExerciseRaw): BookExerciseUiType {
   if (raw.audio_track && itemsAreSpeakerRows(raw.items)) return "listening-structured"
 
   if (Array.isArray(raw.sentences) && (raw.adjectives || raw.words || raw.adverbs)) {
+    return "sentence-wordbox"
+  }
+
+  // Sentences with blanks (_____), with or without an inline word bank
+  if (
+    Array.isArray(raw.sentences) &&
+    raw.sentences.some(
+      (s) =>
+        isRecord(s) &&
+        typeof (s.sentence ?? s.text) === "string" &&
+        /_{2,}|\.{3,}|…/.test(String(s.sentence ?? s.text)),
+    )
+  ) {
     return "sentence-wordbox"
   }
 
@@ -129,8 +151,46 @@ export function inferExerciseUiType(raw: BookExerciseRaw): BookExerciseUiType {
     return "answer-list"
   }
 
+  // Word box (nouns / phrases / idioms…) before checklist — cue banks must not become checklists
+  {
+    const box = collectWordBoxItems(raw)
+    if (
+      box.length > 0 &&
+      !raw.questions &&
+      !raw.passage &&
+      !raw.summary &&
+      !(Array.isArray(raw.sentences) && raw.sentences.length > 0)
+    ) {
+      if (
+        isCueWordBox(raw) ||
+        (Array.isArray(raw.nouns) && raw.nouns.length > 0) ||
+        ((raw.audio_track || raw.audio) &&
+          (Array.isArray(raw.phrases) ||
+            Array.isArray(raw.idioms) ||
+            Array.isArray(raw.phrasal_verbs) ||
+            Array.isArray(raw.nouns)))
+      ) {
+        return "word-box-notes"
+      }
+    }
+  }
+
   if (Array.isArray(raw.items) && raw.items.every((i) => typeof i === "string") && !raw.answers) {
     return "vocab-checklist"
+  }
+
+  {
+    const box = collectWordBoxItems(raw)
+    if (
+      box.length > 0 &&
+      !raw.questions &&
+      !raw.passage &&
+      !raw.summary &&
+      !(Array.isArray(raw.sentences) && raw.sentences.length > 0) &&
+      typeof raw.instruction === "string"
+    ) {
+      return "word-box-notes"
+    }
   }
 
   if (typeof raw.passage === "string" && !raw.questions) return "passage-read"

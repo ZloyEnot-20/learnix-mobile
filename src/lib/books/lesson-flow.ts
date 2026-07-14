@@ -7,6 +7,7 @@ import type {
 } from "./types"
 import { inferExerciseUiType, sectionDisplayLabel, uiLabelFor } from "./infer-exercise-type"
 import { normalizeBookExercise } from "./normalize-book-exercise"
+import { cambridgeAudioTrackOverrides } from "./cambridge-audio-track-overrides"
 
 function isExerciseNode(node: BookSectionRaw | BookExerciseRaw): boolean {
   return Boolean(node.exercise_id) || node.section_type === "test_practice" || Boolean(node.notes)
@@ -15,6 +16,30 @@ function isExerciseNode(node: BookSectionRaw | BookExerciseRaw): boolean {
 function asExerciseRaw(node: BookSectionRaw | BookExerciseRaw): BookExerciseRaw {
   const { exercises: _ignored, ...rest } = node as BookExerciseRaw & { exercises?: unknown }
   return rest as BookExerciseRaw
+}
+
+function applyAudioOverride(
+  raw: BookExerciseRaw,
+  unitNumber: number,
+  exerciseId: string,
+): BookExerciseRaw {
+  const keys = [
+    `u${unitNumber}:${exerciseId}`,
+    exerciseId === "test_practice" ? `u${unitNumber}:(section:test_practice)` : "",
+  ].filter(Boolean) as Array<keyof typeof cambridgeAudioTrackOverrides>
+  const override = keys.map((k) => cambridgeAudioTrackOverrides[k]).find(Boolean)
+  if (!override) {
+    const out = { ...raw }
+    for (const k of ["audio_track", "audio"] as const) {
+      if (out[k] != null && /\?/.test(String(out[k]))) delete out[k]
+    }
+    return out
+  }
+  return {
+    ...raw,
+    audio: override,
+    audio_track: override,
+  }
 }
 
 /**
@@ -38,9 +63,16 @@ export function flattenUnitToSteps(
     const exerciseId =
       (typeof raw.exercise_id === "string" && raw.exercise_id) ||
       (sectionType === "test_practice" ? "test_practice" : `step-${order + 1}`)
-    const normalized = normalizeBookExercise({ ...raw, section_type: sectionType, subtype })
+    const withAudio = applyAudioOverride(raw, unit.unit_number, exerciseId)
+    const normalized = normalizeBookExercise({
+      ...withAudio,
+      section_type: sectionType,
+      subtype,
+    })
     const uiType = inferExerciseUiType(normalized)
-    const key = answerKey?.[exerciseId] ?? (exerciseId === "test_practice" ? answerKey?.test_practice : undefined)
+    const key =
+      answerKey?.[exerciseId] ??
+      (exerciseId === "test_practice" ? answerKey?.test_practice : undefined)
     steps.push({
       id: `u${unit.unit_number}-${exerciseId}`,
       unitNumber: unit.unit_number,

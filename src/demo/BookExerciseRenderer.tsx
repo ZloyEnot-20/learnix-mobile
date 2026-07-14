@@ -3,6 +3,8 @@ import { Pressable, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import type { BookExerciseRaw, LessonStep } from "../lib/books/types"
 import { parseNumberedGaps } from "../lib/books/gap-text"
+import { requiresTypedWordForms } from "../lib/books/word-form-exercise"
+import { collectWordBoxItems, isCueWordBox } from "../lib/books/word-box"
 import {
   ChoiceChip,
   InlineBlankText,
@@ -76,15 +78,42 @@ function expandFormVariants(lemmas: string[], instruction?: string): string[] {
 function wordBankFromBoxRef(instruction: unknown, unitSteps?: LessonStep[]): string[] {
   if (typeof instruction !== "string" || !unitSteps?.length) return []
   const ref = instruction.match(
-    /(?:words?|adjectives|phrases)\s+in\s+the\s+box(?:\s+in)?\s+(\d+\.\d+)/i,
+    /(?:words?|adjectives|phrases|idioms|verbs?)\s+(?:in\s+the\s+box(?:\s+in)?|from)\s+(\d+\.\d+)/i,
   )
   if (!ref?.[1]) return []
   const refStep = unitSteps.find((s) => s.exerciseId === ref[1])
   if (!refStep) return []
-  const fromItems = asStringArray(refStep.raw.items)
+  const raw = refStep.raw
+  const fromItems = asStringArray(raw.items)
   if (fromItems.length) return fromItems
-  if (isRecord(refStep.raw.answers)) {
-    return Object.values(refStep.raw.answers).flatMap((v) => asStringArray(v))
+  const fromWords = asStringArray(raw.words)
+  if (fromWords.length) return fromWords
+  const fromAdj = asStringArray(raw.adjectives)
+  if (fromAdj.length) return fromAdj
+  if (Array.isArray(raw.idioms)) {
+    const idioms = raw.idioms
+      .filter(isRecord)
+      .map((it) => String(it.idiom ?? it.text ?? "").trim())
+      .filter(Boolean)
+    if (idioms.length) return idioms
+  }
+  if (Array.isArray(raw.verbs)) {
+    const verbs = raw.verbs
+      .map((v) => {
+        if (typeof v === "string") return v
+        if (isRecord(v)) return String(v.verb ?? v.word ?? v.text ?? "").trim()
+        return ""
+      })
+      .filter(Boolean)
+    if (verbs.length) return verbs
+  }
+  if (isRecord(raw.answers)) {
+    const nested = Object.values(raw.answers).flatMap((v) => asStringArray(v))
+    if (nested.length) return nested
+  }
+  if (isRecord(raw.table)) {
+    const nested = Object.values(raw.table).flatMap((v) => asStringArray(v))
+    if (nested.length) return nested
   }
   return []
 }
@@ -441,17 +470,20 @@ function InlineSentenceBlanks({
   step,
   onChange,
   wordBank,
+  forceWritable = false,
 }: {
   rows: Array<{ sentence: string; original?: string; num?: number }>
   step: LessonStep
   onChange?: (payload: unknown) => void
   wordBank?: string[]
+  /** Show bank as reference only; blanks are free-typed (form-change tasks). */
+  forceWritable?: boolean
 }) {
   const key = exerciseKey(step)
   const [values, setValues] = useState<string[]>(() => rows.map(() => ""))
   const [openBlank, setOpenBlank] = useState<number | null>(null)
   const options = wordBank?.length ? wordBank : []
-  const hasDropdown = options.length > 0
+  const hasDropdown = options.length > 0 && !forceWritable
 
   useEffect(() => {
     setValues(rows.map(() => ""))
@@ -465,6 +497,9 @@ function InlineSentenceBlanks({
 
   return (
     <View style={{ gap: 10 }}>
+      {forceWritable && options.length ? (
+        <WordBank words={options} title="Word box" />
+      ) : null}
       {hasDropdown ? (
         <View style={styles.dock}>
           <Text style={styles.dockHint}>Tap a blank and choose from the list</Text>
@@ -577,11 +612,13 @@ function ListBlanks({
   step,
   onChange,
   wordBank,
+  forceWritable = false,
 }: {
   labels: Array<{ label: string; tip?: string }>
   step: LessonStep
   onChange?: (payload: unknown) => void
   wordBank?: string[]
+  forceWritable?: boolean
 }) {
   // Prefer inline blanks when sentences contain _____
   const asInline = labels.map((row, i) => {
@@ -598,6 +635,7 @@ function ListBlanks({
       rows={asInline}
       step={step}
       wordBank={wordBank}
+      forceWritable={forceWritable}
       onChange={onChange}
     />
   )
@@ -609,12 +647,14 @@ function InlineGapPassage({
   onChange,
   wordBank,
   expectedCount,
+  forceWritable = false,
 }: {
   text: string
   step: LessonStep
   onChange?: (payload: unknown) => void
   wordBank?: string[]
   expectedCount?: number
+  forceWritable?: boolean
 }) {
   const key = exerciseKey(step)
   const { segments, gapCount } = useMemo(
@@ -625,7 +665,7 @@ function InlineGapPassage({
   const [values, setValues] = useState<string[]>(() => Array.from({ length: count }, () => ""))
   const [openBlank, setOpenBlank] = useState<number | null>(null)
   const options = wordBank?.length ? wordBank : []
-  const hasDropdown = options.length > 0
+  const hasDropdown = options.length > 0 && !forceWritable
 
   useEffect(() => {
     setValues(Array.from({ length: count }, () => ""))
@@ -648,6 +688,7 @@ function InlineGapPassage({
         }))}
         step={step}
         wordBank={wordBank}
+        forceWritable={forceWritable}
         onChange={onChange}
       />
     )
@@ -655,6 +696,9 @@ function InlineGapPassage({
 
   return (
     <View style={{ gap: 8 }}>
+      {forceWritable && options.length ? (
+        <WordBank words={options} title="Word box" />
+      ) : null}
       {hasDropdown ? (
         <Text style={styles.hint}>Tap a numbered blank and choose from the list</Text>
       ) : null}
@@ -836,10 +880,12 @@ function DiscussionQuestionsList({
   questions,
   step,
   onChange,
+  bank,
 }: {
   questions: string[]
   step: LessonStep
   onChange?: (payload: unknown) => void
+  bank?: string[]
 }) {
   const key = exerciseKey(step)
   const [values, setValues] = useState<string[]>(() => questions.map(() => ""))
@@ -848,6 +894,7 @@ function DiscussionQuestionsList({
   return (
     <Section>
       <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
+      {bank?.length ? <WordBank words={bank} title="Word box" /> : null}
       <View style={{ gap: 8 }}>
         {questions.map((q, i) => (
           <View key={i} style={{ gap: 6 }}>
@@ -1018,6 +1065,8 @@ function DiscussionOrSpeaking({
   useEffect(() => setNotes(""), [key])
 
   const qs = asStringArray(raw.questions)
+  const bank = collectWordBoxItems(raw)
+  const cue = isCueWordBox(raw)
 
   return (
     <Section>
@@ -1027,6 +1076,7 @@ function DiscussionOrSpeaking({
       >
         {stepInstruction(step)}
       </Instruction>
+      {bank.length ? <WordBank words={bank} title="Word box" /> : null}
       {mode === "speaking" && typeof raw.topic === "string" ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Speaking topic</Text>
@@ -1053,7 +1103,14 @@ function DiscussionOrSpeaking({
           ))}
         </View>
       ) : null}
-      {mode !== "instruction" || qs.length === 0 ? (
+      {cue && bank.length ? (
+        <ListBlanks
+          labels={bank.map((w) => ({ label: `${w}: _____` }))}
+          step={step}
+          forceWritable
+          onChange={onChange}
+        />
+      ) : (
         <TextBlank
           value={notes}
           onChangeText={(t) => {
@@ -1069,8 +1126,6 @@ function DiscussionOrSpeaking({
           }
           multiline
         />
-      ) : (
-        <Text style={styles.muted}>Self-check — review your recording when ready.</Text>
       )}
     </Section>
   )
@@ -1439,16 +1494,26 @@ function renderExercise(
 
     case "fill-blank-sentences": {
       // e.g. unit 1 · 2.2 — student types the answer in the blank (not a dropdown)
+      const typed = requiresTypedWordForms(raw.instruction)
       const items = Array.isArray(raw.items) ? raw.items.filter(isRecord) : []
       const rows = items.map((it, i) => ({
         sentence: String(it.sentence ?? it.text ?? ""),
         original: typeof it.original === "string" ? it.original : undefined,
         num: i + 1,
       }))
+      const bank = typed
+        ? resolveFillBlankWordBank(raw, unitSteps)
+        : resolveChoiceOptions(raw, unitSteps)
       return (
         <Section>
           <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
-          <InlineSentenceBlanks rows={rows} step={step} onChange={onChange} />
+          <InlineSentenceBlanks
+            rows={rows}
+            step={step}
+            wordBank={bank.length ? bank : undefined}
+            forceWritable={typed || bank.length === 0}
+            onChange={onChange}
+          />
         </Section>
       )
     }
@@ -1467,9 +1532,11 @@ function renderExercise(
       const labels = rows.map((row, i) => ({
         label: `${i + 1}. ${String(row.original ?? "")} → _____`,
       }))
+      const bank = collectWordBoxItems(raw)
       return (
         <Section>
           <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
+          {bank.length ? <WordBank words={bank} title="Word box" /> : null}
           <ListBlanks
             labels={labels.length ? labels : [{ label: "1. _____ → _____" }]}
             step={step}
@@ -1491,7 +1558,8 @@ function renderExercise(
 
     case "discussion-questions": {
       const qs = asStringArray(raw.questions)
-      return <DiscussionQuestionsList questions={qs} step={step} onChange={onChange} />
+      const bank = collectWordBoxItems(raw)
+      return <DiscussionQuestionsList questions={qs} step={step} onChange={onChange} bank={bank} />
     }
 
     case "listening-match":
@@ -1524,7 +1592,12 @@ function renderExercise(
     }
 
     case "sentence-wordbox": {
-      const bank = resolveChoiceOptions(raw, unitSteps)
+      const typed = requiresTypedWordForms(raw.instruction)
+      // For form-change tasks: show lemma box as reference; blanks are typed.
+      // Otherwise keep closed-choice dropdown (exact pick from bank).
+      const bank = typed
+        ? resolveFillBlankWordBank(raw, unitSteps)
+        : resolveChoiceOptions(raw, unitSteps)
       const sentences = Array.isArray(raw.sentences) ? raw.sentences.filter(isRecord) : []
       const rows = sentences.map((s, i) => ({
         sentence: String(s.sentence ?? s.text ?? ""),
@@ -1537,6 +1610,7 @@ function renderExercise(
             rows={rows}
             step={step}
             wordBank={bank.length ? bank : undefined}
+            forceWritable={typed}
             onChange={onChange}
           />
         </Section>
@@ -1544,8 +1618,11 @@ function renderExercise(
     }
 
     case "gap-fill-passage": {
-      const text = String(raw.text ?? "")
-      const bank = resolveChoiceOptions(raw, unitSteps, asStringArray(raw.answers))
+      const typed = requiresTypedWordForms(raw.instruction)
+      const text = String(raw.text ?? raw.passage ?? "")
+      const bank = typed
+        ? resolveFillBlankWordBank(raw, unitSteps)
+        : resolveChoiceOptions(raw, unitSteps, asStringArray(raw.answers))
       const answersLen = asStringArray(raw.answers).length
       const parsed = parseNumberedGaps(text, answersLen || bank.length || undefined)
       const expected = Math.max(parsed.gapCount, answersLen, bank.length, 1)
@@ -1557,6 +1634,7 @@ function renderExercise(
             step={step}
             wordBank={bank.length ? bank : undefined}
             expectedCount={expected}
+            forceWritable={typed}
             onChange={onChange}
           />
         </Section>
@@ -1579,6 +1657,31 @@ function renderExercise(
 
     case "passage-read":
       return <PassageReadExercise raw={raw} step={step} onChange={onChange} />
+
+    case "word-box-notes": {
+      const bank = collectWordBoxItems(raw)
+      return (
+        <Section>
+          <Instruction
+            exNum={step.exerciseId}
+            audioTrack={raw.audio_track != null ? String(raw.audio_track) : undefined}
+          >
+            {stepInstruction(step)}
+          </Instruction>
+          {bank.length ? <WordBank words={bank} title="Word box" /> : null}
+          {bank.length ? (
+            <ListBlanks
+              labels={bank.map((w) => ({
+                label: isCueWordBox(raw) ? `${w}: _____` : w,
+              }))}
+              step={step}
+              forceWritable
+              onChange={onChange}
+            />
+          ) : null}
+        </Section>
+      )
+    }
 
     case "image-prompt":
     case "graph-task":

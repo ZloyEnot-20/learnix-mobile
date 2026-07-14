@@ -17,6 +17,9 @@ import {
 } from "react-native"
 import type { BookExerciseRaw, LessonStep } from "../../lib/books/types"
 import { parseNumberedGaps } from "../../lib/books/gap-text"
+import { requiresTypedWordForms } from "../../lib/books/word-form-exercise"
+import { displayListeningTrack } from "../../lib/books/repair-listening-audio"
+import { collectWordBoxItems, isCueWordBox } from "../../lib/books/word-box"
 import { colors, radius, spacing, typography } from "../../theme/tokens"
 
 function asStringArray(v: unknown): string[] {
@@ -207,23 +210,48 @@ function extractInlineWordBank(instruction: unknown): string[] {
     .filter((w) => w.length > 1 && !/^\d/.test(w))
 }
 
-/** "words in the box in 2.1" → pull string items from that exercise in the unit. */
+/** "words in the box in 2.1" / "idioms from 2.1" / "verb from 1.5" → prior exercise bank. */
 function wordBankFromBoxRef(
   instruction: unknown,
   unitSteps?: LessonStep[],
 ): string[] {
   if (typeof instruction !== "string" || !unitSteps?.length) return []
   const ref = instruction.match(
-    /(?:words?|adjectives|phrases)\s+in\s+the\s+box(?:\s+in)?\s+(\d+\.\d+)/i,
+    /(?:words?|adjectives|phrases|idioms|verbs?)\s+(?:in\s+the\s+box(?:\s+in)?|from)\s+(\d+\.\d+)/i,
   )
   if (!ref?.[1]) return []
   const refStep = unitSteps.find((s) => s.exerciseId === ref[1])
   if (!refStep) return []
-  const fromItems = asStringArray(refStep.raw.items)
+  const raw = refStep.raw
+  const fromItems = asStringArray(raw.items)
   if (fromItems.length) return fromItems
-  // Classification bank may live only as emptied answer keys after strip — try items on answers keys' sibling
-  if (isRecord(refStep.raw.answers)) {
-    const nested = Object.values(refStep.raw.answers).flatMap((v) => asStringArray(v))
+  const fromWords = asStringArray(raw.words)
+  if (fromWords.length) return fromWords
+  const fromAdj = asStringArray(raw.adjectives)
+  if (fromAdj.length) return fromAdj
+  if (Array.isArray(raw.idioms)) {
+    const idioms = raw.idioms
+      .filter(isRecord)
+      .map((it) => String(it.idiom ?? it.text ?? "").trim())
+      .filter(Boolean)
+    if (idioms.length) return idioms
+  }
+  if (Array.isArray(raw.verbs)) {
+    const verbs = raw.verbs
+      .map((v) => {
+        if (typeof v === "string") return v
+        if (isRecord(v)) return String(v.verb ?? v.word ?? v.text ?? "").trim()
+        return ""
+      })
+      .filter(Boolean)
+    if (verbs.length) return verbs
+  }
+  if (isRecord(raw.answers)) {
+    const nested = Object.values(raw.answers).flatMap((v) => asStringArray(v))
+    if (nested.length) return nested
+  }
+  if (isRecord(raw.table)) {
+    const nested = Object.values(raw.table).flatMap((v) => asStringArray(v))
     if (nested.length) return nested
   }
   return []
@@ -491,16 +519,20 @@ function ListAnswers({
   onChange,
   placeholder,
   wordBank,
+  forceWritable = false,
 }: {
   labels: string[]
   exerciseKey: string
   onChange?: (values: string[]) => void
   placeholder?: string
   wordBank?: string[]
+  /** Show bank as reference chips; answers are always typed. */
+  forceWritable?: boolean
 }) {
   const [values, setValues] = useState<string[]>(() => labels.map(() => ""))
   const [selectedBlank, setSelectedBlank] = useState<number | null>(null)
   const hasBank = Boolean(wordBank && wordBank.length > 0)
+  const interactiveBank = hasBank && !forceWritable
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const valuesRef = useRef(values)
@@ -532,7 +564,7 @@ function ListAnswers({
   }, [])
 
   useWordBankDock(
-    hasBank ? wordBank : undefined,
+    interactiveBank ? wordBank : undefined,
     selectedBlank,
     onPickWord,
     selectedBlank != null
@@ -542,7 +574,13 @@ function ListAnswers({
 
   return (
     <View style={styles.gap}>
-      {hasBank ? (
+      {forceWritable && hasBank ? (
+        <View style={styles.gap}>
+          <Text style={styles.hint}>Word box — change the form if needed, then type your answer</Text>
+          <ChipRow items={wordBank!} />
+        </View>
+      ) : null}
+      {interactiveBank ? (
         <Text style={styles.hint}>
           {selectedBlank != null
             ? `Blank ${selectedBlank + 1} selected — pick a word from the panel`
@@ -555,13 +593,13 @@ function ListAnswers({
           <Pressable
             key={`${exerciseKey}-${i}`}
             onPress={() => {
-              if (!hasBank) return
+              if (!interactiveBank) return
               setSelectedBlank((cur) => (cur === i ? null : i))
             }}
             style={[styles.block, selected && styles.blockActive]}
           >
             <Text style={styles.body}>{label}</Text>
-            {hasBank ? (
+            {interactiveBank ? (
               <View style={[styles.blankPill, selected && styles.blankPillActive]}>
                 <Text
                   style={[styles.blankPillText, values[i] ? styles.blankPillFilled : null]}
@@ -592,6 +630,7 @@ function InlineGapPassage({
   wordBank,
   expectedCount,
   placeholder,
+  forceWritable = false,
 }: {
   text: string
   exerciseKey: string
@@ -599,6 +638,7 @@ function InlineGapPassage({
   wordBank?: string[]
   expectedCount?: number
   placeholder?: string
+  forceWritable?: boolean
 }) {
   const { segments, gapCount } = useMemo(
     () => parseNumberedGaps(text, expectedCount),
@@ -608,6 +648,7 @@ function InlineGapPassage({
   const [values, setValues] = useState<string[]>(() => Array.from({ length: count }, () => ""))
   const [selectedBlank, setSelectedBlank] = useState<number | null>(null)
   const hasBank = Boolean(wordBank && wordBank.length > 0)
+  const interactiveBank = hasBank && !forceWritable
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const valuesRef = useRef(values)
@@ -639,7 +680,7 @@ function InlineGapPassage({
   )
 
   useWordBankDock(
-    hasBank ? wordBank : undefined,
+    interactiveBank ? wordBank : undefined,
     selectedBlank,
     onPickWord,
     selectedBlank != null
@@ -658,6 +699,7 @@ function InlineGapPassage({
           exerciseKey={exerciseKey}
           placeholder={placeholder}
           wordBank={wordBank}
+          forceWritable={forceWritable}
           onChange={onChange}
         />
       </View>
@@ -666,12 +708,18 @@ function InlineGapPassage({
 
   return (
     <View style={styles.gap}>
+      {forceWritable && hasBank ? (
+        <View style={styles.gap}>
+          <Text style={styles.hint}>Word box — change the form if needed, then type your answer</Text>
+          <ChipRow items={wordBank!} />
+        </View>
+      ) : null}
       <Text style={styles.hint}>
-        {hasBank
+        {interactiveBank
           ? selectedBlank != null
             ? `Gap ${selectedBlank + 1} selected — pick a word below`
             : "Tap a number in the text, then pick a word from the bottom panel"
-          : "Tap a number in the text to select a blank, then type below — or fill the list"}
+          : "Tap a number in the text to select a blank, then type below"}
       </Text>
       <View style={styles.inlineWrap}>
         {segments.map((seg, i) => {
@@ -704,7 +752,7 @@ function InlineGapPassage({
           )
         })}
       </View>
-      {!hasBank ? (
+      {!interactiveBank ? (
         selectedBlank != null ? (
           <AnswerInput
             value={values[selectedBlank] ?? ""}
@@ -806,11 +854,13 @@ function SentenceWordbox({
   sentences,
   exerciseKey,
   onChange,
+  forceWritable = false,
 }: {
   bank: string[]
   sentences: Array<Record<string, unknown>>
   exerciseKey: string
   onChange?: (values: string[]) => void
+  forceWritable?: boolean
 }) {
   const labels = sentences.map((s, i) => `${i + 1}. ${String(s.sentence ?? s.text ?? "")}`)
   return (
@@ -818,7 +868,8 @@ function SentenceWordbox({
       labels={labels}
       exerciseKey={exerciseKey}
       wordBank={bank}
-      placeholder="Fill the blank"
+      forceWritable={forceWritable}
+      placeholder="Type the word form"
       onChange={onChange}
     />
   )
@@ -935,6 +986,7 @@ function renderBody(
     case "fill-blank-sentences": {
       const items = Array.isArray(raw.items) ? raw.items.filter(isRecord) : []
       const labels = items.map((it, i) => `${i + 1}. ${String(it.sentence ?? it.text ?? "")}`)
+      const typed = requiresTypedWordForms(raw.instruction)
       const bank = resolveFillBlankWordBank(raw.instruction, unitSteps)
       return (
         <ListAnswers
@@ -942,6 +994,7 @@ function renderBody(
           exerciseKey={exerciseKey}
           placeholder="Fill the blank"
           wordBank={bank.length ? bank : undefined}
+          forceWritable={typed || bank.length === 0}
           onChange={(values) => emit({ kind: "list", values })}
         />
       )
@@ -964,13 +1017,21 @@ function renderBody(
         Array.isArray(raw.paraphrases) ? raw.paraphrases : Array.isArray(raw.items) ? raw.items : []
       ).filter(isRecord)
       const labels = rows.map((row, i) => `${i + 1}. ${String(row.original ?? "")}`)
+      const bank = collectWordBoxItems(raw)
       return (
-        <ListAnswers
-          labels={labels.length ? labels : ["Write the paraphrase"]}
-          exerciseKey={exerciseKey}
-          placeholder="Paraphrase / matching phrase"
-          onChange={(values) => emit({ kind: "list", values })}
-        />
+        <View style={styles.gap}>
+          {bank.length ? (
+            <Block title="Word box">
+              <ChipRow items={bank} />
+            </Block>
+          ) : null}
+          <ListAnswers
+            labels={labels.length ? labels : ["Write the paraphrase"]}
+            exerciseKey={exerciseKey}
+            placeholder="Paraphrase / matching phrase"
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+        </View>
       )
     }
 
@@ -979,8 +1040,10 @@ function renderBody(
       const body = asStringArray(notes.body)
       return (
         <View style={styles.gap}>
-          {raw.audio_track != null ? (
-            <Text style={styles.hint}>Audio track {String(raw.audio_track)}</Text>
+          {displayListeningTrack(raw.audio_track ?? raw.audio) ? (
+            <Text style={styles.hint}>
+              Audio track {displayListeningTrack(raw.audio_track ?? raw.audio)}
+            </Text>
           ) : null}
           {body.length ? (
             <Block title={typeof notes.title === "string" ? notes.title : "Prompt"}>
@@ -1003,13 +1066,21 @@ function renderBody(
 
     case "discussion-questions": {
       const qs = asStringArray(raw.questions)
+      const bank = collectWordBoxItems(raw)
       return (
-        <ListAnswers
-          labels={qs.map((q, i) => `${i + 1}. ${q}`)}
-          exerciseKey={exerciseKey}
-          placeholder="Your ideas / answer"
-          onChange={(values) => emit({ kind: "list", values })}
-        />
+        <View style={styles.gap}>
+          {bank.length ? (
+            <Block title="Word box">
+              <ChipRow items={bank} />
+            </Block>
+          ) : null}
+          <ListAnswers
+            labels={qs.map((q, i) => `${i + 1}. ${q}`)}
+            exerciseKey={exerciseKey}
+            placeholder="Your ideas / answer"
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+        </View>
       )
     }
 
@@ -1028,8 +1099,10 @@ function renderBody(
       const qs = asStringArray(raw.questions)
       return (
         <View style={styles.gap}>
-          {raw.audio_track != null ? (
-            <Text style={styles.hint}>Audio track {String(raw.audio_track)}</Text>
+          {displayListeningTrack(raw.audio_track ?? raw.audio) ? (
+            <Text style={styles.hint}>
+              Audio track {displayListeningTrack(raw.audio_track ?? raw.audio)}
+            </Text>
           ) : null}
           <ListeningMatch
             exerciseKey={exerciseKey}
@@ -1059,8 +1132,10 @@ function renderBody(
       const expected = Math.max(parsed.gapCount, answersLen, 1)
       return (
         <View style={styles.gap}>
-          {raw.audio_track != null ? (
-            <Text style={styles.hint}>Audio track {String(raw.audio_track)}</Text>
+          {displayListeningTrack(raw.audio_track ?? raw.audio) ? (
+            <Text style={styles.hint}>
+              Audio track {displayListeningTrack(raw.audio_track ?? raw.audio)}
+            </Text>
           ) : null}
           <InlineGapPassage
             text={summary}
@@ -1074,23 +1149,32 @@ function renderBody(
     }
 
     case "sentence-wordbox": {
-      const bank = asStringArray(raw.adjectives).length
+      const localBank = asStringArray(raw.adjectives).length
         ? asStringArray(raw.adjectives)
         : asStringArray(raw.words)
+      const bank = localBank.length
+        ? localBank
+        : resolveFillBlankWordBank(raw.instruction, unitSteps)
       const sentences = Array.isArray(raw.sentences) ? raw.sentences.filter(isRecord) : []
+      const typed = requiresTypedWordForms(raw.instruction)
       return (
         <SentenceWordbox
           bank={bank}
           sentences={sentences}
           exerciseKey={exerciseKey}
+          forceWritable={typed}
           onChange={(values) => emit({ kind: "list", values })}
         />
       )
     }
 
     case "gap-fill-passage": {
-      const text = String(raw.text ?? "")
-      const words = asStringArray(raw.words)
+      const typed = requiresTypedWordForms(raw.instruction)
+      const text = String(raw.text ?? raw.passage ?? "")
+      const localWords = asStringArray(raw.words)
+      const words = localWords.length
+        ? localWords
+        : resolveFillBlankWordBank(raw.instruction, unitSteps)
       const answersLen = asStringArray(raw.answers).length
       const parsed = parseNumberedGaps(text, answersLen || words.length || undefined)
       const expected = Math.max(parsed.gapCount, answersLen, words.length, 1)
@@ -1101,6 +1185,7 @@ function renderBody(
           wordBank={words.length ? words : undefined}
           expectedCount={expected}
           placeholder="Word for this gap"
+          forceWritable={typed}
           onChange={(values) => emit({ kind: "list", values })}
         />
       )
@@ -1290,16 +1375,51 @@ function renderBody(
         </View>
       )
 
-    case "instruction-only":
-    default:
+    case "word-box-notes": {
+      const bank = collectWordBoxItems(raw)
+      const cue = isCueWordBox(raw)
       return (
-        <NotesAnswers
-          exerciseKey={exerciseKey}
-          title="Your response"
-          placeholder="Write your answer or notes for the class"
-          onChange={(notes) => emit({ kind: "open", notes })}
-        />
+        <View style={styles.gap}>
+          {displayListeningTrack(raw.audio_track ?? raw.audio) ? (
+            <Text style={styles.hint}>
+              Audio track {displayListeningTrack(raw.audio_track ?? raw.audio)}
+            </Text>
+          ) : null}
+          {bank.length ? (
+            <Block title="Word box">
+              <ChipRow items={bank} />
+            </Block>
+          ) : null}
+          <ListAnswers
+            labels={bank.length ? bank.map((w) => (cue ? `${w}:` : w)) : ["Your notes"]}
+            exerciseKey={exerciseKey}
+            forceWritable
+            placeholder={cue ? "Adjectives you hear" : "Your notes / answer"}
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+        </View>
       )
+    }
+
+    case "instruction-only":
+    default: {
+      const bank = collectWordBoxItems(raw)
+      return (
+        <View style={styles.gap}>
+          {bank.length ? (
+            <Block title="Word box">
+              <ChipRow items={bank} />
+            </Block>
+          ) : null}
+          <NotesAnswers
+            exerciseKey={exerciseKey}
+            title="Your response"
+            placeholder="Write your answer or notes for the class"
+            onChange={(notes) => emit({ kind: "open", notes })}
+          />
+        </View>
+      )
+    }
   }
 }
 
