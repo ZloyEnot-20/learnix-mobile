@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -29,6 +30,7 @@ import { resolveListeningFullAudioUri } from "../../lib/ielts-listening-audio"
 import { HomeworkListeningReview } from "../homework/HomeworkListeningReview"
 import { HomeworkReportIssueButton } from "../homework/HomeworkReportIssue"
 import { BackButton } from "../ui/BackButton"
+import { Skeleton } from "../ui/Skeleton"
 import { IeltsBandScoreScreen } from "./IeltsBandScoreScreen"
 import { ListeningContent } from "./ListeningContent"
 import type { IssueReportPayload } from "../../types/issue-report"
@@ -220,6 +222,7 @@ export function IeltsListeningRunner({
   sessionStartedAt: externalSessionStart,
   timeLimitMinutes,
   elapsedSeconds = 0,
+  onAudioPrepared,
 }: {
   test: IeltsListeningTest
   testId?: string
@@ -231,6 +234,8 @@ export function IeltsListeningRunner({
   sessionStartedAt?: number
   timeLimitMinutes?: number
   elapsedSeconds?: number
+  /** Fired once when listening audio is downloaded/resolved (before timer starts). */
+  onAudioPrepared?: () => void | Promise<void>
 }) {
   const insets = useSafeAreaInsets()
   const isHomework = Boolean(homeworkId)
@@ -238,14 +243,19 @@ export function IeltsListeningRunner({
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [finished, setFinished] = useState(false)
   const [showReview, setShowReview] = useState(false)
-  const [testStarted, setTestStarted] = useState(isHomework)
+  const [testStarted, setTestStarted] = useState(false)
   const [internalSessionStart, setInternalSessionStart] = useState<number | null>(null)
   const sessionStartedAt = externalSessionStart ?? internalSessionStart
   const submittedRef = useRef(false)
+  const homeworkAutoStartRef = useRef(false)
+  const audioPreparedNotifiedRef = useRef(false)
   const [fullAudioUri, setFullAudioUri] = useState<string | null>(null)
   const [usePartSequence, setUsePartSequence] = useState(false)
   const [audioError, setAudioError] = useState<string | null>(null)
+  const [audioLoading, setAudioLoading] = useState(true)
   const audioPlayerRef = useRef<ListeningExamAudioHandle>(null)
+
+  const audioReady = !audioLoading && (fullAudioUri != null || usePartSequence)
 
   useKeepAwakeWhile(testStarted && !finished)
 
@@ -253,7 +263,7 @@ export function IeltsListeningRunner({
   const secondsLeft = useCountdown(
     timerMinutes,
     () => setFinished(true),
-    finished || !testStarted,
+    finished || !testStarted || !audioReady,
     isHomework ? elapsedSeconds : 0,
     sessionStartedAt,
   )
@@ -291,40 +301,60 @@ export function IeltsListeningRunner({
   }
 
   const handleStart = () => {
+    if (!audioReady) return
     setInternalSessionStart(Date.now())
     setTestStarted(true)
   }
 
+  // Resolve / download audio before Start (or homework auto-start) so the timer
+  // does not begin while media is still fetching.
   useEffect(() => {
-    if (!isHomework || testStarted || externalSessionStart == null) return
-    setTestStarted(true)
-  }, [externalSessionStart, isHomework, testStarted])
-
-  useEffect(() => {
-    if (!testStarted) return
     let cancelled = false
+    setAudioLoading(true)
     setAudioError(null)
     setUsePartSequence(false)
     setFullAudioUri(null)
+    homeworkAutoStartRef.current = false
+    audioPreparedNotifiedRef.current = false
 
     void resolveListeningFullAudioUri(test, testId)
       .then((uri) => {
-        if (!cancelled) setFullAudioUri(uri)
+        if (cancelled) return
+        setFullAudioUri(uri)
+        setAudioLoading(false)
       })
       .catch(() => {
-        if (!cancelled) {
-          if (partAudioUrls.length > 0) {
-            setUsePartSequence(true)
-          } else {
-            setAudioError("Listening audio is not available for this test.")
-          }
+        if (cancelled) return
+        if (partAudioUrls.length > 0) {
+          setUsePartSequence(true)
+        } else {
+          setAudioError("Listening audio is not available for this test.")
         }
+        setAudioLoading(false)
       })
 
     return () => {
       cancelled = true
     }
-  }, [partAudioUrls.length, test, testId, testStarted])
+  }, [partAudioUrls.length, test, testId])
+
+  useEffect(() => {
+    if (!audioReady || audioPreparedNotifiedRef.current) return
+    audioPreparedNotifiedRef.current = true
+    void onAudioPrepared?.()
+  }, [audioReady, onAudioPrepared])
+
+  // Homework has no Start button — begin the timed session once audio is ready
+  // and (for students) the homework session timestamp is available.
+  useEffect(() => {
+    if (!isHomework || testStarted || !audioReady || homeworkAutoStartRef.current) return
+    if (studentId && externalSessionStart == null) return
+    homeworkAutoStartRef.current = true
+    if (externalSessionStart == null) {
+      setInternalSessionStart(Date.now())
+    }
+    setTestStarted(true)
+  }, [audioReady, externalSessionStart, isHomework, studentId, testStarted])
 
   const handleNext = () => {
     if (partIndex < totalParts - 1) {
@@ -440,21 +470,21 @@ export function IeltsListeningRunner({
           <Ionicons name="lock-closed-outline" size={22} color={colors.textMuted} />
         </Pressable>
 
-        {testStarted && fullAudioUri ? (
+        {testStarted && audioReady && fullAudioUri ? (
           <ListeningExamAudio ref={audioPlayerRef} audioUri={fullAudioUri} autoPlay />
-        ) : testStarted && usePartSequence ? (
+        ) : testStarted && audioReady && usePartSequence ? (
           <ListeningExamAudioSequence ref={audioPlayerRef} audioUrls={partAudioUrls} autoPlay />
         ) : (
           <View style={styles.headerAudioSpacer} />
         )}
 
         <View style={styles.headerTrailing}>
-          {testStarted ? <ListeningTimer secondsLeft={secondsLeft} /> : null}
-          {reportIssue ? <HomeworkReportIssueButton report={reportIssue} /> : null}
+          {testStarted && audioReady ? <ListeningTimer secondsLeft={secondsLeft} /> : null}
+          {reportIssue ? <HomeworkReportIssueButton report={reportIssue} variant="badge" /> : null}
         </View>
       </View>
 
-      {testStarted && audioError ? (
+      {audioError ? (
         <View style={styles.audioErrorBanner}>
           <Text style={styles.audioErrorText}>{audioError}</Text>
         </View>
@@ -518,8 +548,23 @@ export function IeltsListeningRunner({
             <Ionicons name="chevron-back" size={20} color={colors.text} />
           </Pressable>
 
-          {!testStarted ? (
-            <Pressable onPress={handleStart} style={styles.startButton}>
+          {audioLoading || (isHomework && !testStarted && !audioError) ? (
+            <View style={styles.startLoading} accessibilityRole="progressbar" accessibilityLabel="Loading audio">
+              <View style={styles.startLoadingButton}>
+                <Skeleton width="100%" height={44} borderRadius={12} />
+                <View style={styles.startLoadingSpinner} pointerEvents="none">
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              </View>
+              <Text style={styles.startLoadingText}>Loading audio…</Text>
+              <Text style={styles.startLoadingHint}>Timer starts when audio is ready</Text>
+            </View>
+          ) : !testStarted ? (
+            <Pressable
+              onPress={handleStart}
+              disabled={!audioReady}
+              style={[styles.startButton, !audioReady && styles.startButtonDisabled]}
+            >
               <Text style={styles.startButtonText}>Start</Text>
             </Pressable>
           ) : partIndex === totalParts - 1 ? (
@@ -693,7 +738,35 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  startButtonDisabled: { opacity: 0.5 },
   startButtonText: { fontSize: 15, fontWeight: "700", color: "#FFFFFF" },
+  startLoading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  startLoadingButton: {
+    width: "100%",
+    height: 44,
+    position: "relative",
+    justifyContent: "center",
+  },
+  startLoadingSpinner: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  startLoadingText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  startLoadingHint: {
+    fontSize: 11,
+    color: colors.textMuted,
+    textAlign: "center",
+  },
   navButton: {
     width: 44,
     height: 44,

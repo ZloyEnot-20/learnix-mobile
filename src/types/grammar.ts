@@ -11,9 +11,12 @@ export type GrammarExerciseType =
   | "error-correction"
   | "word-order"
   | "speaking"
+  | "mixed"
 
 export interface GrammarQuestion {
   id: number
+  /** Per-question type override (mixed exercises). */
+  type?: GrammarExerciseType
   instruction?: string
   text: string
   blanks?: string[]
@@ -67,6 +70,8 @@ export interface GrammarExercise {
   difficulty: GrammarDifficulty
   level: string
   type: GrammarExerciseType
+  /** Declared question types included in this exercise (mixed). */
+  questionTypes?: GrammarExerciseType[]
   estimatedTime: number
   totalQuestions: number
   passingScore: number
@@ -85,6 +90,8 @@ export interface GrammarExerciseSummary {
   category: GrammarCategory
   level: string
   type: GrammarExerciseType
+  /** Declared question types included in this exercise (mixed). */
+  questionTypes?: GrammarExerciseType[]
   estimatedTime: number
   totalQuestions: number
   passingScore: number

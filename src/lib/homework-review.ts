@@ -15,6 +15,7 @@ import {
   resolveListeningReviewOptions,
   resolveListeningReviewPrompt,
 } from "./ielts-listening"
+import { resolveQuestionType } from "./grammar-question-types"
 import {
   formatFillBlankCorrectAnswer,
   type GrammarExercise,
@@ -62,14 +63,19 @@ export function questionCorrectAnswer(
   exercise: GrammarExercise,
   question: GrammarQuestion,
 ): string {
-  switch (exercise.type) {
+  const qType =
+    exercise.type === "mixed" || question.type
+      ? resolveQuestionType(question, exercise.type)
+      : exercise.type
+
+  switch (qType) {
     case "fill-in-the-blank":
       return formatFillBlankCorrectAnswer(question)
     case "multiple-choice":
     case "matching":
       return question.correctAnswer ?? ""
     case "true-false":
-      return question.correctBool ? "True" : "False"
+      return question.correctBool ? "Correct" : "Incorrect"
     case "word-formation":
     case "sentence-transformation":
       return question.answer ?? ""

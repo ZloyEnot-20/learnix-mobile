@@ -144,48 +144,38 @@ export default function HomeworkListeningScreen() {
     }
   }, [listeningSlug, homeworkId, isStudent, reloadKey, user?.id])
 
-  useEffect(() => {
-    if (reviewSubmission || !isStudent || !homeworkId || sessionStartedAt != null) return
-    let cancelled = false
+  const beginHomeworkSession = useCallback(async () => {
+    if (!isStudent || !homeworkId || sessionStartedAt != null || reviewSubmission) return
 
-    async function beginSession() {
-      const subRaw = await homeworkApi
-        .start(homeworkId, { force: true, skipEntryCount: true })
-        .catch(() => null)
-      const sub = resolveHomeworkSubmission(homeworkId, subRaw)
-      if (cancelled) return
+    const subRaw = await homeworkApi
+      .start(homeworkId, { force: true, skipEntryCount: true })
+      .catch(() => null)
+    const sub = resolveHomeworkSubmission(homeworkId, subRaw)
 
-      if (sub?.integrityStatus === "cheating_detected" || sub?.attempt?.failedDueToCheating) {
-        setAlreadyFailed(true)
-        return
-      }
-
-      if (isCompletedSubmission(sub?.status, sub?.attempt)) {
-        setReviewSubmission(sub)
-        setCompletedAt(sub?.submittedAt ?? undefined)
-        return
-      }
-
-      if (!sub) {
-        setAwaitingNetwork(true)
-        return
-      }
-
-      setAwaitingNetwork(false)
-      setElapsedSeconds(sub.elapsedSeconds ?? 0)
-      setSessionStartedAt(
-        sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
-      )
+    if (sub?.integrityStatus === "cheating_detected" || sub?.attempt?.failedDueToCheating) {
+      setAlreadyFailed(true)
+      return
     }
 
-    void beginSession()
-    return () => {
-      cancelled = true
+    if (isCompletedSubmission(sub?.status, sub?.attempt)) {
+      setReviewSubmission(sub)
+      setCompletedAt(sub?.submittedAt ?? undefined)
+      return
     }
-  }, [isStudent, homeworkId, sessionStartedAt, reviewSubmission])
 
-  const sessionReady =
-    !loading && test != null && !reviewSubmission && sessionStartedAt != null
+    if (!sub) {
+      setAwaitingNetwork(true)
+      return
+    }
+
+    setAwaitingNetwork(false)
+    setElapsedSeconds(sub.elapsedSeconds ?? 0)
+    setSessionStartedAt(
+      sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
+    )
+  }, [homeworkId, isStudent, reviewSubmission, sessionStartedAt])
+
+  const canShowRunner = !loading && test != null && !reviewSubmission && !alreadyFailed && !loadError
 
   return (
     <>
@@ -196,7 +186,7 @@ export default function HomeworkListeningScreen() {
           description="Something went wrong while loading this homework. Please try again."
           onRetry={retryLoad}
         >
-          {loading || (awaitingNetwork && !reviewSubmission) ? (
+          {loading || (awaitingNetwork && !reviewSubmission && test == null) ? (
             <IeltsListeningScreenSkeleton />
           ) : alreadyFailed ? (
             <HomeworkCheatingFailed />
@@ -226,15 +216,16 @@ export default function HomeworkListeningScreen() {
               subject={homeworkSubject}
               completedAt={completedAt}
             />
-          ) : sessionReady && sessionStartedAt != null ? (
+          ) : canShowRunner && test != null ? (
             <IeltsListeningRunner
               test={test}
               testId={listeningSlug}
               homeworkId={homeworkId}
               studentId={isStudent ? user?.id : undefined}
-              sessionStartedAt={sessionStartedAt}
+              sessionStartedAt={sessionStartedAt ?? undefined}
               timeLimitMinutes={timeLimitMinutes}
               elapsedSeconds={elapsedSeconds}
+              onAudioPrepared={isStudent ? beginHomeworkSession : undefined}
               onExit={() => router.back()}
               onGoHome={() => router.replace("/(tabs)")}
             />

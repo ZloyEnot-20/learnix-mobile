@@ -1,18 +1,35 @@
 import React, { useEffect, useState } from "react"
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native"
+import { StyleSheet, Text, View } from "react-native"
 import { Stack, useRouter } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { BackButton } from "../../src/components/ui/BackButton"
 import { VocabularyReviewQuiz } from "../../src/components/VocabularyReviewQuiz"
+import { Skeleton, SkeletonCard } from "../../src/components/ui/Skeleton"
 import { useAuth } from "../../src/context/AuthContext"
 import { exercisesApi } from "../../src/lib/api"
 import {
   buildDistractorPool,
+  ensureLearningProgressHydrated,
   getLearningProgress,
   getReviewAvailability,
   type StudyWord,
 } from "../../src/lib/learned-vocabulary"
 import { colors, spacing } from "../../src/theme/tokens"
+
+function VocabularyReviewSkeleton() {
+  return (
+    <View style={styles.skeletonWrap}>
+      <Skeleton height={14} width={120} />
+      <SkeletonCard style={styles.skeletonCard}>
+        <Skeleton height={28} width="70%" />
+        <Skeleton height={14} width="90%" style={styles.skeletonGap} />
+        <Skeleton height={48} borderRadius={12} style={styles.skeletonGap} />
+        <Skeleton height={48} borderRadius={12} style={styles.skeletonGap} />
+        <Skeleton height={48} borderRadius={12} style={styles.skeletonGap} />
+      </SkeletonCard>
+    </View>
+  )
+}
 
 export default function VocabularyReviewScreen() {
   const router = useRouter()
@@ -24,15 +41,19 @@ export default function VocabularyReviewScreen() {
   useEffect(() => {
     if (!user) return
     Promise.all([
-      getReviewAvailability(user.id),
-      getLearningProgress(user.id),
+      ensureLearningProgressHydrated(user.id, true),
       exercisesApi.vocab().catch(() => []),
     ])
-      .then(([availability, progress, decks]) => {
-        setWords(availability.dueWords)
-        setReviewedTodayCount(availability.reviewedTodayCount)
-        setDistractorPool(buildDistractorPool(progress, decks))
-      })
+      .then(([, decks]) =>
+        Promise.all([
+          getReviewAvailability(user.id),
+          getLearningProgress(user.id),
+        ]).then(([availability, progress]) => {
+          setWords(availability.dueWords)
+          setReviewedTodayCount(availability.reviewedTodayCount)
+          setDistractorPool(buildDistractorPool(progress, decks))
+        }),
+      )
       .catch(() => {
         setWords([])
         setReviewedTodayCount(0)
@@ -55,9 +76,7 @@ export default function VocabularyReviewScreen() {
         </View>
 
         {words == null ? (
-          <View style={styles.center}>
-            <ActivityIndicator color={colors.primary} />
-          </View>
+          <VocabularyReviewSkeleton />
         ) : words.length === 0 ? (
           <View style={styles.center}>
             <Text style={styles.emptyTitle}>
@@ -109,4 +128,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: colors.text, textAlign: "center" },
   emptyText: { fontSize: 14, color: colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  skeletonWrap: {
+    flex: 1,
+    padding: spacing.screen,
+    gap: spacing.md,
+  },
+  skeletonCard: {
+    padding: spacing.section,
+    gap: spacing.sm,
+  },
+  skeletonGap: { marginTop: spacing.sm },
 })

@@ -1,6 +1,8 @@
-import React, { useRef, useState } from "react"
+import React, { useCallback, useEffect, useRef, useState } from "react"
 import {
+  ActivityIndicator,
   Keyboard,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,6 +12,11 @@ import {
 import { Ionicons } from "@expo/vector-icons"
 import { useRouter } from "expo-router"
 import { analyticsApi, controlWorkApi, homeworkApi } from "../../lib/api"
+import {
+  DAILY_HINT_LIMIT,
+  consumeHint,
+  getHintsRemaining,
+} from "../../lib/hint-daily-limit"
 import { recordGameExerciseResult } from "../../lib/learned-vocabulary"
 import type { GrammarExercise } from "../../types/grammar"
 import {
@@ -102,14 +109,165 @@ export function HintRow({
   setShowHint: (v: boolean) => void
   hint?: string
 }) {
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const [limitExceeded, setLimitExceeded] = useState(false)
+  const [syncError, setSyncError] = useState(false)
+  const [confirmVisible, setConfirmVisible] = useState(false)
+  const [consuming, setConsuming] = useState(false)
+  /** Hint already paid for on this question — hide/show free. */
+  const revealedRef = useRef(false)
+
+  useEffect(() => {
+    revealedRef.current = false
+    setLimitExceeded(false)
+    setSyncError(false)
+    setConfirmVisible(false)
+    void getHintsRemaining()
+      .then((left) => {
+        setRemaining(left)
+        setSyncError(false)
+      })
+      .catch(() => {
+        setRemaining(null)
+        setSyncError(true)
+      })
+  }, [hint])
+
+  const openConfirm = useCallback(async () => {
+    try {
+      const left = await getHintsRemaining()
+      setRemaining(left)
+      setSyncError(false)
+      if (left <= 0) {
+        setLimitExceeded(true)
+        return
+      }
+      setLimitExceeded(false)
+      setConfirmVisible(true)
+    } catch {
+      setSyncError(true)
+      setConfirmVisible(false)
+    }
+  }, [])
+
+  const onToggle = useCallback(() => {
+    if (showHint) {
+      setShowHint(false)
+      return
+    }
+    if (revealedRef.current) {
+      setShowHint(true)
+      setLimitExceeded(false)
+      setSyncError(false)
+      return
+    }
+    void openConfirm()
+  }, [openConfirm, setShowHint, showHint])
+
+  const onConfirm = useCallback(async () => {
+    if (consuming) return
+    setConsuming(true)
+    try {
+      const left = await consumeHint()
+      if (left == null) {
+        setRemaining(0)
+        setLimitExceeded(true)
+        setSyncError(false)
+        setConfirmVisible(false)
+        return
+      }
+      revealedRef.current = true
+      setRemaining(left)
+      setLimitExceeded(false)
+      setSyncError(false)
+      setConfirmVisible(false)
+      setShowHint(true)
+    } catch {
+      setSyncError(true)
+      setConfirmVisible(false)
+    } finally {
+      setConsuming(false)
+    }
+  }, [consuming, setShowHint])
+
   if (!hint) return null
+
+  const remainingLabel =
+    remaining == null
+      ? "…"
+      : remaining === 1
+        ? "1 hint left today"
+        : `${remaining} hints left today`
+
   return (
     <View>
-      <Pressable onPress={() => setShowHint(!showHint)} style={styles.hintRow}>
+      <Pressable onPress={onToggle} style={styles.hintRow}>
         <Ionicons name="bulb-outline" size={16} color={colors.indigo} />
         <Text style={styles.hintToggle}>{showHint ? "Hide hint" : "Show hint"}</Text>
       </Pressable>
-      {showHint && <Text style={styles.hintText}>{hint}</Text>}
+
+      {syncError && !showHint ? (
+        <Text style={styles.hintLimitText}>
+          Can't verify hint limit. Check your connection and try again.
+        </Text>
+      ) : null}
+
+      {limitExceeded && !showHint && !syncError ? (
+        <Text style={styles.hintLimitText}>
+          Daily hint limit reached ({DAILY_HINT_LIMIT}/{DAILY_HINT_LIMIT}). Try again tomorrow.
+        </Text>
+      ) : null}
+
+      {showHint ? <Text style={styles.hintText}>{hint}</Text> : null}
+
+      <Modal
+        visible={confirmVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!consuming) setConfirmVisible(false)
+        }}
+      >
+        <View style={styles.hintModalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => {
+              if (!consuming) setConfirmVisible(false)
+            }}
+          />
+          <View style={styles.hintModalDialog}>
+            <View style={styles.hintModalIcon}>
+              <Ionicons name="bulb" size={28} color={colors.indigo} />
+            </View>
+            <Text style={styles.hintModalTitle}>Use a hint?</Text>
+            <Text style={styles.hintModalBody}>
+              You have {remaining ?? "…"} of {DAILY_HINT_LIMIT} hints left today. Using one will
+              count toward your daily limit.
+            </Text>
+            <Text style={styles.hintModalRemaining}>{remainingLabel}</Text>
+            <View style={styles.hintModalActions}>
+              <Pressable
+                onPress={() => setConfirmVisible(false)}
+                disabled={consuming}
+                style={[styles.hintModalSecondary, consuming && styles.btnDisabled]}
+              >
+                <Text style={styles.hintModalSecondaryText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={onConfirm}
+                disabled={consuming}
+                style={[styles.hintModalPrimary, consuming && styles.btnDisabled]}
+              >
+                {consuming ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.hintModalPrimaryText}>Show hint</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -441,6 +599,87 @@ const styles = StyleSheet.create({
   hintToggle: { fontSize: 14, color: colors.indigo, fontWeight: "500" },
   feedbackTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   hintText: { fontSize: 14, color: colors.textSecondary, marginTop: 6, fontStyle: "italic" },
+  hintLimitText: {
+    fontSize: 13,
+    color: colors.warning,
+    marginTop: 6,
+    fontWeight: "500",
+  },
+  hintModalBackdrop: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  hintModalDialog: {
+    backgroundColor: colors.card,
+    borderRadius: radius.card,
+    padding: spacing.lg,
+    gap: spacing.md,
+    maxWidth: 400,
+    width: "100%",
+    alignSelf: "center",
+  },
+  hintModalIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+  },
+  hintModalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: colors.text,
+    textAlign: "center",
+  },
+  hintModalBody: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  hintModalRemaining: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: colors.indigo,
+    textAlign: "center",
+  },
+  hintModalActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  hintModalSecondary: {
+    flex: 1,
+    borderRadius: radius.button,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.borderLight,
+    minHeight: 48,
+  },
+  hintModalSecondaryText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.text,
+  },
+  hintModalPrimary: {
+    flex: 1,
+    borderRadius: radius.button,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.indigo,
+    minHeight: 48,
+  },
+  hintModalPrimaryText: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#fff",
+  },
   feedback: { borderRadius: 12, padding: 12, marginTop: 8 },
   feedbackOk: { backgroundColor: colors.successBg },
   feedbackBad: { backgroundColor: colors.errorBg },

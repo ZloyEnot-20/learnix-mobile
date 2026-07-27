@@ -36,6 +36,7 @@ export function useHomeworkIntegrity(
   onPaused: () => void,
   initialSuspicious = false,
   strictIntegrity = true,
+  flushProgressBeforePause?: () => Promise<void>,
 ): HomeworkIntegrityState {
   const navigation = useNavigation()
   const [failed, setFailed] = useState(false)
@@ -106,6 +107,7 @@ export function useHomeworkIntegrity(
       if (!homeworkId || processingRef.current) return
       processingRef.current = true
       try {
+        await flushProgressBeforePause?.()
         const res = await homeworkApi.pause(homeworkId)
         if (res.action === "fail" || res.submission?.integrityStatus === "cheating_detected") {
           setFailed(true)
@@ -131,7 +133,7 @@ export function useHomeworkIntegrity(
         processingRef.current = false
       }
     },
-    [homeworkId, onPaused],
+    [homeworkId, onPaused, flushProgressBeforePause],
   )
 
   const applyOptimisticViolation = useCallback(() => {

@@ -219,6 +219,15 @@ export const homeworkApi = {
     invalidateHomeworkCaches(homeworkId)
     return res
   },
+  saveProgress: async (homeworkId: string, attempt: HomeworkAttempt) => {
+    const sub = await api.post<HomeworkSubmission>("/homework/progress", {
+      homeworkId,
+      attempt,
+    })
+    setCached(cacheKey("POST", `/homework/start:${homeworkId}`), sub, submissionCacheTtl(sub))
+    invalidateHomeworkCaches(homeworkId)
+    return sub
+  },
   recordAttempt: async (homeworkId: string, attempt: HomeworkAttempt) => {
     const { name, attributes } = submitHomeworkTraceMeta(attempt)
     return runPerfTrace(
@@ -616,7 +625,9 @@ export const analyticsApi = {
       deckSlug: string
       correctCount?: number
       totalAttempts?: number
+      incorrectCount?: number
       masteredAt?: string
+      permanentlyMastered?: boolean
       wantToLearn?: boolean
       lastReviewedAt?: string
     }>
@@ -629,7 +640,31 @@ export const analyticsApi = {
     }>
   }) => api.post("/analytics/learn/sync", input),
   learnProgress: (studentId?: string) =>
-    api.get(`/analytics/learn/progress${studentId ? `/${studentId}` : ""}`),
+    api.get<{
+      wordsMastered: number
+      totalWordsTracked: number
+      words: Array<{
+        term: string
+        deckSlug: string
+        correctCount: number
+        incorrectCount: number
+        totalAttempts: number
+        accuracy: number | null
+        masteredAt: string | null
+        permanentlyMastered: boolean
+        wantToLearn: boolean
+        lastReviewedAt: string | null
+      }>
+      decks: Array<{
+        deckSlug: string
+        deckTitle: string
+        quizAttempts: number
+        quizCorrectSum: number
+        bestAccuracy: number
+        wordsMastered: number
+        totalWords: number
+      }>
+    }>(`/analytics/learn/progress${studentId ? `/${studentId}` : ""}`),
   summary: (studentId?: string) =>
     api.get(`/analytics${studentId ? `/students/${studentId}/summary` : "/summary"}`),
 }

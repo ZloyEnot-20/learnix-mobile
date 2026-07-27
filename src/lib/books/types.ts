@@ -76,6 +76,7 @@ export type BookExerciseUiType =
   | "short-answer"
   | "matching-pairs"
   | "listening-table"
+  | "odd-one-out"
   | "passage-read"
   | "word-box-notes"
 
@@ -105,6 +106,7 @@ export const BOOK_EXERCISE_UI_LABELS: Record<BookExerciseUiType, string> = {
   "short-answer": "Short answer",
   "matching-pairs": "Matching",
   "listening-table": "Table completion",
+  "odd-one-out": "Odd one out",
   "passage-read": "Reading passage",
   "word-box-notes": "Word box",
 }

@@ -21,6 +21,11 @@ import { requiresTypedWordForms } from "../../lib/books/word-form-exercise"
 import { displayListeningTrack } from "../../lib/books/repair-listening-audio"
 import { collectWordBoxItems, isCueWordBox } from "../../lib/books/word-box"
 import { parseListeningTable, countTableGaps } from "../../lib/books/listening-table"
+import { flattenNotes, notesTitle } from "../../lib/books/notes-outline"
+import { getOddOneOutGroups } from "../../lib/books/match-shapes"
+import { bookIssueReport } from "../../types/issue-report"
+import { HomeworkReportIssueButton } from "../homework/HomeworkReportIssue"
+import { DEMO_BOOK_ID } from "../../demo/book-id"
 import { colors, radius, spacing, typography } from "../../theme/tokens"
 
 function asStringArray(v: unknown): string[] {
@@ -1041,8 +1046,14 @@ function renderBody(
     }
 
     case "listening-notes": {
-      const notes = isRecord(raw.notes) ? raw.notes : {}
-      const body = asStringArray(notes.body)
+      const title = notesTitle(raw.notes)
+      const lines = flattenNotes(raw.notes)
+      const blankAnswers = Array.isArray(raw.blanks)
+        ? raw.blanks
+            .filter(isRecord)
+            .map((b) => (b.answer != null ? String(b.answer) : ""))
+            .filter(Boolean)
+        : asStringArray(raw.answers)
       return (
         <View style={styles.gap}>
           {displayListeningTrack(raw.audio_track ?? raw.audio) ? (
@@ -1050,21 +1061,47 @@ function renderBody(
               Audio track {displayListeningTrack(raw.audio_track ?? raw.audio)}
             </Text>
           ) : null}
-          {body.length ? (
-            <Block title={typeof notes.title === "string" ? notes.title : "Prompt"}>
-              {body.map((line, i) => (
+          {typeof raw.passage === "string" && raw.passage.trim() ? (
+            <Block title="Passage">
+              <Text style={styles.body}>{raw.passage}</Text>
+            </Block>
+          ) : null}
+          {lines.length ? (
+            <Block title={title || "Notes"}>
+              {lines.map((line, i) => {
+                const prev = lines[i - 1]
+                return (
+                  <View key={i} style={{ marginBottom: 6 }}>
+                    {line.heading && line.heading !== prev?.heading ? (
+                      <Text style={[styles.hint, { fontWeight: "700" }]}>{line.heading}</Text>
+                    ) : null}
+                    <Text style={styles.body}>{line.text}</Text>
+                  </View>
+                )
+              })}
+            </Block>
+          ) : null}
+          <ListAnswers
+            labels={
+              Array.isArray(raw.blanks) && raw.blanks.length
+                ? raw.blanks.map((_, i) => `${i + 1}.`)
+                : lines.length
+                  ? lines.map((_, i) => `Note ${i + 1}`)
+                  : ["1.", "2.", "3."]
+            }
+            exerciseKey={exerciseKey}
+            placeholder="Max 2 words from the passage"
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+          {blankAnswers.length ? (
+            <Block title="Answers">
+              {blankAnswers.map((a, i) => (
                 <Text key={i} style={styles.body}>
-                  {line}
+                  {i + 1}. {a}
                 </Text>
               ))}
             </Block>
           ) : null}
-          <NotesAnswers
-            exerciseKey={exerciseKey}
-            title="Your notes"
-            placeholder="Write what you hear / key points"
-            onChange={(text) => emit({ kind: "open", notes: text })}
-          />
         </View>
       )
     }
@@ -1314,8 +1351,16 @@ function renderBody(
             ? raw.right
             : []
       const labels = left.map((item, i) => matchingColumnLabel(item, i, "left"))
-      const leftTitle = Array.isArray(raw.jobs) ? "Jobs" : "Match from"
-      const rightTitle = Array.isArray(raw.jobs) ? "Definitions (a–f)" : "Options"
+      const leftTitle = Array.isArray(raw.jobs)
+        ? "Jobs"
+        : Array.isArray(raw.matches)
+          ? "Match from"
+          : "Match from"
+      const rightTitle = Array.isArray(raw.jobs)
+        ? "Definitions (a–f)"
+        : Array.isArray(raw.matches)
+          ? "Options (a–g)"
+          : "Options"
       return (
         <View style={styles.gap}>
           {left.length ? (
@@ -1339,7 +1384,31 @@ function renderBody(
           <ListAnswers
             labels={labels.length ? labels : ["Match 1"]}
             exerciseKey={exerciseKey}
-            placeholder="Letter (a–f)"
+            placeholder="Letter (a–g)"
+            onChange={(values) => emit({ kind: "list", values })}
+          />
+        </View>
+      )
+    }
+
+    case "odd-one-out": {
+      const groups = getOddOneOutGroups(raw)
+      return (
+        <View style={styles.gap}>
+          {groups.map((g, i) => (
+            <Block key={i} title={`List ${i + 1}`}>
+              <ChipRow items={g.items} />
+              {g.answer ? (
+                <Text style={[styles.body, { marginTop: 6, fontWeight: "600" }]}>
+                  Odd one out: {g.answer}
+                </Text>
+              ) : null}
+            </Block>
+          ))}
+          <ListAnswers
+            labels={groups.map((_, i) => `List ${i + 1} — odd one out + reason`)}
+            exerciseKey={exerciseKey}
+            placeholder="Odd one out + reason"
             onChange={(values) => emit({ kind: "list", values })}
           />
         </View>
@@ -1348,12 +1417,15 @@ function renderBody(
 
     case "listening-table": {
       const model = parseListeningTable(raw)
+      const blankRows = Array.isArray(raw.blanks) ? raw.blanks.filter(isRecord) : []
       const gapCount = model
-        ? Math.max(countTableGaps(model), Array.isArray(raw.blanks) ? raw.blanks.length : 0)
-        : Array.isArray(raw.blanks)
-          ? raw.blanks.length
-          : 7
-      const labels = Array.from({ length: Math.max(gapCount, 1) }, (_, i) => `${i + 1}.`)
+        ? Math.max(countTableGaps(model), blankRows.length)
+        : blankRows.length || 7
+      const labels = Array.from({ length: Math.max(gapCount, 1) }, (_, i) => {
+        const b = blankRows[i]
+        const n = b?.number != null ? String(b.number) : String(i + 1)
+        return `${n}.`
+      })
       const titleCase = (s: string) =>
         s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
       return (
@@ -1399,6 +1471,15 @@ function renderBody(
             placeholder="Max 2 words / a number"
             onChange={(values) => emit({ kind: "list", values })}
           />
+          {blankRows.some((b) => b.answer != null) ? (
+            <Block title="Answers">
+              {blankRows.map((b, i) => (
+                <Text key={i} style={styles.body}>
+                  {String(b.number ?? i + 1)}. {String(b.answer ?? "")}
+                </Text>
+              ))}
+            </Block>
+          ) : null}
         </View>
       )
     }
@@ -1515,7 +1596,7 @@ function ExpressionPair({
             setS1(t)
             emit(t, s2)
           }}
-          placeholder="Expressions you hear"
+          placeholder="List expressions (one per line or comma-separated)"
           multiline
         />
       </Block>
@@ -1526,7 +1607,7 @@ function ExpressionPair({
             setS2(t)
             emit(s1, t)
           }}
-          placeholder="Expressions you hear"
+          placeholder="List expressions (one per line or comma-separated)"
           multiline
         />
       </Block>
@@ -1540,6 +1621,12 @@ export function LiveExerciseView({
   locked = false,
   onAnswersChange,
   embedded = false,
+  active = false,
+  reviewItems,
+  resultMode,
+  bookId = DEMO_BOOK_ID,
+  liveLessonId,
+  showReportIssue = true,
 }: {
   step: LessonStep
   /** Full unit flow — used to resolve "words in the box in X.Y". */
@@ -1548,10 +1635,38 @@ export function LiveExerciseView({
   onAnswersChange?: (answers: Record<string, unknown>) => void
   /** When true, omit outer ScrollView (for stacking exercises on a book page). */
   embedded?: boolean
+  /** Brand-blue “Active” border while the teacher has this exercise open. */
+  active?: boolean
+  /** After teacher Finish — per-item correct/incorrect feedback. */
+  reviewItems?: Array<{
+    id: string
+    label?: string
+    given: string
+    expected: string
+    ok: boolean | null
+  }>
+  /** compact = score only (e.g. 19/20); full = detailed answer review. */
+  resultMode?: "compact" | "full"
+  bookId?: string
+  liveLessonId?: string
+  showReportIssue?: boolean
 }) {
   const exerciseKey = `${step.unitNumber}-${step.exerciseId}-${step.uiType}`
   const [dock, setDock] = useState<DockState>(null)
   const dockApi = useMemo(() => ({ setDock }), [])
+  const reviewCorrect = reviewItems?.filter((item) => item.ok === true).length ?? 0
+  const reviewTotal = reviewItems?.length ?? 0
+
+  const report = showReportIssue
+    ? bookIssueReport({
+        bookId,
+        unitNumber: step.unitNumber,
+        exerciseId: step.exerciseId,
+        exerciseTitle: `${step.sectionLabel} · ${step.exerciseId}`,
+        questionPrompt: step.instruction,
+        liveLessonId,
+      })
+    : null
 
   const body = (
     <>
@@ -1560,29 +1675,89 @@ export function LiveExerciseView({
           <Text style={styles.badgeText}>{step.uiLabel}</Text>
         </View>
         <Text style={styles.meta}>Ex {step.exerciseId}</Text>
+        {report ? (
+          <View style={{ marginLeft: "auto" }}>
+            <HomeworkReportIssueButton report={report} variant="badge" />
+          </View>
+        ) : null}
       </View>
       {step.instruction ? <Text style={styles.instruction}>{step.instruction}</Text> : null}
       {renderBody(step.raw, step.uiType, exerciseKey, onAnswersChange, unitSteps)}
+      {reviewItems && reviewItems.length > 0 && resultMode === "compact" ? (
+        <View style={styles.compactResult}>
+          <Text style={styles.compactResultText}>
+            {reviewCorrect}/{reviewTotal} correct
+          </Text>
+        </View>
+      ) : null}
+      {reviewItems && reviewItems.length > 0 && resultMode === "full" ? (
+        <View style={styles.reviewBlock}>
+          <View style={styles.reviewSummary}>
+            <Text style={styles.reviewSummaryTitle}>Result</Text>
+            <Text style={styles.reviewSummaryOk}>
+              {reviewCorrect}/{reviewTotal} correct
+            </Text>
+          </View>
+          <Text style={styles.reviewTitle}>Your answers</Text>
+          {reviewItems.map((item) => (
+            <View
+              key={item.id}
+              style={[
+                styles.reviewRow,
+                item.ok === true && styles.reviewRowOk,
+                item.ok === false && styles.reviewRowBad,
+              ]}
+            >
+              <Text style={styles.reviewLabel}>{item.label ?? item.id}</Text>
+              {item.given && item.given !== "—" && item.given !== item.expected ? (
+                <Text style={styles.reviewMeta}>Yours: {item.given}</Text>
+              ) : null}
+              {item.ok === false && item.expected ? (
+                <Text style={styles.reviewMeta}>Correct: {item.expected}</Text>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
     </>
   )
+
+  const hasResult = Boolean(reviewItems?.length && resultMode)
+  const cardStyle = [
+    styles.wrap,
+    embedded && styles.embeddedCard,
+    active && !hasResult && styles.activeCard,
+    locked && !hasResult && { opacity: 0.75 },
+  ]
 
   return (
     <WordBankDockContext.Provider value={dockApi}>
       <View style={embedded ? undefined : { flex: 1 }}>
         {embedded ? (
-          <View
-            style={[styles.wrap, styles.embeddedCard, locked && { opacity: 0.7 }]}
-            pointerEvents={locked ? "none" : "auto"}
-          >
+          <View style={cardStyle} pointerEvents={locked ? "none" : "auto"}>
+            {active && !hasResult ? (
+              <View style={styles.activeEdgeLabel} pointerEvents="none">
+                <Text style={styles.activeBadgeText}>Active</Text>
+              </View>
+            ) : null}
             {body}
           </View>
         ) : (
           <ScrollView
-            contentContainerStyle={[styles.wrap, dock ? { paddingBottom: 8 } : null]}
+            contentContainerStyle={[
+              styles.wrap,
+              active && !hasResult && styles.activeCard,
+              dock ? { paddingBottom: 8 } : null,
+            ]}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            pointerEvents={locked ? "none" : "auto"}
+            pointerEvents={locked && !hasResult ? "none" : "auto"}
           >
+            {active && !hasResult ? (
+              <View style={styles.activeEdgeLabel} pointerEvents="none">
+                <Text style={styles.activeBadgeText}>Active</Text>
+              </View>
+            ) : null}
             {body}
           </ScrollView>
         )}
@@ -1606,18 +1781,13 @@ export function LiveExerciseView({
             ) : null}
           </View>
         ) : null}
-        {locked ? (
-          <View style={styles.lockedBanner} pointerEvents="none">
-            <Text style={styles.lockedText}>Answers locked</Text>
-          </View>
-        ) : null}
       </View>
     </WordBankDockContext.Provider>
   )
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingBottom: spacing.lg, gap: spacing.sm },
+  wrap: { paddingBottom: spacing.lg, gap: spacing.sm, position: "relative" },
   embeddedCard: {
     paddingBottom: spacing.sm,
     marginBottom: spacing.sm,
@@ -1627,6 +1797,76 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
+  activeCard: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.card,
+    padding: spacing.sm,
+    paddingTop: spacing.md,
+  },
+  activeEdgeLabel: {
+    position: "absolute",
+    top: -10,
+    left: 12,
+    zIndex: 2,
+    backgroundColor: "#fff",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  activeBadge: {
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    color: colors.primaryDark,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  reviewBlock: { marginTop: spacing.sm, gap: 6 },
+  reviewSummary: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryLight,
+    padding: spacing.sm,
+    gap: 4,
+  },
+  reviewSummaryTitle: { ...typography.caption, color: colors.primaryDark, fontWeight: "700" },
+  reviewSummaryOk: { ...typography.label, color: "#047857", fontWeight: "700" },
+  compactResult: {
+    marginTop: spacing.sm,
+    alignSelf: "flex-start",
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  compactResultText: { ...typography.label, color: colors.primaryDark, fontWeight: "800", fontSize: 16 },
+  reviewTitle: { ...typography.label, color: colors.text, fontWeight: "700" },
+  reviewRow: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.card,
+    padding: spacing.sm,
+    gap: 2,
+  },
+  reviewRowOk: { borderColor: "#A7F3D0", backgroundColor: "#ECFDF5" },
+  reviewRowBad: { borderColor: "#FECACA", backgroundColor: "#FEF2F2" },
+  reviewLabel: { ...typography.label, color: colors.text, fontWeight: "600" },
+  reviewMeta: { ...typography.caption, color: colors.textSecondary },
   metaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
   badge: {
     backgroundColor: colors.primaryLight,
@@ -1751,17 +1991,4 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   wordDockHint: { ...typography.caption, color: colors.primaryDark, fontWeight: "600" },
-  lockedBanner: {
-    position: "absolute",
-    left: spacing.screen,
-    right: spacing.screen,
-    bottom: spacing.sm,
-    backgroundColor: "#ECFDF5",
-    borderRadius: radius.md,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-  },
-  lockedText: { ...typography.caption, color: "#047857", fontWeight: "600", textAlign: "center" },
 })

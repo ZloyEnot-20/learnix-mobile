@@ -84,6 +84,12 @@ export default function HomeworkExerciseScreen() {
 
   const [pauseUsed, setPauseUsed] = useState(false)
 
+  const [savedAttempt, setSavedAttempt] = useState<HomeworkSubmission["attempt"]>(() => {
+    const sub = submissionKey ? peekStale<HomeworkSubmission>(submissionKey) : null
+    if (!sub || isCompletedSubmission(sub.status, sub.attempt)) return undefined
+    return sub.attempt
+  })
+
   const [reviewSubmission, setReviewSubmission] = useState<HomeworkSubmission | null>(() => {
 
     const sub = submissionKey ? peekStale<HomeworkSubmission>(submissionKey) : null
@@ -131,6 +137,9 @@ export default function HomeworkExerciseScreen() {
 
     setElapsedSeconds(sub.elapsedSeconds ?? 0)
     setPauseUsed(sub.pauseUsed ?? false)
+    setSavedAttempt(
+      sub.attempt && (sub.attempt.answeredCount ?? 0) > 0 ? sub.attempt : undefined,
+    )
     setSessionStartedAt(
       sub.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
     )
@@ -254,6 +263,10 @@ export default function HomeworkExerciseScreen() {
 
         setPauseUsed(sub?.pauseUsed ?? false)
 
+        setSavedAttempt(
+          sub?.attempt && (sub.attempt.answeredCount ?? 0) > 0 ? sub.attempt : undefined,
+        )
+
         setSessionStartedAt(
 
           sub?.sessionStartedAt ? new Date(sub.sessionStartedAt).getTime() : Date.now(),
@@ -376,6 +389,8 @@ export default function HomeworkExerciseScreen() {
               elapsedSeconds={elapsedSeconds}
 
               sessionStartedAt={sessionStartedAt}
+
+              savedAttempt={savedAttempt}
 
               lockNavigation
               onSessionEnd={() => setSessionEnded(true)}

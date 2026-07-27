@@ -25,6 +25,15 @@ export interface StudentLanguageProfile {
     level: number
     confidence: number
   }
+  cefrProfile?: Record<string, number>
+  ieltsEstimation?: {
+    estimatedBand: number
+    confidence: number
+    strengths?: string[]
+    weaknesses?: string[]
+    limitingFactors?: string[]
+    componentBands?: Record<string, number | null>
+  }
   lastComputedAt?: string
 }
 

@@ -2,6 +2,7 @@ import React from "react"
 import { Alert, StyleSheet, View } from "react-native"
 import * as ScreenCapture from "expo-screen-capture"
 import { useRouter } from "expo-router"
+import { HomeworkProgressProvider, useHomeworkProgressContext } from "../../context/HomeworkProgressContext"
 import { useHomeworkIntegrity } from "../../hooks/useHomeworkIntegrity"
 import { useKeepAwakeWhile } from "../../hooks/useKeepAwakeWhile"
 import { useOrgSettings } from "../../hooks/useOrgSettings"
@@ -28,7 +29,15 @@ export const HomeworkSessionContext = React.createContext<HomeworkSessionContext
   pauseAvailable: false,
 })
 
-export function HomeworkSessionShell({
+export function HomeworkSessionShell(props: HomeworkSessionShellProps) {
+  return (
+    <HomeworkProgressProvider>
+      <HomeworkSessionShellInner {...props} />
+    </HomeworkProgressProvider>
+  )
+}
+
+function HomeworkSessionShellInner({
   homeworkId,
   active,
   pauseUsed,
@@ -51,10 +60,15 @@ export function HomeworkSessionShell({
   }, [blockScreenshots])
 
   const router = useRouter()
+  const { flushProgress } = useHomeworkProgressContext()
 
   const handlePaused = React.useCallback(() => {
     router.back()
   }, [router])
+
+  const flushProgressBeforePause = React.useCallback(async () => {
+    await flushProgress(homeworkId)
+  }, [flushProgress, homeworkId])
 
   const integrity = useHomeworkIntegrity(
     homeworkId,
@@ -63,6 +77,7 @@ export function HomeworkSessionShell({
     handlePaused,
     initialSuspicious,
     strictIntegrity,
+    flushProgressBeforePause,
   )
 
   const handleDismissSuspicious = React.useCallback(() => {

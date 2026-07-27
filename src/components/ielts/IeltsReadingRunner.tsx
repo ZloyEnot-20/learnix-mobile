@@ -24,12 +24,15 @@ import {
   readingBandScore,
   scoreReadingTest,
 } from "../../lib/ielts-reading"
+import { isIeltsReading, resolveReadingLevel } from "../../types/reading"
 import { HomeworkFooterButton } from "../homework/HomeworkExerciseLayout"
+import { HomeworkReportIssueButton } from "../homework/HomeworkReportIssue"
 import { HomeworkReadingReview } from "../homework/HomeworkReadingReview"
 import { BackButton } from "../ui/BackButton"
 import { IeltsBandScoreScreen } from "./IeltsBandScoreScreen"
 import { PassageText } from "./PassageText"
 import { ReadingSectionContent } from "./ReadingSectionContent"
+import type { IssueReportPayload } from "../../types/issue-report"
 import { colors, radius, spacing } from "../../theme/tokens"
 
 const PANEL_ANIM_MS = 280
@@ -392,7 +395,9 @@ export function IeltsReadingRunner({
     const durationSeconds = Math.max(0, Math.round((Date.now() - sessionStartedAt) / 1000))
     const attempt = buildReadingAttempt(test, answers, durationSeconds)
     const { correct, total } = scoreReadingTest(test, answers)
-    const band = readingBandScore(correct)
+    const isIelts = isIeltsReading({ id: test.id })
+    const band = isIelts ? readingBandScore(correct) : 0
+    const levelLabel = resolveReadingLevel({ id: test.id })
     const goHome = onGoHome ?? onExit
 
     if (showReview) {
@@ -414,6 +419,8 @@ export function IeltsReadingRunner({
         band={band}
         correct={correct}
         total={total}
+        scoreMode={isIelts ? "band" : "percentage"}
+        levelLabel={levelLabel || undefined}
         onViewResults={() => setShowReview(true)}
         onGoHome={goHome}
       />
@@ -424,6 +431,13 @@ export function IeltsReadingRunner({
 
   const atStart = sectionIndex === 0
   const atEnd = sectionIndex >= flatSections.length - 1
+
+  const reportIssue: IssueReportPayload = {
+    homeworkId,
+    exerciseSlug: test.id,
+    exerciseTitle: test.title,
+    exerciseKind: "reading",
+  }
 
   return (
     <View style={styles.root}>
@@ -439,9 +453,14 @@ export function IeltsReadingRunner({
               <View style={styles.passageHeaderSide}>
                 <BackButton onPress={onBack} />
               </View>
-            ) : null}
+            ) : (
+              <View style={styles.passageHeaderSide} />
+            )}
             <View style={styles.passageHeaderSpacer} />
-            <ReadingTimer secondsLeft={secondsLeft} />
+            <View style={styles.passageHeaderTrailing}>
+              <ReadingTimer secondsLeft={secondsLeft} />
+              <HomeworkReportIssueButton report={reportIssue} variant="badge" />
+            </View>
           </View>
 
           <ScrollView
@@ -588,7 +607,13 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     justifyContent: "center",
   },
-  passageHeaderSpacer: { flex: 1 },
+  passageHeaderSpacer: { flex: 1, minWidth: 8 },
+  passageHeaderTrailing: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    flexShrink: 0,
+  },
   timerBadge: {
     flexDirection: "row",
     alignItems: "center",

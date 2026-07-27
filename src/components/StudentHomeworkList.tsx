@@ -11,6 +11,7 @@ import {
 import { HomeworkSection, type HomeworkItem } from "./HomeworkSection"
 import { HomeworkListSkeleton } from "./skeletons/Layouts"
 import { parseVocabHomeworkSlug } from "../types/vocabulary"
+import { syncPendingVocabularyHomeworkToReview } from "../lib/learned-vocabulary"
 import { parsePodcastHomeworkSlug } from "../types/podcast"
 import { parseReadingHomeworkSlug } from "../types/reading"
 import { parseListeningHomeworkSlug } from "../types/listening"
@@ -196,6 +197,7 @@ export function StudentHomeworkList({ studentId }: { studentId: string }) {
 
           const mapped = mergeHomeworkItems(entries, controlEntries)
           publishItems(mapped, { background: opts?.background })
+          void syncPendingVocabularyHomeworkToReview(studentId, entries)
         })
       } catch {
         if (generation !== loadGenerationRef.current) return

@@ -36,6 +36,9 @@ import {
 import { SpeakingRunner } from "./SpeakingRunner"
 import { colors, radius, spacing } from "../../theme/tokens"
 import { grammarIssueReport } from "../../types/issue-report"
+import { resolveQuestionType } from "../../lib/grammar-question-types"
+import { useHomeworkAssignmentState } from "../../hooks/useHomeworkAssignmentState"
+import type { HomeworkAttempt } from "../../types/domain"
 
 const exerciseTextInputProps = {
   placeholderTextColor: colors.textMuted,
@@ -60,6 +63,8 @@ export interface ExerciseRunnerProps {
   elapsedSeconds?: number
   lockNavigation?: boolean
   onSessionEnd?: () => void
+  /** Saved in-progress answers from a paused homework session. */
+  savedAttempt?: HomeworkAttempt
 }
 
 function ExerciseHeader({
@@ -127,19 +132,6 @@ function HomeworkInstructions({
   )
 }
 
-function applyAssignmentAdvance(
-  assignmentMode: boolean,
-  index: number,
-  total: number,
-  setIndex: React.Dispatch<React.SetStateAction<number>>,
-  finish: () => void,
-): boolean {
-  if (!assignmentMode) return false
-  if (index + 1 >= total) finish()
-  else setIndex((i) => i + 1)
-  return true
-}
-
 function ExerciseScreenFrame({
   homeworkId,
   controlWorkId,
@@ -152,6 +144,7 @@ function ExerciseScreenFrame({
   questionInstruction,
   questionPrompt,
   questionId,
+  instructionType,
   children,
   footer,
 }: {
@@ -166,13 +159,15 @@ function ExerciseScreenFrame({
   questionInstruction?: string
   questionPrompt?: string
   questionId?: number
+  /** Override exercise.type for per-question homework instructions (mixed). */
+  instructionType?: string
   children: React.ReactNode
   footer: React.ReactNode
 }) {
   const instruction = resolveHomeworkInstruction(
     questionInstruction,
     questionPrompt,
-    exercise.type,
+    instructionType ?? exercise.type,
   )
 
   const reportIssue = grammarIssueReport(exercise, {
@@ -233,20 +228,27 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
     elapsedSeconds,
     lockNavigation,
     onSessionEnd,
+    savedAttempt,
   } = props
-  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
-  const [index, setIndex] = useState(0)
+  const questions = exercise.content.questions ?? []
+  const {
+    index,
+    setIndex,
+    correctCount,
+    setCorrectCount,
+    mistakes,
+    setMistakes,
+    assignmentMode,
+    advanceOrFinish,
+  } = useHomeworkAssignmentState(homeworkId, controlWorkId, savedAttempt, questions.length)
   const [inputs, setInputs] = useState<string[]>([])
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
   const [perBlank, setPerBlank] = useState<boolean[]>([])
   const [showHint, setShowHint] = useState(false)
-  const [correctCount, setCorrectCount] = useState(0)
-  const [mistakes, setMistakes] = useState<ReviewItem[]>([])
   const [finished, setFinished] = useState(false)
   const [finishedAt, setFinishedAt] = useState<number | null>(null)
   const [timedOut, setTimedOut] = useState(false)
 
-  const questions = exercise.content.questions ?? []
   const question = questions[index] ?? null
   const segments = useMemo(
     () => (question ? question.text.split(GRAMMAR_BLANK_TOKEN) : []),
@@ -291,24 +293,26 @@ function FillBlankRunner(props: ExerciseRunnerProps) {
       isBlankCorrect(val, getAcceptableAnswersForBlank(question, i)),
     )
     const allCorrect = checks.every(Boolean)
-    if (allCorrect) setCorrectCount((c) => c + 1)
-    else {
-      setMistakes((prev) => [
-        ...prev,
-        {
-          id: question.id,
-          prompt: question.text,
-          userAnswer: inputs.map((s) => s.trim()).filter(Boolean).join(" / "),
-          correctAnswer: formatFillBlankCorrectAnswer(question),
-          explanation: question.explanation,
-        },
-      ])
-    }
+    const nextCorrect = allCorrect ? correctCount + 1 : correctCount
+    const nextMistakes = allCorrect
+      ? mistakes
+      : [
+          ...mistakes,
+          {
+            id: question.id,
+            prompt: question.text,
+            userAnswer: inputs.map((s) => s.trim()).filter(Boolean).join(" / "),
+            correctAnswer: formatFillBlankCorrectAnswer(question),
+            explanation: question.explanation,
+          },
+        ]
+    if (allCorrect) setCorrectCount(nextCorrect)
+    else setMistakes(nextMistakes)
     if (
-      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
+      advanceOrFinish(index, () => {
         setFinished(true)
         setFinishedAt(Date.now())
-      })
+      }, nextCorrect, nextMistakes)
     ) {
       return
     }
@@ -469,19 +473,26 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
     elapsedSeconds,
     lockNavigation,
     onSessionEnd,
+    savedAttempt,
   } = props
-  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
-  const [index, setIndex] = useState(0)
+  const questions = exercise.content.questions ?? []
+  const {
+    index,
+    setIndex,
+    correctCount,
+    setCorrectCount,
+    mistakes,
+    setMistakes,
+    assignmentMode,
+    advanceOrFinish,
+  } = useHomeworkAssignmentState(homeworkId, controlWorkId, savedAttempt, questions.length)
   const [selected, setSelected] = useState<string | null>(null)
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
   const [showHint, setShowHint] = useState(false)
-  const [correctCount, setCorrectCount] = useState(0)
-  const [mistakes, setMistakes] = useState<ReviewItem[]>([])
   const [finished, setFinished] = useState(false)
   const [finishedAt, setFinishedAt] = useState<number | null>(null)
   const [timedOut, setTimedOut] = useState(false)
 
-  const questions = exercise.content.questions ?? []
   const question = questions[index] ?? null
 
   const secondsLeft = useCountdown(
@@ -505,29 +516,31 @@ function MultipleChoiceRunner(props: ExerciseRunnerProps) {
   const handleCheck = useCallback(() => {
     if (!question || result !== "idle" || selected == null) return
     const isCorrect = selected === question.correctAnswer
-    if (isCorrect) setCorrectCount((c) => c + 1)
-    else {
-      setMistakes((prev) => [
-        ...prev,
-        {
-          id: question.id,
-          prompt: question.text,
-          userAnswer: selected,
-          correctAnswer: question.correctAnswer ?? "",
-          explanation: question.explanation,
-        },
-      ])
-    }
+    const nextCorrect = isCorrect ? correctCount + 1 : correctCount
+    const nextMistakes = isCorrect
+      ? mistakes
+      : [
+          ...mistakes,
+          {
+            id: question.id,
+            prompt: question.text,
+            userAnswer: selected,
+            correctAnswer: question.correctAnswer ?? "",
+            explanation: question.explanation,
+          },
+        ]
+    if (isCorrect) setCorrectCount(nextCorrect)
+    else setMistakes(nextMistakes)
     if (
-      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
+      advanceOrFinish(index, () => {
         setFinished(true)
         setFinishedAt(Date.now())
-      })
+      }, nextCorrect, nextMistakes)
     ) {
       return
     }
     setResult(isCorrect ? "correct" : "incorrect")
-  }, [homeworkId, index, question, questions.length, result, selected])
+  }, [advanceOrFinish, correctCount, index, mistakes, question, questions.length, result, selected, setCorrectCount, setMistakes])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -658,18 +671,25 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
     elapsedSeconds,
     lockNavigation,
     onSessionEnd,
+    savedAttempt,
   } = props
-  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
-  const [index, setIndex] = useState(0)
+  const questions = exercise.content.questions ?? []
+  const {
+    index,
+    setIndex,
+    correctCount,
+    setCorrectCount,
+    mistakes,
+    setMistakes,
+    assignmentMode,
+    advanceOrFinish,
+  } = useHomeworkAssignmentState(homeworkId, controlWorkId, savedAttempt, questions.length)
   const [selected, setSelected] = useState<boolean | null>(null)
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
-  const [correctCount, setCorrectCount] = useState(0)
-  const [mistakes, setMistakes] = useState<ReviewItem[]>([])
   const [finished, setFinished] = useState(false)
   const [finishedAt, setFinishedAt] = useState<number | null>(null)
   const [timedOut, setTimedOut] = useState(false)
 
-  const questions = exercise.content.questions ?? []
   const question = questions[index] ?? null
 
   const secondsLeft = useCountdown(
@@ -692,29 +712,31 @@ function TrueFalseRunner(props: ExerciseRunnerProps) {
   const handleCheck = useCallback(() => {
     if (!question || result !== "idle" || selected == null) return
     const isCorrect = selected === question.correctBool
-    if (isCorrect) setCorrectCount((c) => c + 1)
-    else {
-      setMistakes((prev) => [
-        ...prev,
-        {
-          id: question.id,
-          prompt: question.text,
-          userAnswer: selected ? "Correct" : "Incorrect",
-          correctAnswer: question.correctBool ? "Correct" : "Incorrect",
-          explanation: question.explanation,
-        },
-      ])
-    }
+    const nextCorrect = isCorrect ? correctCount + 1 : correctCount
+    const nextMistakes = isCorrect
+      ? mistakes
+      : [
+          ...mistakes,
+          {
+            id: question.id,
+            prompt: question.text,
+            userAnswer: selected ? "Correct" : "Incorrect",
+            correctAnswer: question.correctBool ? "Correct" : "Incorrect",
+            explanation: question.explanation,
+          },
+        ]
+    if (isCorrect) setCorrectCount(nextCorrect)
+    else setMistakes(nextMistakes)
     if (
-      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
+      advanceOrFinish(index, () => {
         setFinished(true)
         setFinishedAt(Date.now())
-      })
+      }, nextCorrect, nextMistakes)
     ) {
       return
     }
     setResult(isCorrect ? "correct" : "incorrect")
-  }, [homeworkId, index, question, questions.length, result, selected])
+  }, [advanceOrFinish, correctCount, index, mistakes, question, questions.length, result, selected, setCorrectCount, setMistakes])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -832,19 +854,26 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
     elapsedSeconds,
     lockNavigation,
     onSessionEnd,
+    savedAttempt,
   } = props
-  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
-  const [index, setIndex] = useState(0)
+  const questions = exercise.content.questions ?? []
+  const {
+    index,
+    setIndex,
+    correctCount,
+    setCorrectCount,
+    mistakes,
+    setMistakes,
+    assignmentMode,
+    advanceOrFinish,
+  } = useHomeworkAssignmentState(homeworkId, controlWorkId, savedAttempt, questions.length)
   const [input, setInput] = useState("")
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
   const [showHint, setShowHint] = useState(false)
-  const [correctCount, setCorrectCount] = useState(0)
-  const [mistakes, setMistakes] = useState<ReviewItem[]>([])
   const [finished, setFinished] = useState(false)
   const [finishedAt, setFinishedAt] = useState<number | null>(null)
   const [timedOut, setTimedOut] = useState(false)
 
-  const questions = exercise.content.questions ?? []
   const question = questions[index] ?? null
 
   const secondsLeft = useCountdown(
@@ -874,29 +903,31 @@ function TextAnswerRunner(props: ExerciseRunnerProps) {
   const handleCheck = useCallback(() => {
     if (!question || result !== "idle" || !input.trim()) return
     const isCorrect = checkAnswer(question, input)
-    if (isCorrect) setCorrectCount((c) => c + 1)
-    else {
-      setMistakes((prev) => [
-        ...prev,
-        {
-          id: question.id,
-          prompt: question.text,
-          userAnswer: input.trim(),
-          correctAnswer: question.answer ?? "",
-          explanation: question.explanation,
-        },
-      ])
-    }
+    const nextCorrect = isCorrect ? correctCount + 1 : correctCount
+    const nextMistakes = isCorrect
+      ? mistakes
+      : [
+          ...mistakes,
+          {
+            id: question.id,
+            prompt: question.text,
+            userAnswer: input.trim(),
+            correctAnswer: question.answer ?? "",
+            explanation: question.explanation,
+          },
+        ]
+    if (isCorrect) setCorrectCount(nextCorrect)
+    else setMistakes(nextMistakes)
     if (
-      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
+      advanceOrFinish(index, () => {
         setFinished(true)
         setFinishedAt(Date.now())
-      })
+      }, nextCorrect, nextMistakes)
     ) {
       return
     }
     setResult(isCorrect ? "correct" : "incorrect")
-  }, [homeworkId, index, input, question, questions.length, result])
+  }, [advanceOrFinish, correctCount, index, input, mistakes, question, questions.length, result, setCorrectCount, setMistakes])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -1274,19 +1305,26 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
     elapsedSeconds,
     lockNavigation,
     onSessionEnd,
+    savedAttempt,
   } = props
-  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
-  const [index, setIndex] = useState(0)
+  const questions = exercise.content.questions ?? []
+  const {
+    index,
+    setIndex,
+    correctCount,
+    setCorrectCount,
+    mistakes,
+    setMistakes,
+    assignmentMode,
+    advanceOrFinish,
+  } = useHomeworkAssignmentState(homeworkId, controlWorkId, savedAttempt, questions.length)
   const [picked, setPicked] = useState<{ word: string; bankIndex: number }[]>([])
   const [bankUsed, setBankUsed] = useState<boolean[]>([])
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
-  const [correctCount, setCorrectCount] = useState(0)
-  const [mistakes, setMistakes] = useState<ReviewItem[]>([])
   const [finished, setFinished] = useState(false)
   const [finishedAt, setFinishedAt] = useState<number | null>(null)
   const [timedOut, setTimedOut] = useState(false)
 
-  const questions = exercise.content.questions ?? []
   const question = questions[index] ?? null
   const scrambled = question?.scrambled ?? []
   const remainingCount = bankUsed.filter((used) => !used).length
@@ -1341,31 +1379,33 @@ function WordOrderRunner(props: ExerciseRunnerProps) {
     const isCorrect =
       JSON.stringify(pickedWords) === JSON.stringify(correct) ||
       alternates.some((alt) => JSON.stringify(pickedWords) === JSON.stringify(alt))
-    if (isCorrect) setCorrectCount((c) => c + 1)
-    else {
-      const prefix = (question.prefix ?? []).join(" ")
-      const suffix = (question.suffix ?? []).join(" ")
-      setMistakes((prev) => [
-        ...prev,
-        {
-          id: question.id,
-          prompt: question.text || "Arrange the words",
-          userAnswer: [prefix, ...pickedWords, suffix].filter(Boolean).join(" "),
-          correctAnswer: [prefix, ...correct, suffix].filter(Boolean).join(" "),
-          explanation: question.explanation,
-        },
-      ])
-    }
+    const prefix = (question.prefix ?? []).join(" ")
+    const suffix = (question.suffix ?? []).join(" ")
+    const nextCorrect = isCorrect ? correctCount + 1 : correctCount
+    const nextMistakes = isCorrect
+      ? mistakes
+      : [
+          ...mistakes,
+          {
+            id: question.id,
+            prompt: question.text || "Arrange the words",
+            userAnswer: [prefix, ...pickedWords, suffix].filter(Boolean).join(" "),
+            correctAnswer: [prefix, ...correct, suffix].filter(Boolean).join(" "),
+            explanation: question.explanation,
+          },
+        ]
+    if (isCorrect) setCorrectCount(nextCorrect)
+    else setMistakes(nextMistakes)
     if (
-      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
+      advanceOrFinish(index, () => {
         setFinished(true)
         setFinishedAt(Date.now())
-      })
+      }, nextCorrect, nextMistakes)
     ) {
       return
     }
     setResult(isCorrect ? "correct" : "incorrect")
-  }, [homeworkId, index, pickedWords, question, questions.length, remainingCount, result])
+  }, [advanceOrFinish, correctCount, index, mistakes, pickedWords, question, questions.length, remainingCount, result, setCorrectCount, setMistakes])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -1538,19 +1578,26 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
     elapsedSeconds,
     lockNavigation,
     onSessionEnd,
+    savedAttempt,
   } = props
-  const assignmentMode = isAssignmentMode(homeworkId, controlWorkId)
-  const [index, setIndex] = useState(0)
+  const questions = exercise.content.questions ?? []
+  const {
+    index,
+    setIndex,
+    correctCount,
+    setCorrectCount,
+    mistakes,
+    setMistakes,
+    assignmentMode,
+    advanceOrFinish,
+  } = useHomeworkAssignmentState(homeworkId, controlWorkId, savedAttempt, questions.length)
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [editingId, setEditingId] = useState<string | null>(null)
   const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
-  const [correctCount, setCorrectCount] = useState(0)
-  const [mistakes, setMistakes] = useState<ReviewItem[]>([])
   const [finished, setFinished] = useState(false)
   const [finishedAt, setFinishedAt] = useState<number | null>(null)
   const [timedOut, setTimedOut] = useState(false)
 
-  const questions = exercise.content.questions ?? []
   const question = questions[index] ?? null
 
   const secondsLeft = useCountdown(
@@ -1581,29 +1628,31 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
       const accepted = [seg.correctText, ...(seg.acceptableText ?? [])].map(normalizeAnswer)
       if (!accepted.includes(userVal)) allCorrect = false
     }
-    if (allCorrect) setCorrectCount((c) => c + 1)
-    else {
-      setMistakes((prev) => [
-        ...prev,
-        {
-          id: question.id,
-          prompt: segments.map((s) => edits[s.id] ?? s.text).join(""),
-          userAnswer: "See sentence",
-          correctAnswer: segments.map((s) => s.correctText ?? s.text).join(""),
-          explanation: question.explanation,
-        },
-      ])
-    }
+    const nextCorrect = allCorrect ? correctCount + 1 : correctCount
+    const nextMistakes = allCorrect
+      ? mistakes
+      : [
+          ...mistakes,
+          {
+            id: question.id,
+            prompt: segments.map((s) => edits[s.id] ?? s.text).join(""),
+            userAnswer: "See sentence",
+            correctAnswer: segments.map((s) => s.correctText ?? s.text).join(""),
+            explanation: question.explanation,
+          },
+        ]
+    if (allCorrect) setCorrectCount(nextCorrect)
+    else setMistakes(nextMistakes)
     if (
-      applyAssignmentAdvance(assignmentMode, index, questions.length, setIndex, () => {
+      advanceOrFinish(index, () => {
         setFinished(true)
         setFinishedAt(Date.now())
-      })
+      }, nextCorrect, nextMistakes)
     ) {
       return
     }
     setResult(allCorrect ? "correct" : "incorrect")
-  }, [edits, homeworkId, index, question, questions.length, result])
+  }, [advanceOrFinish, correctCount, edits, index, mistakes, question, questions.length, result, setCorrectCount, setMistakes])
 
   const handleNext = useCallback(() => {
     if (index + 1 >= questions.length) {
@@ -1750,10 +1799,577 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
   )
 }
 
+// ─── Mixed type runner (heterogeneous question sequence) ─────────────────────
+
+function MixedTypeRunner(props: ExerciseRunnerProps) {
+  const {
+    exercise,
+    homeworkId,
+    controlWorkId,
+    stepIndex,
+    studentId,
+    timeLimitMinutes,
+    sessionStartedAt,
+    elapsedSeconds,
+    lockNavigation,
+    onSessionEnd,
+    savedAttempt,
+  } = props
+  const questions = exercise.content.questions ?? []
+  const {
+    index,
+    setIndex,
+    correctCount,
+    setCorrectCount,
+    mistakes,
+    setMistakes,
+    assignmentMode,
+    advanceOrFinish,
+  } = useHomeworkAssignmentState(homeworkId, controlWorkId, savedAttempt, questions.length)
+  const [result, setResult] = useState<"idle" | "correct" | "incorrect">("idle")
+  const [showHint, setShowHint] = useState(false)
+  const [finished, setFinished] = useState(false)
+  const [finishedAt, setFinishedAt] = useState<number | null>(null)
+  const [timedOut, setTimedOut] = useState(false)
+
+  const [fillInputs, setFillInputs] = useState<string[]>([])
+  const [fillPerBlank, setFillPerBlank] = useState<boolean[]>([])
+  const [mcSelected, setMcSelected] = useState<string | null>(null)
+  const [tfSelected, setTfSelected] = useState<boolean | null>(null)
+  const [ecEdits, setEcEdits] = useState<Record<string, string>>({})
+  const [ecEditingId, setEcEditingId] = useState<string | null>(null)
+
+  const question = questions[index] ?? null
+  const questionType = question
+    ? resolveQuestionType(question, exercise.type)
+    : null
+
+  const fillSegments = useMemo(() => {
+    if (!question || questionType !== "fill-in-the-blank") return [] as string[]
+    return question.text.split(GRAMMAR_BLANK_TOKEN)
+  }, [question, questionType])
+
+  const fillBlanksCount = Math.max(fillSegments.length - 1, 0)
+
+  const renderSegmentTokens = (seg: string, variant: "default" | "homework", keyPrefix: string) => {
+    const tokens = seg.split(/(\s+)/).filter((t) => t.length > 0)
+    const style = variant === "homework" ? styles.homeworkSentenceToken : styles.sentenceToken
+    return tokens.map((token, idx) => (
+      <Text key={`${keyPrefix}-${idx}`} style={style}>
+        {token}
+      </Text>
+    ))
+  }
+
+  const secondsLeft = useCountdown(
+    timeLimitMinutes,
+    () => {
+      setTimedOut(true)
+      setFinished(true)
+      setFinishedAt(Date.now())
+    },
+    finished,
+    elapsedSeconds ?? 0,
+    sessionStartedAt,
+  )
+
+  useEffect(() => {
+    setResult("idle")
+    setShowHint(false)
+    setMcSelected(null)
+    setTfSelected(null)
+    setEcEdits({})
+    setEcEditingId(null)
+
+    if (!question || questionType !== "fill-in-the-blank") {
+      setFillInputs([])
+      setFillPerBlank([])
+      return
+    }
+
+    const segs = question.text.split(GRAMMAR_BLANK_TOKEN)
+    const blanksCount = Math.max(segs.length - 1, 0)
+    setFillInputs(Array.from({ length: blanksCount }, () => ""))
+    setFillPerBlank([])
+  }, [index, question, questionType])
+
+  const fillAllFilled =
+    fillInputs.length > 0 && fillInputs.every((v) => v.trim().length > 0)
+
+  const canCheck = useMemo(() => {
+    if (!question || !questionType) return false
+    switch (questionType) {
+      case "fill-in-the-blank":
+        return fillAllFilled
+      case "multiple-choice":
+        return mcSelected != null
+      case "true-false":
+        return tfSelected != null
+      case "error-correction":
+        return true
+      default:
+        return false
+    }
+  }, [question, questionType, fillAllFilled, mcSelected, tfSelected])
+
+  const handleCheck = useCallback(() => {
+    if (!question || !questionType || result !== "idle" || !canCheck) return
+
+    let isCorrect = false
+    let userAnswer = ""
+    let correctAnswer = ""
+
+    switch (questionType) {
+      case "fill-in-the-blank": {
+        const checks = fillInputs.map((val, i) =>
+          isBlankCorrect(val, getAcceptableAnswersForBlank(question, i)),
+        )
+        isCorrect = checks.every(Boolean)
+        setFillPerBlank(checks)
+        userAnswer = fillInputs.map((s) => s.trim()).filter(Boolean).join(" / ")
+        correctAnswer = formatFillBlankCorrectAnswer(question)
+        break
+      }
+      case "multiple-choice": {
+        isCorrect = mcSelected === question.correctAnswer
+        userAnswer = mcSelected ?? ""
+        correctAnswer = question.correctAnswer ?? ""
+        break
+      }
+      case "true-false": {
+        isCorrect = tfSelected === question.correctBool
+        userAnswer = tfSelected ? "Correct" : "Incorrect"
+        correctAnswer = question.correctBool ? "Correct" : "Incorrect"
+        break
+      }
+      case "error-correction": {
+        const segments = question.segments ?? []
+        let allCorrect = true
+        for (const seg of segments) {
+          if (!seg.correctText) continue
+          const userVal = normalizeAnswer(ecEdits[seg.id] ?? seg.text)
+          const accepted = [seg.correctText, ...(seg.acceptableText ?? [])].map(normalizeAnswer)
+          if (!accepted.includes(userVal)) allCorrect = false
+        }
+        isCorrect = allCorrect
+        setEcEditingId(null)
+        userAnswer = "See sentence"
+        correctAnswer = segments.map((s) => s.correctText ?? s.text).join("")
+        break
+      }
+    }
+
+    const nextCorrect = isCorrect ? correctCount + 1 : correctCount
+    const nextMistakes = isCorrect
+      ? mistakes
+      : [
+          ...mistakes,
+          {
+            id: question.id,
+            prompt: question.text,
+            userAnswer,
+            correctAnswer,
+            explanation: question.explanation,
+          },
+        ]
+    if (isCorrect) setCorrectCount(nextCorrect)
+    else setMistakes(nextMistakes)
+    if (
+      advanceOrFinish(index, () => {
+        setFinished(true)
+        setFinishedAt(Date.now())
+      }, nextCorrect, nextMistakes)
+    ) {
+      return
+    }
+    setResult(isCorrect ? "correct" : "incorrect")
+  }, [
+    advanceOrFinish,
+    canCheck,
+    correctCount,
+    ecEdits,
+    fillInputs,
+    index,
+    mcSelected,
+    mistakes,
+    question,
+    questionType,
+    questions.length,
+    result,
+    setCorrectCount,
+    setMistakes,
+    tfSelected,
+  ])
+
+  const handleNext = useCallback(() => {
+    if (index + 1 >= questions.length) {
+      setFinished(true)
+      setFinishedAt(Date.now())
+      return
+    }
+    setIndex((i) => i + 1)
+  }, [questions.length, index])
+
+  if (finished) {
+    return (
+      <ResultsScreen
+        exercise={exercise}
+        correctCount={correctCount}
+        total={questions.length}
+        startedAt={sessionStartedAt}
+        elapsedSeconds={elapsedSeconds}
+        finishedAt={finishedAt}
+        mistakes={mistakes}
+        homeworkId={homeworkId}
+        controlWorkId={controlWorkId}
+        stepIndex={stepIndex}
+        studentId={studentId}
+        lockNavigation={lockNavigation}
+        onSessionEnd={onSessionEnd}
+        timedOut={timedOut}
+      />
+    )
+  }
+  if (!question || !questionType) return null
+
+  const renderedMcText = question.text.replace(GRAMMAR_BLANK_TOKEN, "_____")
+  const ecSegments = question.segments ?? []
+
+  let feedbackCorrectAnswer = ""
+  if (questionType === "fill-in-the-blank") {
+    feedbackCorrectAnswer = formatFillBlankCorrectAnswer(question)
+  } else if (questionType === "multiple-choice") {
+    feedbackCorrectAnswer = question.correctAnswer ?? ""
+  } else if (questionType === "true-false") {
+    feedbackCorrectAnswer = question.correctBool ? "Correct" : "Incorrect"
+  }
+
+  const questionPrompt =
+    questionType === "multiple-choice"
+      ? renderedMcText
+      : questionType === "error-correction"
+        ? ecSegments.map((s) => s.text).join("")
+        : question.text
+
+  const actionRow = (
+    <ActionRow
+      result={result}
+      canCheck={canCheck}
+      isLast={index + 1 >= questions.length}
+      onCheck={handleCheck}
+      onNext={handleNext}
+      variant={assignmentMode ? "homework" : "default"}
+    />
+  )
+
+  const questionBody = (
+    <>
+      {!assignmentMode ? <Text style={styles.qLabel}>Question {index + 1}</Text> : null}
+
+      {questionType === "fill-in-the-blank" && (
+        <>
+          {assignmentMode ? (
+            <HomeworkSourceCard>
+              <View style={styles.homeworkBlankRow}>
+                {fillSegments.map((seg, i) => (
+                  <React.Fragment key={i}>
+                    {seg ? renderSegmentTokens(seg, "homework", `hseg-${i}`) : null}
+                    {i < fillBlanksCount && (
+                      <View collapsable={false}>
+                        <TextInput
+                          {...exerciseTextInputProps}
+                          style={[
+                            styles.homeworkBlankInput,
+                            result !== "idle" &&
+                              (fillPerBlank[i] ? styles.blankUnderlineOk : styles.blankUnderlineBad),
+                          ]}
+                          value={fillInputs[i] ?? ""}
+                          onChangeText={(val) => {
+                            setFillInputs((prev) => {
+                              const next = [...prev]
+                              next[i] = val
+                              return next
+                            })
+                          }}
+                          editable={result === "idle"}
+                          placeholder=""
+                          autoCapitalize="none"
+                        />
+                      </View>
+                    )}
+                  </React.Fragment>
+                ))}
+              </View>
+            </HomeworkSourceCard>
+          ) : (
+            <View style={styles.blankRow}>
+              {fillSegments.map((seg, i) => (
+                <React.Fragment key={i}>
+                  {seg ? renderSegmentTokens(seg, "default", `seg-${i}`) : null}
+                  {i < fillBlanksCount && (
+                    <TextInput
+                      {...exerciseTextInputProps}
+                      style={[
+                        styles.blankInput,
+                        result !== "idle" &&
+                          (fillPerBlank[i] ? styles.blankUnderlineOk : styles.blankUnderlineBad),
+                      ]}
+                      value={fillInputs[i] ?? ""}
+                      onChangeText={(val) => {
+                        setFillInputs((prev) => {
+                          const next = [...prev]
+                          next[i] = val
+                          return next
+                        })
+                      }}
+                      editable={result === "idle"}
+                      placeholder=""
+                      autoCapitalize="none"
+                    />
+                  )}
+                </React.Fragment>
+              ))}
+            </View>
+          )}
+        </>
+      )}
+
+      {questionType === "multiple-choice" && (
+        <>
+          {assignmentMode ? (
+            <>
+              <HomeworkSourceCard source={renderedMcText} />
+              <View style={styles.homeworkMcOptions}>
+                {(question.options ?? []).map((opt, optIndex) => {
+                  const isChosen = mcSelected === opt
+                  const isCorrectOpt = opt === question.correctAnswer
+                  const checked = result !== "idle"
+                  return (
+                    <Pressable
+                      key={`${index}-opt-${optIndex}`}
+                      disabled={checked}
+                      onPress={() => setMcSelected(opt)}
+                      style={[
+                        styles.homeworkMcOption,
+                        !checked && isChosen && styles.homeworkOptionSelected,
+                        checked && isCorrectOpt && styles.optionCorrect,
+                        checked && isChosen && !isCorrectOpt && styles.optionWrong,
+                      ]}
+                    >
+                      <Text style={styles.homeworkMcOptionText}>{opt}</Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.questionText}>{renderedMcText}</Text>
+              <View style={styles.options}>
+                {(question.options ?? []).map((opt, optIndex) => {
+                  const isChosen = mcSelected === opt
+                  const isCorrectOpt = opt === question.correctAnswer
+                  const checked = result !== "idle"
+                  return (
+                    <Pressable
+                      key={`${index}-opt-${optIndex}`}
+                      disabled={checked}
+                      onPress={() => setMcSelected(opt)}
+                      style={[
+                        styles.option,
+                        !checked && isChosen && styles.optionSelected,
+                        checked && isCorrectOpt && styles.optionCorrect,
+                        checked && isChosen && !isCorrectOpt && styles.optionWrong,
+                      ]}
+                    >
+                      <Text style={styles.optionText}>{opt}</Text>
+                    </Pressable>
+                  )
+                })}
+              </View>
+            </>
+          )}
+        </>
+      )}
+
+      {questionType === "true-false" && (
+        <>
+          {assignmentMode ? (
+            <>
+              <HomeworkSourceCard source={question.text} />
+              <View style={styles.homeworkTfRow}>
+                {[true, false].map((val) => (
+                  <Pressable
+                    key={String(val)}
+                    disabled={result !== "idle"}
+                    onPress={() => setTfSelected(val)}
+                    style={[
+                      styles.homeworkTfBtn,
+                      tfSelected === val && result === "idle" && styles.homeworkOptionSelected,
+                      result !== "idle" && val === question.correctBool && styles.optionCorrect,
+                      result !== "idle" &&
+                        tfSelected === val &&
+                        val !== question.correctBool &&
+                        styles.optionWrong,
+                    ]}
+                  >
+                    <Text style={styles.homeworkOptionText}>
+                      {val ? "Correct" : "Incorrect"}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.questionText}>{question.text}</Text>
+              <View style={styles.tfRow}>
+                {[true, false].map((val) => (
+                  <Pressable
+                    key={String(val)}
+                    disabled={result !== "idle"}
+                    onPress={() => setTfSelected(val)}
+                    style={[
+                      styles.tfBtn,
+                      tfSelected === val && result === "idle" && styles.optionSelected,
+                      result !== "idle" && val === question.correctBool && styles.optionCorrect,
+                      result !== "idle" &&
+                        tfSelected === val &&
+                        val !== question.correctBool &&
+                        styles.optionWrong,
+                    ]}
+                  >
+                    <Text style={styles.tfText}>{val ? "Correct" : "Incorrect"}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
+        </>
+      )}
+
+      {questionType === "error-correction" && (
+        <>
+          {!assignmentMode ? (
+            <Text style={styles.instructionHint}>Tap highlighted words to edit them</Text>
+          ) : null}
+          {assignmentMode ? (
+            <HomeworkSourceCard source="Fix the highlighted words">
+              <View style={styles.homeworkErrorRow}>
+                {ecSegments.map((seg) => {
+                  const isEditable = !!seg.correctText
+                  const display = ecEdits[seg.id] ?? seg.text
+                  const isEditing = ecEditingId === seg.id
+                  return (
+                    <React.Fragment key={seg.id}>
+                      {isEditing ? (
+                        <TextInput
+                          {...exerciseTextInputProps}
+                          style={styles.homeworkErrorInput}
+                          value={ecEdits[seg.id] ?? seg.text}
+                          onChangeText={(t) => setEcEdits((e) => ({ ...e, [seg.id]: t }))}
+                          onBlur={() => setEcEditingId(null)}
+                          autoFocus
+                        />
+                      ) : (
+                        <Pressable
+                          onPress={() => isEditable && result === "idle" && setEcEditingId(seg.id)}
+                          style={[styles.errorSegment, isEditable && styles.homeworkErrorSegment]}
+                        >
+                          <Text style={styles.homeworkErrorText}>{display}</Text>
+                        </Pressable>
+                      )}
+                      {seg.after ? <Text style={styles.homeworkErrorText}>{seg.after}</Text> : null}
+                    </React.Fragment>
+                  )
+                })}
+              </View>
+            </HomeworkSourceCard>
+          ) : (
+            <View style={styles.errorRow}>
+              {ecSegments.map((seg) => {
+                const isEditable = !!seg.correctText
+                const display = ecEdits[seg.id] ?? seg.text
+                const isEditing = ecEditingId === seg.id
+                return (
+                  <React.Fragment key={seg.id}>
+                    {isEditing ? (
+                      <TextInput
+                        {...exerciseTextInputProps}
+                        style={styles.errorInput}
+                        value={ecEdits[seg.id] ?? seg.text}
+                        onChangeText={(t) => setEcEdits((e) => ({ ...e, [seg.id]: t }))}
+                        onBlur={() => setEcEditingId(null)}
+                        autoFocus
+                      />
+                    ) : (
+                      <Pressable
+                        onPress={() => isEditable && result === "idle" && setEcEditingId(seg.id)}
+                        style={[styles.errorSegment, isEditable && styles.errorSegmentEditable]}
+                      >
+                        <Text>{display}</Text>
+                      </Pressable>
+                    )}
+                    {seg.after ? <Text>{seg.after}</Text> : null}
+                  </React.Fragment>
+                )
+              })}
+            </View>
+          )}
+        </>
+      )}
+
+      {(questionType === "fill-in-the-blank" ||
+        questionType === "multiple-choice" ||
+        questionType === "error-correction") && (
+        <HintRow showHint={showHint} setShowHint={setShowHint} hint={question.hint} />
+      )}
+      {result !== "idle" && !assignmentMode && (
+        <FeedbackBox
+          correct={result === "correct"}
+          correctAnswer={feedbackCorrectAnswer}
+          explanation={question.explanation}
+        />
+      )}
+    </>
+  )
+
+  return (
+    <ExerciseScreenFrame
+      homeworkId={homeworkId}
+      controlWorkId={controlWorkId}
+      stepIndex={stepIndex}
+      exercise={exercise}
+      index={index}
+      total={questions.length}
+      correctCount={correctCount}
+      secondsLeft={secondsLeft}
+      questionInstruction={question.instruction}
+      questionPrompt={questionPrompt}
+      questionId={question.id}
+      instructionType={questionType}
+      footer={actionRow}
+    >
+      {questionBody}
+    </ExerciseScreenFrame>
+  )
+}
+
 // ─── Main switch ─────────────────────────────────────────────────────────────
 
 export function ExerciseRunner(props: ExerciseRunnerProps & { exercise: GrammarExercise }) {
-  switch (props.exercise.type) {
+  const { exercise } = props
+  const questions = exercise.content.questions ?? []
+  const questionTypes = new Set(
+    questions.map((q) => resolveQuestionType(q, exercise.type)),
+  )
+  const useMixed = exercise.type === "mixed" || questionTypes.size > 1
+
+  if (useMixed) {
+    return <MixedTypeRunner {...props} />
+  }
+
+  switch (exercise.type) {
     case "multiple-choice":
       return <MultipleChoiceRunner {...props} />
     case "matching":

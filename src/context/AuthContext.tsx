@@ -7,6 +7,7 @@ import React, {
   useState,
 } from "react"
 import { authApi, clearApiCache, type AuthUser } from "../lib/api"
+import { resetLearningProgressCache } from "../lib/learned-vocabulary"
 import {
   clearTokens,
   getAccessToken,
@@ -113,6 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearHomeworkListSnapshot()
     clearHomeScreenSnapshot()
     clearProfileScreenSnapshot()
+    resetLearningProgressCache(userId)
     if (!guest) {
       await clearLastActivity(userId)
     }

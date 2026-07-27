@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import type { VocabDeck, VocabWord, TranslationLang } from "../types/vocabulary"
-import { wordTranslation } from "../types/vocabulary"
+import { parseVocabHomeworkSlug, wordTranslation } from "../types/vocabulary"
 import { clampToFixedLevel, primaryLevel } from "./utils"
 import { analyticsApi } from "./api"
 import { runPerfTrace } from "./perf"
@@ -8,6 +8,7 @@ import { runPerfTrace } from "./perf"
 const KEY_PREFIX = "learnix_learning_progress:"
 export const CORRECT_TO_MASTER = 5
 export const CORRECT_FOR_TYPED_REVIEW = 3
+export const MASTERED_MAINTENANCE_DAYS = 45
 
 export interface LearnedWord {
   term: string
@@ -27,8 +28,11 @@ export interface StudyWord extends LearnedWord {
   correctCount: number
   addedAt: string
   masteredAt?: string
+  /** Passed 45-day maintenance review — never show again. */
+  permanentlyMastered?: boolean
   /** Last time this word was shown in vocabulary review (ISO). */
   lastReviewedAt?: string
+  totalAttempts?: number
 }
 
 export interface VocabQuizResult {
@@ -118,6 +122,8 @@ export interface LevelWordStats {
 export interface ReviewAnswerResult {
   correctCount: number
   newlyMastered: boolean
+  permanentlyRetired?: boolean
+  maintenanceFailed?: boolean
   word: StudyWord
 }
 
@@ -129,6 +135,7 @@ interface LearningProgress {
 }
 
 const memory = new Map<string, LearningProgress>()
+const hydratedFromServer = new Set<string>()
 
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 const SYNC_DEBOUNCE_MS = 5000
@@ -150,8 +157,13 @@ async function syncLearnProgressToServer(userId: string): Promise<void> {
           term: w.term,
           deckSlug: w.deckSlug ?? "general",
           correctCount: w.correctCount,
-          totalAttempts: w.correctCount,
+          totalAttempts: w.totalAttempts ?? w.correctCount,
+          incorrectCount: Math.max(
+            0,
+            (w.totalAttempts ?? w.correctCount) - w.correctCount,
+          ),
           masteredAt: w.masteredAt,
+          permanentlyMastered: w.permanentlyMastered ?? false,
           wantToLearn: w.wantToLearn,
           lastReviewedAt: w.lastReviewedAt,
         })),
@@ -196,9 +208,26 @@ export function wasReviewedToday(word: Pick<StudyWord, "lastReviewedAt">): boole
   return localDateKey(word.lastReviewedAt) === localDateKey(new Date())
 }
 
+function daysSince(iso: string): number {
+  return (Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24)
+}
+
+export function isPermanentlyMastered(word: Pick<StudyWord, "permanentlyMastered">): boolean {
+  return word.permanentlyMastered === true
+}
+
+export function isDueForMaintenanceReview(word: StudyWord): boolean {
+  if (!isWordMastered(word) || isPermanentlyMastered(word)) return false
+  if (!word.masteredAt) return false
+  return daysSince(word.masteredAt) >= MASTERED_MAINTENANCE_DAYS
+}
+
 export function isEligibleForReview(word: StudyWord): boolean {
-  if (!word.wantToLearn || isWordMastered(word)) return false
-  return !wasReviewedToday(word)
+  if (isPermanentlyMastered(word)) return false
+  if (wasReviewedToday(word)) return false
+  if (word.wantToLearn && !isWordMastered(word)) return true
+  if (isDueForMaintenanceReview(word)) return true
+  return false
 }
 
 export function needsTypedReview(correctCount: number): boolean {
@@ -228,7 +257,7 @@ function migrateLegacyWords(progress: LearningProgress): LearningProgress {
   return { ...progress, studyWords }
 }
 
-async function loadProgress(userId: string): Promise<LearningProgress> {
+async function loadProgressLocal(userId: string): Promise<LearningProgress> {
   const cached = memory.get(userId)
   if (cached) return cached
 
@@ -253,6 +282,108 @@ async function loadProgress(userId: string): Promise<LearningProgress> {
     memory.set(userId, empty)
     return empty
   }
+}
+
+function toIsoDate(value: unknown): string | undefined {
+  if (!value) return undefined
+  if (typeof value === "string") return value
+  if (value instanceof Date) return value.toISOString()
+  return new Date(String(value)).toISOString()
+}
+
+/** Merge server-side word progress into local storage (server is source of truth). */
+export async function hydrateProgressFromServer(userId: string): Promise<void> {
+  const serverData = await analyticsApi.learnProgress().catch(() => null)
+  if (!serverData?.words?.length) return
+
+  const progress = await loadProgressLocal(userId)
+  const byKey = new Map(progress.studyWords.map((w) => [wordKey(w), w]))
+
+  for (const sw of serverData.words) {
+    const key = wordKey({ term: sw.term, deckSlug: sw.deckSlug })
+    const masteredAt = toIsoDate(sw.masteredAt)
+    const lastReviewedAt = toIsoDate(sw.lastReviewedAt)
+    const existing = byKey.get(key)
+
+    if (existing) {
+      existing.correctCount = Math.max(sw.correctCount ?? 0, existing.correctCount)
+      existing.wantToLearn = existing.wantToLearn || (sw.wantToLearn ?? false)
+      existing.permanentlyMastered =
+        (existing.permanentlyMastered ?? false) || (sw.permanentlyMastered ?? false)
+
+      const serverMasteredAt = masteredAt ? new Date(masteredAt).getTime() : 0
+      const localMasteredAt = existing.masteredAt ? new Date(existing.masteredAt).getTime() : 0
+      if (serverMasteredAt >= localMasteredAt && masteredAt) {
+        existing.masteredAt = masteredAt
+      }
+
+      const serverLast = lastReviewedAt ? new Date(lastReviewedAt).getTime() : 0
+      const localLast = existing.lastReviewedAt ? new Date(existing.lastReviewedAt).getTime() : 0
+      if (serverLast >= localLast && lastReviewedAt) {
+        existing.lastReviewedAt = lastReviewedAt
+      }
+
+      existing.totalAttempts = Math.max(
+        sw.totalAttempts ?? 0,
+        existing.totalAttempts ?? existing.correctCount,
+      )
+      continue
+    }
+
+    const now = new Date().toISOString()
+    const studyWord: StudyWord = {
+      term: sw.term,
+      partOfSpeech: "",
+      definition: "",
+      example: "",
+      translation: "",
+      translationUz: "",
+      deckSlug: sw.deckSlug,
+      level: "A1",
+      wantToLearn: sw.wantToLearn ?? false,
+      correctCount: sw.correctCount ?? 0,
+      addedAt: now,
+      learnedAt: masteredAt ?? now,
+      masteredAt,
+      lastReviewedAt,
+      permanentlyMastered: sw.permanentlyMastered ?? false,
+      totalAttempts: sw.totalAttempts ?? 0,
+    }
+    progress.studyWords.push(studyWord)
+    byKey.set(key, studyWord)
+  }
+
+  await saveProgress(userId, progress)
+  scheduleLearnSync(userId)
+}
+
+export async function ensureLearningProgressHydrated(
+  userId: string,
+  force = false,
+): Promise<void> {
+  if (!force && hydratedFromServer.has(userId)) return
+  hydratedFromServer.add(userId)
+  try {
+    await hydrateProgressFromServer(userId)
+  } catch {
+    hydratedFromServer.delete(userId)
+  }
+}
+
+/** Clear in-memory progress cache (e.g. on logout). */
+export function resetLearningProgressCache(userId?: string): void {
+  if (userId) {
+    memory.delete(userId)
+    hydratedFromServer.delete(userId)
+    return
+  }
+  memory.clear()
+  hydratedFromServer.clear()
+}
+
+async function loadProgress(userId: string): Promise<LearningProgress> {
+  await ensureLearningProgressHydrated(userId)
+  return loadProgressLocal(userId)
 }
 
 async function saveProgress(userId: string, progress: LearningProgress): Promise<void> {
@@ -284,6 +415,45 @@ function addDeckWordsToReview(progress: LearningProgress, deck: VocabDeck): void
   for (const word of deck.words) {
     upsertWordForReview(progress, word, deck, now)
   }
+}
+
+/** Queue all deck words for daily review (homework assignment, quiz completion, etc.). */
+export async function addDeckToDailyReview(userId: string, deck: VocabDeck): Promise<void> {
+  const progress = await loadProgress(userId)
+  addDeckWordsToReview(progress, deck)
+  await saveProgress(userId, progress)
+  notifyHomeVocabPreviewChanged(userId)
+  scheduleLearnSync(userId)
+}
+
+interface VocabularyHomeworkEntry {
+  homework: { subject: string; exerciseSlug?: string }
+  submission: { status: string }
+}
+
+/** Ensure words from assigned vocabulary homework appear in daily review. */
+export async function syncPendingVocabularyHomeworkToReview(
+  userId: string,
+  entries: VocabularyHomeworkEntry[],
+): Promise<void> {
+  const deckSlugs = new Set<string>()
+  for (const { homework, submission } of entries) {
+    if (homework.subject !== "vocabulary") continue
+    if (submission.status === "submitted" || submission.status === "graded") continue
+    const deckSlug = parseVocabHomeworkSlug(homework.exerciseSlug)
+    if (deckSlug) deckSlugs.add(deckSlug)
+  }
+  if (deckSlugs.size === 0) return
+
+  await ensureLearningProgressHydrated(userId, true)
+
+  const { exercisesApi } = await import("./api")
+  await Promise.all(
+    [...deckSlugs].map(async (slug) => {
+      const deck = await exercisesApi.vocabDeck(slug).catch(() => null)
+      if (deck) await addDeckToDailyReview(userId, deck)
+    }),
+  )
 }
 
 function studyWordFromDeckWord(word: VocabWord, deck: VocabDeck): StudyWord {
@@ -446,8 +616,53 @@ export async function recordReviewAnswer(
 
   const record = progress.studyWords[idx]
   const wasMastered = isWordMastered(record)
-  const nextCount = correct ? record.correctCount + 1 : record.correctCount
+  const isMaintenance = wasMastered && !isPermanentlyMastered(record) && isDueForMaintenanceReview(record)
   const now = new Date().toISOString()
+  const totalAttempts = (record.totalAttempts ?? record.correctCount) + 1
+
+  if (isMaintenance) {
+    if (correct) {
+      progress.studyWords[idx] = {
+        ...record,
+        permanentlyMastered: true,
+        lastReviewedAt: now,
+        totalAttempts,
+      }
+    } else {
+      progress.studyWords[idx] = {
+        ...record,
+        correctCount: 0,
+        masteredAt: undefined,
+        wantToLearn: true,
+        lastReviewedAt: now,
+        totalAttempts,
+      }
+    }
+
+    await saveProgress(userId, progress)
+    notifyHomeVocabPreviewChanged(userId)
+
+    void analyticsApi
+      .recordVocabWord({
+        term,
+        deckSlug: deckSlug ?? "general",
+        correct,
+        interactionType: needsTypedReview(record.correctCount) ? "typed" : "multiple_choice",
+      })
+      .catch(() => {})
+
+    scheduleLearnSync(userId)
+
+    return {
+      correctCount: progress.studyWords[idx].correctCount,
+      newlyMastered: false,
+      permanentlyRetired: correct,
+      maintenanceFailed: !correct,
+      word: progress.studyWords[idx],
+    }
+  }
+
+  const nextCount = correct ? record.correctCount + 1 : record.correctCount
   const newlyMastered = !wasMastered && nextCount >= CORRECT_TO_MASTER
 
   progress.studyWords[idx] = {
@@ -456,6 +671,7 @@ export async function recordReviewAnswer(
     masteredAt: newlyMastered ? now : record.masteredAt,
     learnedAt: newlyMastered ? now : record.learnedAt,
     lastReviewedAt: now,
+    totalAttempts,
   }
 
   await saveProgress(userId, progress)
@@ -466,7 +682,7 @@ export async function recordReviewAnswer(
       term,
       deckSlug: deckSlug ?? "general",
       correct,
-      interactionType: "multiple_choice",
+      interactionType: needsTypedReview(record.correctCount) ? "typed" : "multiple_choice",
     })
     .catch(() => {})
 
@@ -758,7 +974,12 @@ function shuffleStudyWords<T>(items: T[]): T[] {
 }
 
 function pendingReviewWords(progress: LearningProgress): StudyWord[] {
-  return progress.studyWords.filter((w) => w.wantToLearn && !isWordMastered(w))
+  return progress.studyWords.filter((w) => {
+    if (isPermanentlyMastered(w)) return false
+    if (w.wantToLearn && !isWordMastered(w)) return true
+    if (isDueForMaintenanceReview(w)) return true
+    return false
+  })
 }
 
 function dueReviewWords(progress: LearningProgress): StudyWord[] {
@@ -810,7 +1031,11 @@ export interface VocabularyReviewPreview {
 
 function hasReviewHistory(progress: LearningProgress): boolean {
   return progress.studyWords.some(
-    (w) => w.wantToLearn || w.correctCount > 0 || w.lastReviewedAt != null,
+    (w) =>
+      w.wantToLearn ||
+      w.correctCount > 0 ||
+      w.lastReviewedAt != null ||
+      isDueForMaintenanceReview(w),
   )
 }
 

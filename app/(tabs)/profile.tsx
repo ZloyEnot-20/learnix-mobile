@@ -595,15 +595,6 @@ export default function ProfileScreen() {
 
   const settingsItems: SettingsItem[] = [
     {
-      id: "debug",
-      label: "Debug",
-      icon: "bug-outline",
-      iconBg: "#F3E8FF",
-      iconColor: "#7C3AED",
-      value: "Book pages",
-      onPress: () => router.push("/demo" as never),
-    },
-    {
       id: "privacy",
       label: "Privacy Policy",
       icon: "shield-checkmark-outline",
@@ -761,52 +752,6 @@ export default function ProfileScreen() {
                 </View>
               </View>
             </View>
-
-            <Pressable
-              style={({ pressed }) => [styles.testCard, pressed && styles.testCardPressed]}
-              onPress={() => router.push("/live-lesson" as never)}
-            >
-              <View style={styles.testCardIcon}>
-                <Ionicons name="radio-outline" size={20} color={colors.primaryDark} />
-              </View>
-              <View style={styles.testCardBody}>
-                <Text style={styles.testCardTitle}>Live lesson</Text>
-                <Text style={styles.testCardSubtitle}>Join when your teacher starts class</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [styles.testCard, pressed && styles.testCardPressed]}
-              onPress={() => router.push("/ielts/listening" as never)}
-            >
-              <View style={styles.testCardIcon}>
-                <Ionicons name="headset-outline" size={20} color={colors.primaryDark} />
-              </View>
-              <View style={styles.testCardBody}>
-                <Text style={styles.testCardTitle}>Practice Listening</Text>
-                <Text style={styles.testCardSubtitle}>IELTS Listening practice tests</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
-
-            <Pressable
-              style={({ pressed }) => [
-                styles.testCard,
-                styles.testCardLast,
-                pressed && styles.testCardPressed,
-              ]}
-              onPress={() => router.push("/ielts/reading" as never)}
-            >
-              <View style={styles.testCardIcon}>
-                <Ionicons name="book-outline" size={20} color={colors.primaryDark} />
-              </View>
-              <View style={styles.testCardBody}>
-                <Text style={styles.testCardTitle}>Practice Reading</Text>
-                <Text style={styles.testCardSubtitle}>IELTS Reading practice tests</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
 
             <View style={styles.settingsCard}>
               {settingsItems.map((item, index) => (
@@ -979,30 +924,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   achievementLabelLocked: { color: colors.textMuted },
-  testCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 14,
-    marginBottom: spacing.sm,
-    ...shadow.card,
-  },
-  testCardPressed: { opacity: 0.94 },
-  testCardLast: { marginBottom: spacing.lg },
-  testCardIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.sm,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: colors.primaryLight,
-  },
-  testCardBody: { flex: 1, gap: 2 },
-  testCardTitle: { fontSize: 15, fontWeight: "700", color: colors.text },
-  testCardSubtitle: { fontSize: 12, color: colors.textSecondary },
   settingsCard: {
     backgroundColor: colors.card,
     borderRadius: radius.card,

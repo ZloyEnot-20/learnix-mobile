@@ -21,8 +21,11 @@ const MESSAGE_MAX = 50
 
 export function HomeworkReportIssueButton({
   report,
+  variant = "icon",
 }: {
   report: IssueReportPayload
+  /** icon = flag only (homework bar); badge = visible "Report issue" pill */
+  variant?: "icon" | "badge"
 }) {
   const [visible, setVisible] = useState(false)
   const [message, setMessage] = useState("")
@@ -66,19 +69,36 @@ export function HomeworkReportIssueButton({
   }, [message, report])
 
   const questionLabel =
-    report.questionIndex != null ? `Question ${report.questionIndex + 1}` : null
+    report.questionIndex != null
+      ? `Question ${report.questionIndex + 1}`
+      : report.exerciseId
+        ? `Exercise ${report.exerciseId}`
+        : null
 
   return (
     <>
-      <Pressable
-        onPress={open}
-        hitSlop={12}
-        style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
-        accessibilityRole="button"
-        accessibilityLabel="Report an issue"
-      >
-        <Ionicons name="flag-outline" size={22} color={colors.textMuted} />
-      </Pressable>
+      {variant === "badge" ? (
+        <Pressable
+          onPress={open}
+          hitSlop={8}
+          style={({ pressed }) => [styles.badgeBtn, pressed && styles.iconBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Report an issue"
+        >
+          <Ionicons name="flag-outline" size={14} color={colors.brand} />
+          <Text style={styles.badgeBtnText}>Report issue</Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={open}
+          hitSlop={12}
+          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Report an issue"
+        >
+          <Ionicons name="flag-outline" size={22} color={colors.textMuted} />
+        </Pressable>
+      )}
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={close}>
         <KeyboardAvoidingView
@@ -197,6 +217,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   iconBtnPressed: { opacity: 0.6 },
+  badgeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "#E8F6FF",
+    borderWidth: 1,
+    borderColor: "#B9E0F7",
+  },
+  badgeBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.brand,
+  },
   modalRoot: {
     flex: 1,
   },

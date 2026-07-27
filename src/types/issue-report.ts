@@ -4,12 +4,18 @@ export type IssueReportExerciseKind =
   | "podcast"
   | "speaking"
   | "listening"
+  | "reading"
+  | "book"
 
 export type IssueReportStatus = "open" | "resolved" | "dismissed"
 
 export interface IssueReportPayload {
   homeworkId?: string
   controlWorkId?: string
+  liveLessonId?: string
+  bookId?: string
+  unitNumber?: number
+  exerciseId?: string
   stepIndex?: number
   exerciseSlug: string
   exerciseTitle: string
@@ -26,6 +32,10 @@ export interface IssueReport {
   studentName: string
   homeworkId: string | null
   controlWorkId: string | null
+  liveLessonId: string | null
+  bookId: string | null
+  unitNumber: number | null
+  exerciseId: string | null
   stepIndex: number | null
   exerciseSlug: string
   exerciseTitle: string
@@ -59,5 +69,29 @@ export function grammarIssueReport(
     exerciseSlug: exercise.slug,
     exerciseTitle: exercise.title,
     exerciseKind: "grammar",
+  }
+}
+
+/** Cambridge / live-lesson book exercise report. */
+export function bookIssueReport(ctx: {
+  bookId: string
+  unitNumber: number
+  exerciseId: string
+  exerciseTitle?: string
+  questionPrompt?: string
+  liveLessonId?: string
+}): IssueReportPayload {
+  const title =
+    ctx.exerciseTitle?.trim() ||
+    `Unit ${ctx.unitNumber} · Exercise ${ctx.exerciseId}`
+  return {
+    bookId: ctx.bookId,
+    liveLessonId: ctx.liveLessonId,
+    unitNumber: ctx.unitNumber,
+    exerciseId: ctx.exerciseId,
+    exerciseSlug: `${ctx.bookId}:u${ctx.unitNumber}:${ctx.exerciseId}`,
+    exerciseTitle: title,
+    exerciseKind: "book",
+    questionPrompt: ctx.questionPrompt,
   }
 }

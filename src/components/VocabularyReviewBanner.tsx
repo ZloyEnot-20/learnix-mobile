@@ -22,7 +22,7 @@ export function VocabularyReviewBanner({ preview }: VocabularyReviewBannerProps)
   const subline = isReady
     ? "Daily review · 5 correct to master"
     : preview.status === "done_today"
-      ? "Come back tomorrow to review, or study and add new words in Learn."
+      ? "Come back tomorrow for more words, or study new vocabulary in Learn."
       : "Great work! Study new vocabulary in Learn to add more words."
 
   return (

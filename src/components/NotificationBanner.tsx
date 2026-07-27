@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   Animated,
-  Easing,
   PanResponder,
   StyleSheet,
   Text,
@@ -39,15 +38,6 @@ const BELL_WRAP_SIZE = NOTIFICATION_BELL_WRAP_SIZE
 const MAX_STACK_HEIGHT = NOTIFICATION_STACK_MIN_HEIGHT
 const FALLBACK_SECTION_HEIGHT = getNotificationBannerReservedHeight()
 const COLLAPSE_DURATION = 300
-const BELL_SHAKE_DURATION = 3000
-const BELL_SHAKE_CYCLE_MS = 140
-const BELL_FLY_MS = 380
-const BELL_BG_HIDE_MS = 140
-const BELL_BG_RESTORE_MS = 220
-const BELL_SHAKE_SCALE = 1.28
-const BANNER_REVEAL_DELAY_MS = 320
-const BELL_FLY_TOTAL_MS =
-  BELL_BG_HIDE_MS + BELL_FLY_MS * 2 + BELL_SHAKE_DURATION + BELL_BG_RESTORE_MS
 
 function cardWidthForScreen(screenWidth: number): number {
   return screenWidth - spacing.screen * 2
@@ -79,233 +69,19 @@ export function getNotificationBannerLayoutHeight(): number {
   return FALLBACK_SECTION_HEIGHT + NOTIFICATION_BANNER_BOTTOM_GAP
 }
 
-type BellPoint = { x: number; y: number }
-
-function NotificationBellIcon({ hidden }: { hidden?: boolean }) {
+function NotificationBellIcon() {
   return (
-    <View style={[styles.iconWrap, hidden && styles.iconHidden]}>
+    <View style={styles.iconWrap}>
       <View style={styles.iconBg} />
       <Ionicons name="notifications-outline" size={BELL_ICON_SIZE} color={colors.text} />
     </View>
   )
 }
 
-function FlyingBellAnimator({
-  active,
-  origin,
-  target,
-  onComplete,
-}: {
-  active: boolean
-  origin: BellPoint | null
-  target: BellPoint | null
-  onComplete?: () => void
-}) {
-  const flyX = useRef(new Animated.Value(0)).current
-  const flyY = useRef(new Animated.Value(0)).current
-  const rotation = useRef(new Animated.Value(0)).current
-  const bgOpacity = useRef(new Animated.Value(1)).current
-  const iconScale = useRef(new Animated.Value(1)).current
-  const flyAnimRef = useRef<Animated.CompositeAnimation | null>(null)
-  const shakeLoopRef = useRef<Animated.CompositeAnimation | null>(null)
-  const shakeStopRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const reset = useCallback(() => {
-    flyAnimRef.current?.stop()
-    flyAnimRef.current = null
-    shakeLoopRef.current?.stop()
-    shakeLoopRef.current = null
-    if (shakeStopRef.current) {
-      clearTimeout(shakeStopRef.current)
-      shakeStopRef.current = null
-    }
-    flyX.setValue(0)
-    flyY.setValue(0)
-    rotation.setValue(0)
-    bgOpacity.setValue(1)
-    iconScale.setValue(1)
-  }, [bgOpacity, flyX, flyY, iconScale, rotation])
-
-  useEffect(() => {
-    if (!active || !origin || !target) {
-      reset()
-      return
-    }
-
-    reset()
-
-    const deltaX = target.x - origin.x
-    const deltaY = target.y - origin.y
-
-    const wiggleCycle = Animated.sequence([
-      Animated.timing(rotation, {
-        toValue: 1,
-        duration: BELL_SHAKE_CYCLE_MS / 4,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rotation, {
-        toValue: -1,
-        duration: BELL_SHAKE_CYCLE_MS / 2,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rotation, {
-        toValue: 1,
-        duration: BELL_SHAKE_CYCLE_MS / 2,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rotation, {
-        toValue: 0,
-        duration: BELL_SHAKE_CYCLE_MS / 4,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      }),
-    ])
-
-    const hideBg = Animated.timing(bgOpacity, {
-      toValue: 0,
-      duration: BELL_BG_HIDE_MS,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    })
-
-    const flyOutMove = Animated.parallel([
-      Animated.timing(flyX, {
-        toValue: deltaX,
-        duration: BELL_FLY_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(flyY, {
-        toValue: deltaY,
-        duration: BELL_FLY_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(iconScale, {
-        toValue: BELL_SHAKE_SCALE,
-        duration: BELL_FLY_MS,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ])
-
-    const flyOut = Animated.sequence([hideBg, flyOutMove])
-
-    flyAnimRef.current = flyOut
-    flyOut.start(({ finished }) => {
-      flyAnimRef.current = null
-      if (!finished) return
-
-      const loop = Animated.loop(wiggleCycle)
-      shakeLoopRef.current = loop
-      loop.start()
-
-      shakeStopRef.current = setTimeout(() => {
-        shakeLoopRef.current?.stop()
-        shakeLoopRef.current = null
-
-        const flyBackMove = Animated.parallel([
-          Animated.timing(flyX, {
-            toValue: 0,
-            duration: BELL_FLY_MS,
-            easing: Easing.inOut(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(flyY, {
-            toValue: 0,
-            duration: BELL_FLY_MS,
-            easing: Easing.inOut(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(iconScale, {
-            toValue: 1,
-            duration: BELL_FLY_MS,
-            easing: Easing.inOut(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotation, {
-            toValue: 0,
-            duration: BELL_FLY_MS,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }),
-        ])
-
-        flyAnimRef.current = flyBackMove
-        flyBackMove.start(({ finished }) => {
-          flyAnimRef.current = null
-          if (!finished) return
-
-          const restoreBg = Animated.timing(bgOpacity, {
-            toValue: 1,
-            duration: BELL_BG_RESTORE_MS,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          })
-
-          flyAnimRef.current = restoreBg
-          restoreBg.start(({ finished: bgFinished }) => {
-            flyAnimRef.current = null
-            if (bgFinished) onComplete?.()
-          })
-        })
-        shakeStopRef.current = null
-      }, BELL_SHAKE_DURATION)
-    })
-
-    return reset
-  }, [active, bgOpacity, flyX, flyY, iconScale, onComplete, origin, reset, rotation, target])
-
-  const bellRotate = rotation.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: ["-14deg", "0deg", "14deg"],
-  })
-
-  if (!active || !origin || !target) {
-    return null
-  }
-
-  return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.iconWrap,
-        styles.flyingBell,
-        {
-          left: origin.x,
-          top: origin.y,
-          transform: [
-            { translateX: flyX },
-            { translateY: flyY },
-            { scale: iconScale },
-            { rotate: bellRotate },
-          ],
-        },
-      ]}
-    >
-      <Animated.View style={[styles.iconBg, { opacity: bgOpacity }]} />
-      <Ionicons name="notifications-outline" size={BELL_ICON_SIZE} color={colors.text} />
-    </Animated.View>
-  )
-}
-
-function NotificationCardContent({
-  item,
-  hideBell,
-  bellRef,
-}: {
-  item: NotificationItem
-  hideBell?: boolean
-  bellRef?: React.RefObject<View | null>
-}) {
+function NotificationCardContent({ item }: { item: NotificationItem }) {
   return (
     <View style={styles.headerRow}>
-      <View ref={bellRef} collapsable={false}>
-        <NotificationBellIcon hidden={hideBell} />
-      </View>
+      <NotificationBellIcon />
       <View style={styles.headerText}>
         <Text style={styles.headline} numberOfLines={1} ellipsizeMode="tail">
           {item.title}
@@ -329,8 +105,6 @@ function SwipeableStackCard({
   isTop,
   isExiting,
   dismissPromotesStack,
-  hideBell,
-  bellRef,
   screenWidth,
   onDismissStart,
   onDismissComplete,
@@ -341,8 +115,6 @@ function SwipeableStackCard({
   isTop: boolean
   isExiting?: boolean
   dismissPromotesStack: boolean
-  hideBell?: boolean
-  bellRef?: React.RefObject<View | null>
   screenWidth: number
   onDismissStart: () => void
   onDismissComplete: () => void
@@ -482,17 +254,15 @@ function SwipeableStackCard({
       pointerEvents={isExiting ? "none" : "auto"}
       {...(isTop ? panResponder.panHandlers : {})}
     >
-      <NotificationCardContent item={item} hideBell={isTop && hideBell} bellRef={isTop ? bellRef : undefined} />
+      <NotificationCardContent item={item} />
     </Animated.View>
   )
 }
 
 export function NotificationBanner({
-  isFocused = true,
   loading = false,
   onScrollLockChange,
 }: {
-  isFocused?: boolean
   loading?: boolean
   onScrollLockChange?: (locked: boolean) => void
 } = {}) {
@@ -501,32 +271,15 @@ export function NotificationBanner({
   const [loaded, setLoaded] = useState(false)
   const [rendered, setRendered] = useState(false)
   const [exitingIds, setExitingIds] = useState<Set<string>>(() => new Set())
-  const [shakeTopBell, setShakeTopBell] = useState(false)
-  const [bellFlyPoints, setBellFlyPoints] = useState<{
-    origin: BellPoint
-    target: BellPoint
-  } | null>(null)
 
   const sectionInnerRef = useRef<View>(null)
-  const cardBellRef = useRef<View>(null)
-  const titleBellTargetRef = useRef<View>(null)
   const sectionHeight = useRef(new Animated.Value(0)).current
   const sectionOpacity = useRef(new Animated.Value(1)).current
   const sectionMargin = useRef(new Animated.Value(NOTIFICATION_BANNER_BOTTOM_GAP)).current
   const measuredHeightRef = useRef(FALLBACK_SECTION_HEIGHT)
   const isCollapsing = useRef(false)
   const wasVisibleRef = useRef(false)
-  const unreadInitializedRef = useRef(false)
-  const prevUnreadIdsRef = useRef<Set<string>>(new Set())
-  const shakeDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const shakeResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingBellShakeRef = useRef(false)
-  const isFocusedRef = useRef(isFocused)
   const dismissStackSizeRef = useRef(0)
-
-  useEffect(() => {
-    isFocusedRef.current = isFocused
-  }, [isFocused])
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoaded(false)
@@ -563,150 +316,6 @@ export function NotificationBanner({
     () => visible.filter((n) => !exitingIds.has(n.id)),
     [exitingIds, visible],
   )
-
-  const clearShakeTimers = useCallback(() => {
-    if (shakeDelayRef.current) {
-      clearTimeout(shakeDelayRef.current)
-      shakeDelayRef.current = null
-    }
-    if (shakeResetRef.current) {
-      clearTimeout(shakeResetRef.current)
-      shakeResetRef.current = null
-    }
-  }, [])
-
-  const measureBellPositions = useCallback((): Promise<{
-    origin: BellPoint
-    target: BellPoint
-  } | null> => {
-    return new Promise((resolve) => {
-      const section = sectionInnerRef.current
-      const cardBell = cardBellRef.current
-      const titleTarget = titleBellTargetRef.current
-      if (!section || !cardBell || !titleTarget) {
-        resolve(null)
-        return
-      }
-
-      section.measureInWindow((sectionX, sectionY) => {
-        cardBell.measureInWindow((cardX, cardY, cardW, cardH) => {
-          titleTarget.measureInWindow((targetX, targetY, targetW, targetH) => {
-            resolve({
-              origin: {
-                x: cardX - sectionX + (cardW - BELL_WRAP_SIZE) / 2,
-                y: cardY - sectionY + (cardH - BELL_WRAP_SIZE) / 2,
-              },
-              target: {
-                x: targetX - sectionX + (targetW - BELL_WRAP_SIZE) / 2,
-                y: targetY - sectionY + (targetH - BELL_WRAP_SIZE) / 2,
-              },
-            })
-          })
-        })
-      })
-    })
-  }, [])
-
-  const handleBellFlyComplete = useCallback(() => {
-    if (shakeResetRef.current) {
-      clearTimeout(shakeResetRef.current)
-      shakeResetRef.current = null
-    }
-    setShakeTopBell(false)
-    setBellFlyPoints(null)
-  }, [])
-
-  const scheduleTopBellShake = useCallback(
-    (immediate = false) => {
-      if (!isFocused) {
-        pendingBellShakeRef.current = true
-        return
-      }
-
-      clearShakeTimers()
-      setShakeTopBell(false)
-      setBellFlyPoints(null)
-
-      const delay = immediate ? 0 : BANNER_REVEAL_DELAY_MS
-      shakeDelayRef.current = setTimeout(() => {
-        const startFly = () => {
-          if (!isFocusedRef.current) {
-            pendingBellShakeRef.current = true
-            return
-          }
-
-          void measureBellPositions().then((points) => {
-            if (!isFocusedRef.current) {
-              pendingBellShakeRef.current = true
-              return
-            }
-            if (points) setBellFlyPoints(points)
-            setShakeTopBell(true)
-            shakeResetRef.current = setTimeout(() => {
-              handleBellFlyComplete()
-            }, BELL_FLY_TOTAL_MS + 400)
-          })
-        }
-
-        requestAnimationFrame(() => startFly())
-        shakeDelayRef.current = null
-      }, delay)
-    },
-    [clearShakeTimers, handleBellFlyComplete, isFocused, measureBellPositions],
-  )
-
-  const cancelBellAnimation = useCallback(() => {
-    clearShakeTimers()
-    setShakeTopBell(false)
-    setBellFlyPoints(null)
-  }, [clearShakeTimers])
-
-  useEffect(() => {
-    if (isFocused) return
-    if (shakeTopBell) {
-      pendingBellShakeRef.current = true
-    }
-    cancelBellAnimation()
-  }, [cancelBellAnimation, isFocused, shakeTopBell])
-
-  useEffect(() => {
-    if (!isFocused || !loaded || visible.length === 0) return
-    if (!pendingBellShakeRef.current) return
-
-    pendingBellShakeRef.current = false
-    scheduleTopBellShake(true)
-  }, [isFocused, loaded, scheduleTopBellShake, visible.length])
-
-  useEffect(() => () => clearShakeTimers(), [clearShakeTimers])
-
-  useEffect(() => {
-    if (!loaded) return
-
-    const currentIds = new Set(unread.map((n) => n.id))
-
-    if (!unreadInitializedRef.current) {
-      unreadInitializedRef.current = true
-      prevUnreadIdsRef.current = currentIds
-      return
-    }
-
-    const hasNewUnread = unread.some((n) => !prevUnreadIdsRef.current.has(n.id))
-    if (hasNewUnread) {
-      if (isFocused) {
-        scheduleTopBellShake(prevUnreadIdsRef.current.size > 0)
-      } else {
-        pendingBellShakeRef.current = true
-      }
-    }
-
-    if (currentIds.size === 0) {
-      clearShakeTimers()
-      setShakeTopBell(false)
-      setBellFlyPoints(null)
-    }
-
-    prevUnreadIdsRef.current = currentIds
-  }, [clearShakeTimers, isFocused, loaded, scheduleTopBellShake, unread])
 
   const markRead = useCallback(async (item: NotificationItem) => {
     setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)))
@@ -846,14 +455,7 @@ export function NotificationBanner({
         >
           <View style={styles.sectionTitleRow}>
             <Text style={styles.sectionTitle}>Notifications</Text>
-            <View ref={titleBellTargetRef} collapsable={false} style={styles.titleBellTarget} />
           </View>
-          <FlyingBellAnimator
-            active={shakeTopBell}
-            origin={bellFlyPoints?.origin ?? null}
-            target={bellFlyPoints?.target ?? null}
-            onComplete={handleBellFlyComplete}
-          />
           <View style={styles.swipeStage}>
             <View style={[styles.stack, { height: MAX_STACK_HEIGHT }]}>
               {[...visible].reverse().map((item) => {
@@ -868,8 +470,6 @@ export function NotificationBanner({
                     isTop={isTop}
                     isExiting={isExiting}
                     dismissPromotesStack={stackItems.length > 1}
-                    hideBell={shakeTopBell}
-                    bellRef={cardBellRef}
                     screenWidth={screenWidth}
                     onDismissStart={() => handleDismissStart(item)}
                     onDismissComplete={() => handleDismissComplete(item)}
@@ -908,15 +508,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.text,
   },
-  titleBellTarget: {
-    width: BELL_WRAP_SIZE,
-    height: BELL_WRAP_SIZE,
-    marginLeft: 6,
-  },
-  flyingBell: {
-    position: "absolute",
-    zIndex: 30,
-  },
   swipeStage: {
     marginHorizontal: -spacing.screen,
     overflow: "hidden",
@@ -954,9 +545,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-  },
-  iconHidden: {
-    opacity: 0,
   },
   iconBg: {
     ...StyleSheet.absoluteFillObject,

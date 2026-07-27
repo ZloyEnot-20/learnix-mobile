@@ -29,6 +29,7 @@ import {
   resumeHomeworkSession,
 } from "../../../src/lib/homework-session-start"
 import { recordHomeworkVocabulary } from "../../../src/lib/record-activity"
+import { addDeckToDailyReview } from "../../../src/lib/learned-vocabulary"
 import {
   isHomeworkEntryFailed,
   useHomeworkEntryOnFocus,
@@ -175,6 +176,10 @@ export default function HomeworkVocabularyScreen() {
 
 
         setDeck(d ?? null)
+
+        if (d && isStudent && user?.id) {
+          void addDeckToDailyReview(user.id, d)
+        }
 
         if (hwData?.subject) setHomeworkSubject(hwData.subject)
 

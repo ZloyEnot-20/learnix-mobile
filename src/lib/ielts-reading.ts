@@ -57,18 +57,36 @@ export async function getIeltsReadingTest(id: string): Promise<IeltsReadingTest 
 }
 
 export function countReadingQuestions(test: IeltsReadingTest): number {
-  return test.parts.reduce((sum, part) => sum + part.questions.length, 0)
+  return test.parts.reduce((sum, part) => {
+    if (part.sections?.length) {
+      return (
+        sum +
+        part.sections.reduce((sectionSum, section) => sectionSum + section.questions.length, 0)
+      )
+    }
+    return sum + part.questions.length
+  }, 0)
 }
 
 export function flattenReadingQuestions(test: IeltsReadingTest) {
-  return test.parts.flatMap((part) =>
-    part.questions.map((q) => ({
+  return test.parts.flatMap((part) => {
+    if (part.sections?.length) {
+      return part.sections.flatMap((section) =>
+        section.questions.map((q) => ({
+          ...q,
+          partNumber: part.partNumber,
+          passageTitle: part.passageTitle,
+          questionInstruction: section.instruction || part.questionInstruction,
+        })),
+      )
+    }
+    return part.questions.map((q) => ({
       ...q,
       partNumber: part.partNumber,
       passageTitle: part.passageTitle,
       questionInstruction: part.questionInstruction,
-    })),
-  )
+    }))
+  })
 }
 
 const ROMAN_NUMERAL = /^(?:i{1,3}|iv|v|vi{0,3}|ix|x)$/i
@@ -235,15 +253,12 @@ export function scoreReadingTest(
   test: IeltsReadingTest,
   answers: Record<number, string>,
 ): { correct: number; total: number } {
+  const questions = flattenReadingQuestions(test)
   let correct = 0
-  let total = 0
-  for (const part of test.parts) {
-    for (const question of part.questions) {
-      total += 1
-      if (isReadingAnswerCorrect(question, answers[question.id] ?? "")) correct += 1
-    }
+  for (const question of questions) {
+    if (isReadingAnswerCorrect(question, answers[question.id] ?? "")) correct += 1
   }
-  return { correct, total }
+  return { correct, total: questions.length }
 }
 
 const READING_BAND_SCORE_TABLE = [
@@ -297,25 +312,23 @@ export function buildReadingMistakes(
 ): HomeworkMistake[] {
   const mistakes: HomeworkMistake[] = []
 
-  for (const part of test.parts) {
-    for (const question of part.questions) {
-      const userAnswer = answers[question.id] ?? ""
-      if (isReadingAnswerCorrect(question, userAnswer)) continue
+  for (const question of flattenReadingQuestions(test)) {
+    const userAnswer = answers[question.id] ?? ""
+    if (isReadingAnswerCorrect(question, userAnswer)) continue
 
-      const prompt =
-        resolveReadingQuestionPrompt(
-          question.question,
-          question.options,
-          part.questionInstruction,
-        ) || `Question ${question.id}`
+    const prompt =
+      resolveReadingQuestionPrompt(
+        question.question,
+        question.options,
+        question.questionInstruction,
+      ) || `Question ${question.id}`
 
-      mistakes.push({
-        questionId: question.id,
-        prompt,
-        userAnswer: userAnswer.trim() || "—",
-        correctAnswer: formatReadingCorrectAnswer(question),
-      })
-    }
+    mistakes.push({
+      questionId: question.id,
+      prompt,
+      userAnswer: userAnswer.trim() || "—",
+      correctAnswer: formatReadingCorrectAnswer(question),
+    })
   }
 
   return mistakes
@@ -326,11 +339,9 @@ export function buildReadingAnswers(
   answers: Record<number, string>,
 ): Array<{ questionId: number; userAnswer: string }> {
   const result: Array<{ questionId: number; userAnswer: string }> = []
-  for (const part of test.parts) {
-    for (const question of part.questions) {
-      const userAnswer = (answers[question.id] ?? "").trim()
-      if (userAnswer) result.push({ questionId: question.id, userAnswer })
-    }
+  for (const question of flattenReadingQuestions(test)) {
+    const userAnswer = (answers[question.id] ?? "").trim()
+    if (userAnswer) result.push({ questionId: question.id, userAnswer })
   }
   return result
 }

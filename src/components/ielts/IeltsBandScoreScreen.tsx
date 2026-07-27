@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { colors, radius, spacing, subjectColors } from "../../theme/tokens"
 
 type IeltsSkill = "listening" | "reading"
+type ScoreMode = "band" | "percentage"
 
 function bandFeedback(band: number): string {
   if (band >= 8) return "Outstanding — excellent command of the language."
@@ -14,10 +15,25 @@ function bandFeedback(band: number): string {
   return "Keep going — focused practice will raise your band."
 }
 
+function percentageFeedback(pct: number): string {
+  if (pct >= 90) return "Excellent work — almost everything correct."
+  if (pct >= 75) return "Great job — strong understanding of the text."
+  if (pct >= 60) return "Good effort — review the missed questions."
+  if (pct >= 40) return "Keep practising — focus on the key details."
+  return "Keep going — reread the passage and try again."
+}
+
 function bandTone(band: number): string {
   if (band >= 7) return colors.success
   if (band >= 5.5) return colors.primary
   if (band >= 4.5) return colors.warning
+  return colors.error
+}
+
+function percentageTone(pct: number): string {
+  if (pct >= 80) return colors.success
+  if (pct >= 60) return colors.primary
+  if (pct >= 40) return colors.warning
   return colors.error
 }
 
@@ -27,6 +43,8 @@ interface IeltsBandScoreScreenProps {
   band: number
   correct: number
   total: number
+  scoreMode?: ScoreMode
+  levelLabel?: string
   onViewResults: () => void
   onGoHome: () => void
 }
@@ -37,13 +55,16 @@ export function IeltsBandScoreScreen({
   band,
   correct,
   total,
+  scoreMode = "band",
+  levelLabel,
   onViewResults,
   onGoHome,
 }: IeltsBandScoreScreenProps) {
   const insets = useSafeAreaInsets()
   const accent = subjectColors[skill] ?? colors.primary
-  const tone = bandTone(band)
   const pct = total > 0 ? Math.round((correct / total) * 100) : 0
+  const showPercentage = scoreMode === "percentage"
+  const tone = showPercentage ? percentageTone(pct) : bandTone(band)
 
   const heroOpacity = useRef(new Animated.Value(0)).current
   const heroScale = useRef(new Animated.Value(0.82)).current
@@ -96,6 +117,11 @@ export function IeltsBandScoreScreen({
 
   const skillLabel = skill === "listening" ? "Listening" : "Reading"
   const icon = skill === "listening" ? "headset" : "book"
+  const chipLabel = showPercentage
+    ? levelLabel
+      ? `${levelLabel} ${skillLabel}`
+      : skillLabel
+    : `IELTS ${skillLabel}`
 
   return (
     <View
@@ -113,7 +139,7 @@ export function IeltsBandScoreScreen({
       <View style={styles.header}>
         <View style={[styles.skillChip, { backgroundColor: accent + "33" }]}>
           <Ionicons name={icon} size={14} color={colors.text} />
-          <Text style={styles.skillChipText}>IELTS {skillLabel}</Text>
+          <Text style={styles.skillChipText}>{chipLabel}</Text>
         </View>
         {title ? (
           <Text style={styles.testTitle} numberOfLines={2}>
@@ -134,8 +160,10 @@ export function IeltsBandScoreScreen({
         >
           <View style={[styles.ringOuter, { borderColor: accent + "55" }]}>
             <View style={[styles.ringInner, { borderColor: tone }]}>
-              <Text style={styles.bandLabel}>Band</Text>
-              <Text style={[styles.bandValue, { color: tone }]}>{band.toFixed(1)}</Text>
+              <Text style={styles.bandLabel}>{showPercentage ? "Score" : "Band"}</Text>
+              <Text style={[styles.bandValue, { color: tone }]}>
+                {showPercentage ? `${pct}%` : band.toFixed(1)}
+              </Text>
             </View>
           </View>
         </Animated.View>
@@ -151,9 +179,13 @@ export function IeltsBandScoreScreen({
         >
           <Text style={styles.completeTitle}>Test complete</Text>
           <Text style={styles.scoreLine}>
-            {correct}/{total} correct · {pct}%
+            {showPercentage
+              ? `${correct}/${total} correct`
+              : `${correct}/${total} correct · ${pct}%`}
           </Text>
-          <Text style={styles.feedback}>{bandFeedback(band)}</Text>
+          <Text style={styles.feedback}>
+            {showPercentage ? percentageFeedback(pct) : bandFeedback(band)}
+          </Text>
         </Animated.View>
       </View>
 

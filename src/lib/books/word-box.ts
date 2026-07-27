@@ -83,11 +83,33 @@ export function collectWordBoxItems(raw: BookExerciseRaw | Record<string, unknow
   add(asStringArray((raw as { words_a?: unknown }).words_a))
   add(asStringArray((raw as { words_b?: unknown }).words_b))
 
+  // lists: ["a","b"] or [{items:[...]}] — skip odd-one-out groups (kept for odd-one-out UI)
   const lists = (raw as { lists?: unknown }).lists
   if (Array.isArray(lists)) {
-    for (const row of lists) {
-      if (typeof row === "string") out.add(row)
-      else if (isRecord(row)) add(asStringArray(row.items ?? row.words ?? row.list))
+    const instruction = typeof raw.instruction === "string" ? raw.instruction : ""
+    const oddOneOut =
+      /odd\s*one\s*out|cross\s*out|which .+ (is )?different|does not belong/i.test(instruction) ||
+      lists.every(
+        (row) =>
+          isRecord(row) &&
+          Array.isArray(row.items) &&
+          row.items.length >= 3 &&
+          (row.answer != null ||
+            /odd\s*one\s*out|cross\s*out/i.test(instruction)),
+      )
+    if (!oddOneOut) {
+      for (const row of lists) {
+        if (typeof row === "string") out.add(row)
+        else if (isRecord(row)) {
+          if (typeof row.word === "string" && Array.isArray(row.options)) {
+            out.add(String(row.word))
+            add(asStringArray(row.options))
+            continue
+          }
+          if (Array.isArray(row.items) && row.answer != null) continue
+          add(asStringArray(row.items ?? row.words ?? row.list))
+        }
+      }
     }
   }
 

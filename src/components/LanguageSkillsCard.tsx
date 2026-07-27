@@ -174,13 +174,25 @@ export function LanguageSkillsCard({
           <View style={styles.headerText}>
             <Text style={styles.title}>Language skills</Text>
             <Text style={styles.subtitle}>
-              {hasAnyData ? "Based on your practice & homework" : "Complete lessons to unlock levels"}
+              {profile?.ieltsEstimation?.estimatedBand
+                ? `Estimated IELTS ${profile.ieltsEstimation.estimatedBand.toFixed(1)}`
+                : hasAnyData
+                  ? "Based on your practice & homework"
+                  : "Complete lessons to unlock levels"}
             </Text>
           </View>
         </View>
 
         <View style={styles.headerRight}>
-          {overallCefr ? <CefrBadge level={overallCefr} /> : null}
+          {profile?.ieltsEstimation?.estimatedBand != null ? (
+            <View style={[styles.cefrBadge, { backgroundColor: "#EEF2FF" }]}>
+              <Text style={[styles.cefrText, { color: "#4338CA" }]}>
+                {profile.ieltsEstimation.estimatedBand.toFixed(1)}
+              </Text>
+            </View>
+          ) : overallCefr ? (
+            <CefrBadge level={overallCefr} />
+          ) : null}
         </View>
       </View>
 

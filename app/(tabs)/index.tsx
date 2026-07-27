@@ -9,13 +9,11 @@ import {
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { useFocusEffect, useNavigation } from "expo-router"
-import { useIsFocused } from "@react-navigation/native"
 import { useAuth } from "../../src/context/AuthContext"
 import { GuestAuthBanner } from "../../src/components/GuestAuthBanner"
 import { isGuestUser } from "../../src/lib/guest"
 import { ContinueLearningBanner } from "../../src/components/ContinueLearningBanner"
 import { NextLessonBanner } from "../../src/components/NextLessonBanner"
-import { JoinLiveLessonBanner } from "../../src/components/live-lesson/JoinLiveLessonBanner"
 import { NotificationsBell } from "../../src/components/NotificationsBell"
 import { NotificationBanner } from "../../src/components/NotificationBanner"
 import { IeltsMockTestBanner } from "../../src/components/IeltsMockTestBanner"
@@ -43,7 +41,6 @@ import {
   setHomeScreenSnapshot,
   type HomeScreenSnapshot,
 } from "../../src/lib/home-screen-cache"
-import { requestLiveLessonRefresh } from "../../src/lib/live-lesson-refresh"
 import { requestNotificationsRefresh } from "../../src/lib/notifications-refresh"
 import { runPerfTrace } from "../../src/lib/perf"
 import { useLessonCountdown } from "../../src/hooks/useLessonCountdown"
@@ -172,7 +169,6 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(!initialSnapshot)
   const [refreshing, setRefreshing] = useState(false)
   const [notificationScrollLocked, setNotificationScrollLocked] = useState(false)
-  const isHomeFocused = useIsFocused()
 
   const applySnapshot = useCallback((snap: HomeScreenSnapshot) => {
     setResults(snap.results)
@@ -243,7 +239,6 @@ export default function HomeScreen() {
     setRefreshing(true)
     try {
       requestNotificationsRefresh()
-      requestLiveLessonRefresh()
       await load()
     } finally {
       setRefreshing(false)
@@ -379,15 +374,8 @@ export default function HomeScreen() {
         />
       </FadeInDown>
 
-      {!guest ? (
-        <FadeInDown index={2}>
-          <JoinLiveLessonBanner />
-        </FadeInDown>
-      ) : null}
-
-      <FadeInDown index={guest ? 2 : 3} style={styles.notificationBannerWrap}>
+      <FadeInDown index={2} style={styles.notificationBannerWrap}>
         <NotificationBanner
-          isFocused={isHomeFocused}
           loading={loading}
           onScrollLockChange={setNotificationScrollLocked}
         />

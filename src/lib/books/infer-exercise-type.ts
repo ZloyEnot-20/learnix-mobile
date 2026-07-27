@@ -2,6 +2,7 @@ import type { BookExerciseRaw, BookExerciseUiType } from "./types"
 import { BOOK_EXERCISE_UI_LABELS } from "./types"
 import { collectWordBoxItems, isCueWordBox } from "./word-box"
 import { isListeningTableShape } from "./listening-table"
+import { isOddOneOutLists } from "./match-shapes"
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
@@ -80,6 +81,8 @@ export function inferExerciseUiType(raw: BookExerciseRaw): BookExerciseUiType {
   }
 
   if (hasMatchingPairs(raw)) return "matching-pairs"
+
+  if (isOddOneOutLists(raw)) return "odd-one-out"
 
   if (typeof raw.summary === "string") return "summary-completion"
   if (typeof raw.text === "string" && Array.isArray(raw.words)) return "gap-fill-passage"

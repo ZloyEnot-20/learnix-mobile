@@ -6,6 +6,11 @@ import { parseNumberedGaps } from "../lib/books/gap-text"
 import { requiresTypedWordForms } from "../lib/books/word-form-exercise"
 import { collectWordBoxItems, isCueWordBox } from "../lib/books/word-box"
 import { parseListeningTable, countTableGaps } from "../lib/books/listening-table"
+import { flattenNotes, notesTitle } from "../lib/books/notes-outline"
+import { getOddOneOutGroups } from "../lib/books/match-shapes"
+import { bookIssueReport } from "../types/issue-report"
+import { HomeworkReportIssueButton } from "../components/homework/HomeworkReportIssue"
+import { DEMO_BOOK_ID } from "./book-id"
 import {
   ChoiceChip,
   InlineBlankText,
@@ -234,6 +239,10 @@ type BookExerciseRendererProps = {
   unitSteps?: LessonStep[]
   answers?: Record<string, unknown>
   onChange?: (payload: unknown) => void
+  bookId?: string
+  liveLessonId?: string
+  /** Show Report issue badge (default true). */
+  showReportIssue?: boolean
 }
 
 function VocabChecklist({
@@ -934,13 +943,19 @@ function ListeningNotes({
   onChange?: (payload: unknown) => void
   answerKey?: unknown
 }) {
-  const notes = isRecord(raw.notes) ? raw.notes : {}
-  const body = asStringArray(notes.body)
-  const answersLen = asStringArray(raw.answers).length || asStringArray(answerKey).length
-  const joined = body.join("\n")
+  const title = notesTitle(raw.notes)
+  const lines = flattenNotes(raw.notes)
+  const blankAnswers = Array.isArray(raw.blanks)
+    ? raw.blanks.filter(isRecord).map((b) => (b.answer != null ? String(b.answer) : ""))
+    : []
+  const answersLen =
+    asStringArray(raw.answers).length ||
+    asStringArray(answerKey).length ||
+    blankAnswers.filter(Boolean).length ||
+    lines.reduce((n, line) => n + (line.text.match(/_{2,}/g)?.length ?? 0), 0)
+  const joined = lines.map((l) => l.text).join("\n")
   const expected = Math.max(answersLen, 1)
-  const exNum =
-    step.exerciseId === "test_practice" ? undefined : step.exerciseId
+  const exNum = step.exerciseId === "test_practice" ? undefined : step.exerciseId
 
   return (
     <Section>
@@ -951,11 +966,27 @@ function ListeningNotes({
         {stepInstruction(step)}
       </Instruction>
       {typeof raw.test_tip === "string" ? <TipBox title="Test tip">{raw.test_tip}</TipBox> : null}
-      {typeof notes.title === "string" ? (
-        <Text style={[styles.notesTitle, { marginBottom: 8 }]}>{notes.title}</Text>
+      {typeof raw.passage === "string" && raw.passage.trim() ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Passage</Text>
+          <Text style={styles.body}>{raw.passage}</Text>
+        </View>
       ) : null}
+      {title ? <Text style={[styles.notesTitle, { marginBottom: 8 }]}>{title}</Text> : null}
       {joined.trim() ? (
         <View style={styles.notesFrame}>
+          {lines.map((line, i) => {
+            const prev = lines[i - 1]
+            return (
+              <View key={i} style={{ marginBottom: 6 }}>
+                {line.heading && line.heading !== prev?.heading ? (
+                  <Text style={[styles.hint, { fontWeight: "700", marginBottom: 2 }]}>
+                    {line.heading}
+                  </Text>
+                ) : null}
+              </View>
+            )
+          })}
           <InlineGapPassage
             text={joined}
             step={step}
@@ -964,8 +995,20 @@ function ListeningNotes({
           />
         </View>
       ) : (
-        <Text style={styles.muted}>Complete the notes while listening.</Text>
+        <Text style={styles.muted}>Complete the notes while listening / reading.</Text>
       )}
+      {blankAnswers.filter(Boolean).length ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Answers</Text>
+          {blankAnswers.map((a, i) =>
+            a ? (
+              <Text key={i} style={styles.body}>
+                {i + 1}. {a}
+              </Text>
+            ) : null,
+          )}
+        </View>
+      ) : null}
     </Section>
   )
 }
@@ -1286,6 +1329,44 @@ function ShortAnswerExercise({
   )
 }
 
+function OddOneOutExercise({
+  raw,
+  step,
+  onChange,
+  groups,
+}: {
+  raw: BookExerciseRaw
+  step: LessonStep
+  onChange?: (payload: unknown) => void
+  groups: ReturnType<typeof getOddOneOutGroups>
+}) {
+  const key = exerciseKey(step)
+  const [values, setValues] = useState<string[]>(() => groups.map((g) => g.answer ?? ""))
+  useEffect(() => setValues(groups.map((g) => g.answer ?? "")), [key, groups.length])
+
+  return (
+    <Section>
+      <Instruction exNum={step.exerciseId}>{stepInstruction(step)}</Instruction>
+      {groups.map((g, i) => (
+        <View key={i} style={styles.card}>
+          <Text style={styles.cardTitle}>List {i + 1}</Text>
+          <WordBank words={g.items} title="Words" />
+          <TextBlank
+            value={values[i] ?? ""}
+            onChangeText={(t) => {
+              const next = [...values]
+              next[i] = t
+              setValues(next)
+              emitChange(onChange, { kind: "list", values: next })
+            }}
+            placeholder="Odd one out + reason…"
+          />
+        </View>
+      ))}
+    </Section>
+  )
+}
+
 function MatchingPairsExercise({
   raw,
   step,
@@ -1370,16 +1451,22 @@ function ListeningTableExercise({
 }) {
   const key = exerciseKey(step)
   const model = parseListeningTable(raw)
+  const blankRows = Array.isArray(raw.blanks) ? raw.blanks.filter(isRecord) : []
   const gapCount = model
-    ? Math.max(countTableGaps(model), Array.isArray(raw.blanks) ? raw.blanks.length : 0)
-    : Array.isArray(raw.blanks)
-      ? raw.blanks.length
-      : 7
-  const labels = Array.from({ length: Math.max(gapCount, 1) }, (_, i) => ({
-    label: `${i + 1}.`,
-  }))
-  const [values, setValues] = useState<string[]>(() => labels.map(() => ""))
-  useEffect(() => setValues(labels.map(() => "")), [key, labels.length])
+    ? Math.max(countTableGaps(model), blankRows.length)
+    : blankRows.length || 7
+  const labels = Array.from({ length: Math.max(gapCount, 1) }, (_, i) => {
+    const b = blankRows[i]
+    const n = b?.number != null ? String(b.number) : String(i + 1)
+    const ans = b?.answer != null ? String(b.answer) : ""
+    return { label: ans ? `${n}. (${ans})` : `${n}.` }
+  })
+  const [values, setValues] = useState<string[]>(() =>
+    blankRows.map((b) => (b.answer != null ? String(b.answer) : "")),
+  )
+  useEffect(() => {
+    setValues(blankRows.map((b) => (b.answer != null ? String(b.answer) : "")))
+  }, [key, blankRows.length])
 
   const titleCase = (s: string) =>
     s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -1748,6 +1835,13 @@ function renderExercise(
     case "listening-table":
       return <ListeningTableExercise raw={raw} step={step} onChange={onChange} />
 
+    case "odd-one-out": {
+      const groups = getOddOneOutGroups(raw)
+      return (
+        <OddOneOutExercise raw={raw} step={step} onChange={onChange} groups={groups} />
+      )
+    }
+
     case "passage-read":
       return <PassageReadExercise raw={raw} step={step} onChange={onChange} />
 
@@ -1793,14 +1887,33 @@ export function BookExerciseRenderer({
   unitSteps,
   answers,
   onChange,
+  bookId = DEMO_BOOK_ID,
+  liveLessonId,
+  showReportIssue = true,
 }: BookExerciseRendererProps) {
   if (shouldSkipExercise(step)) return null
 
   const body = renderExercise(step, unitSteps, onChange, answers ?? step.answers)
   if (!body) return null
 
+  const report = showReportIssue
+    ? bookIssueReport({
+        bookId,
+        unitNumber: step.unitNumber,
+        exerciseId: step.exerciseId,
+        exerciseTitle: `${step.sectionLabel} · ${step.exerciseId}`,
+        questionPrompt: step.instruction,
+        liveLessonId,
+      })
+    : null
+
   return (
     <View style={{ gap: 4, marginBottom: 10 }}>
+      {report ? (
+        <View style={{ flexDirection: "row", justifyContent: "flex-end", marginBottom: 2 }}>
+          <HomeworkReportIssueButton report={report} variant="badge" />
+        </View>
+      ) : null}
       {body}
       {typeof step.raw.test_tip === "string" &&
       step.uiType !== "reading-tfng" &&

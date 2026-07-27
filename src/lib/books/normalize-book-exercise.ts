@@ -1,5 +1,10 @@
 import type { BookExerciseRaw } from "./types"
 import { collectWordBoxItems, isCueWordBox } from "./word-box"
+import {
+  expandSemanticMatches,
+  isOddOneOutLists,
+  matchesToParaphrases,
+} from "./match-shapes"
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
@@ -53,7 +58,6 @@ export function normalizeBookExercise(raw: BookExerciseRaw, answers?: unknown): 
   if (out.audio != null && out.audio_track == null) {
     out.audio_track = out.audio
   }
-  // Drop broken OCR markers so UI never shows "D??"
   for (const key of ["audio_track", "audio"] as const) {
     const v = out[key]
     if (v == null) continue
@@ -74,9 +78,11 @@ export function normalizeBookExercise(raw: BookExerciseRaw, answers?: unknown): 
     out.adjectives = out.adverbs
   }
 
-  const box = collectWordBoxItems(out)
-  if (box.length > 0 && asStringArray(out.words).length === 0) {
-    out.words = box
+  if (!isOddOneOutLists(out)) {
+    const box = collectWordBoxItems(out)
+    if (box.length > 0 && asStringArray(out.words).length === 0) {
+      out.words = box
+    }
   }
   if (asStringArray(out.phrases).length > 0 && asStringArray(out.words).length === 0) {
     out.words = asStringArray(out.phrases)
@@ -117,16 +123,45 @@ export function normalizeBookExercise(raw: BookExerciseRaw, answers?: unknown): 
     }
   }
 
-  if (Array.isArray(out.matches) && out.matches.length > 0 && !Array.isArray(out.paraphrases)) {
-    out.paraphrases = out.matches.map((m) => {
-      if (!isRecord(m)) return { original: String(m) }
-      return {
-        original: String(m.word ?? m.left ?? m.term ?? m.begin ?? ""),
-        paraphrase: String(
-          m.definition ?? m.match ?? m.right ?? m.meaning ?? m.end ?? "",
-        ),
+  if (
+    Array.isArray(out.matches) &&
+    out.matches.length > 0 &&
+    (!Array.isArray(out.left) || out.left.length === 0) &&
+    (!Array.isArray(out.beginnings) || out.beginnings.length === 0)
+  ) {
+    const semantic = expandSemanticMatches(out.matches, answers)
+    if (semantic) {
+      out.left = semantic.left
+      out.right = semantic.right
+      out.beginnings = semantic.left
+      out.endings = semantic.right
+    } else if (!Array.isArray(out.paraphrases)) {
+      const paras = matchesToParaphrases(out.matches)
+      if (paras && paras.some((p) => String(p.original ?? "").trim())) {
+        out.paraphrases = paras
+      } else {
+        out.paraphrases = out.matches.map((m) => {
+          if (!isRecord(m)) return { original: String(m) }
+          return {
+            original: String(m.word ?? m.left ?? m.term ?? m.begin ?? ""),
+            paraphrase: String(
+              m.definition ?? m.match ?? m.right ?? m.meaning ?? m.end ?? m.answer ?? "",
+            ),
+          }
+        })
+        if (
+          Array.isArray(out.paraphrases) &&
+          out.paraphrases.every(
+            (p) =>
+              isRecord(p) &&
+              !String(p.original ?? "").trim() &&
+              !String(p.paraphrase ?? "").trim(),
+          )
+        ) {
+          delete out.paraphrases
+        }
       }
-    })
+    }
   }
 
   if (
@@ -140,6 +175,29 @@ export function normalizeBookExercise(raw: BookExerciseRaw, answers?: unknown): 
     out.right = right
     out.beginnings = left
     out.endings = right
+  }
+
+  if (
+    Array.isArray(out.ideas) &&
+    out.ideas.every((x) => typeof x === "string") &&
+    (!Array.isArray(out.right) || out.right.length === 0) &&
+    (!Array.isArray(out.endings) || out.endings.length === 0)
+  ) {
+    out.right = asStringArray(out.ideas).map((text) => {
+      const m = text.match(/^([A-E])\.\s*(.*)$/i)
+      return m ? { letter: m[1].toUpperCase(), text: m[2] } : { text }
+    })
+    out.endings = out.right
+    if ((!Array.isArray(out.left) || out.left.length === 0) && isRecord(answers)) {
+      const nums = Object.keys(answers)
+        .map(Number)
+        .filter((n) => !Number.isNaN(n))
+        .sort((a, b) => a - b)
+      if (nums.length) {
+        out.left = nums.map((n) => ({ number: n, text: `Idea ${n}` }))
+        out.beginnings = out.left
+      }
+    }
   }
 
   if (

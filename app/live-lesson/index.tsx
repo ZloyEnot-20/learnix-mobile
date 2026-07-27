@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native"
+import {
+  Alert,
+  Animated,
+  Easing,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { router, useFocusEffect } from "expo-router"
@@ -8,15 +17,112 @@ import { isGuestUser } from "../../src/lib/guest"
 import { getUserFacingErrorMessage } from "../../src/lib/api-client"
 import { liveLessonsApi } from "../../src/lib/live-lesson-api"
 import { flattenUnitToSteps } from "../../src/lib/books/lesson-flow"
+import { buildLiveReviewItems } from "../../src/lib/books/live-review-items"
 import type { LessonStep, LiveLessonState } from "../../src/lib/books/types"
 import { useLiveLessonSocket } from "../../src/hooks/useLiveLessonSocket"
 import { LiveExerciseView } from "../../src/components/live-lesson/LiveExerciseView"
-import { LiveExerciseReview } from "../../src/components/live-lesson/LiveExerciseReview"
 import { LiveLessonFinishedScreen } from "../../src/components/live-lesson/LiveLessonFinishedScreen"
 import { LiveLessonRoomSkeleton } from "../../src/components/live-lesson/LiveLessonSkeletons"
+import { PageCard, SectionBanner, UnitHeader } from "../../src/demo/BookPageChrome"
 import { colors, radius, spacing, typography } from "../../src/theme/tokens"
 
 const POLL_MS = 3000
+
+function LessonStartingState() {
+  const pulse = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: 1100,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    )
+    loop.start()
+    return () => loop.stop()
+  }, [pulse])
+
+  const ringScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] })
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.32, 0.08] })
+  const cardY = pulse.interpolate({ inputRange: [0, 1], outputRange: [0, -6] })
+
+  return (
+    <View style={styles.waiting}>
+      <View style={styles.lessonStartHero}>
+        <Animated.View
+          style={[styles.lessonStartRing, { opacity: ringOpacity, transform: [{ scale: ringScale }] }]}
+        />
+        <Animated.View style={[styles.lessonStartCard, { transform: [{ translateY: cardY }] }]}>
+          <Ionicons name="school-outline" size={34} color={colors.primaryDark} />
+        </Animated.View>
+      </View>
+      <Text style={styles.waitingTitle}>Teacher started the lesson</Text>
+      <Text style={styles.waitingSub}>
+        Stay here. The unit is being prepared and the exercise will appear in a moment.
+      </Text>
+    </View>
+  )
+}
+
+function NoActiveLessonsState() {
+  return (
+    <View style={styles.waiting}>
+      <View style={styles.emptyStateHero}>
+        <View style={styles.emptyStateIcon}>
+          <Ionicons name="calendar-clear-outline" size={34} color={colors.textMuted} />
+        </View>
+      </View>
+      <Text style={styles.waitingTitle}>No active lessons</Text>
+      <Text style={styles.waitingSub}>
+        When your teacher starts a live lesson for your group, it will appear here automatically.
+      </Text>
+    </View>
+  )
+}
+
+type PageMeta = {
+  page: number
+  label: string
+  exercise_ids: string[]
+}
+
+const SKIP_INSTRUCTION_RE =
+  /mind\s*map|photograph|pie\s*chart|look at the (graph|picture|pictures|chart|diagram)|look at pictures/i
+
+function shouldSkipExercise(step: LessonStep): boolean {
+  const raw = step.raw
+  if (raw.has_image === true || raw.has_graph === true) return true
+  if (step.uiType === "image-prompt" || step.uiType === "graph-task") return true
+  const type = String(raw.type ?? "").toLowerCase()
+  if (type === "crossword" || type === "diagram_labels" || type === "graph_vocabulary") return true
+  const text = `${typeof raw.instruction === "string" ? raw.instruction : ""} ${typeof raw.title === "string" ? raw.title : ""}`
+  return SKIP_INSTRUCTION_RE.test(text)
+}
+
+function stepsForPage(page: PageMeta, allSteps: LessonStep[]): LessonStep[] {
+  const ids = new Set(page.exercise_ids.map(String))
+  const matched = allSteps.filter(
+    (s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s),
+  )
+  return page.exercise_ids
+    .map((id) => matched.find((s) => String(s.exerciseId) === String(id)))
+    .filter((s): s is LessonStep => Boolean(s))
+}
+
+function sectionTitleFor(page: PageMeta, pageSteps: LessonStep[]): string | undefined {
+  const head = page.label.split("·")[0]?.trim()
+  return head || pageSteps[0]?.sectionLabel || undefined
+}
 
 /**
  * Student live lesson room.
@@ -30,6 +136,10 @@ export default function LiveLessonScreen() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [unitLoading, setUnitLoading] = useState(false)
+  const [unitTitle, setUnitTitle] = useState("")
+  const [unitSubtitle, setUnitSubtitle] = useState<string | undefined>()
+  const [pages, setPages] = useState<PageMeta[]>([])
   const [localProgress, setLocalProgress] = useState(0)
   const [idle, setIdle] = useState(false)
   const [exerciseAnswers, setExerciseAnswers] = useState<Record<string, unknown> | null>(null)
@@ -152,16 +262,51 @@ export default function LiveLessonScreen() {
   useEffect(() => {
     if (!live?.bookId || live.currentUnit == null) {
       setSteps([])
+      setPages([])
+      setUnitTitle("")
+      setUnitSubtitle(undefined)
       return
     }
     let cancelled = false
     ;(async () => {
+      setUnitLoading(true)
       try {
-        const { unit, answer_key } = await liveLessonsApi.getUnit(live.bookId, live.currentUnit!)
+        const [bookMeta, unitPayload] = await Promise.all([
+          liveLessonsApi.getBook(live.bookId),
+          liveLessonsApi.getUnit(live.bookId, live.currentUnit!),
+        ])
+        const { unit, answer_key } = unitPayload
         const flow = flattenUnitToSteps(unit, answer_key ?? undefined)
-        if (!cancelled) setSteps(flow)
+        const unitMeta = (bookMeta.units ?? []).find(
+          (item) => Number(item.unit_number) === Number(live.currentUnit),
+        )
+        const pageList = (
+          unitMeta?.pages?.length
+            ? unitMeta.pages
+            : (bookMeta.pages ?? []).filter((p) => Number(p.unit) === Number(live.currentUnit))
+        ).map((p) => ({
+          page: p.page,
+          label: p.label,
+          exercise_ids: p.exercise_ids ?? [],
+        }))
+        const resolvedPages =
+          pageList.length > 0
+            ? pageList
+            : flow.map((s) => ({
+                page: s.order + 1,
+                label: `${s.sectionLabel} · ${s.exerciseId}`,
+                exercise_ids: [s.exerciseId],
+              }))
+        if (!cancelled) {
+          setSteps(flow)
+          setPages(resolvedPages)
+          setUnitTitle(unitMeta?.title || `Unit ${live.currentUnit}`)
+          setUnitSubtitle(unitMeta?.subtitle ?? undefined)
+        }
       } catch (e) {
         if (!cancelled) setError(getUserFacingErrorMessage(e, "Failed to load exercise"))
+      } finally {
+        if (!cancelled) setUnitLoading(false)
       }
     })()
     return () => {
@@ -181,10 +326,22 @@ export default function LiveLessonScreen() {
     onError: (msg) => setError(msg),
   })
 
-  const currentStep = steps.find((s) => s.exerciseId === live?.currentExercise) ?? null
+  const currentStep =
+    steps.find(
+      (s) =>
+        s.exerciseId === live?.currentExercise &&
+        Number(s.unitNumber) === Number(live?.currentUnit),
+    ) ?? null
+  const currentExerciseLabel =
+    currentStep != null ? `${currentStep.unitNumber}.${currentStep.exerciseId}` : null
+  const review = live?.lastExerciseReview
   const me = live?.students?.find((s) => s.studentId === user?.id)
   const open = Boolean(live?.openForStudents && live.lessonStatus === "active")
   const isDone = me?.status === "done" || localProgress >= 100
+  const visiblePages = pages.filter((p) => {
+    const ids = new Set(p.exercise_ids.map(String))
+    return steps.some((s) => ids.has(String(s.exerciseId)) && !shouldSkipExercise(s))
+  })
 
   const handleAnswersChange = useCallback((answers: Record<string, unknown>) => {
     setExerciseAnswers(answers)
@@ -260,13 +417,9 @@ export default function LiveLessonScreen() {
     : "Your group"
 
   const headerTitle =
-    live && live.openForStudents && live.currentExercise
-      ? `Open · Unit ${live.currentUnit} · Ex ${live.currentExercise}`
-      : live && live.lastExerciseReview
-        ? `Review · Unit ${live.lastExerciseReview.unitNumber} · Ex ${live.lastExerciseReview.exerciseId}`
-        : "Live lesson"
-
-  const review = live?.lastExerciseReview
+    live?.currentUnit != null
+      ? unitTitle || `Unit ${live.currentUnit}`
+      : "Live lesson"
 
   return (
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
@@ -292,77 +445,104 @@ export default function LiveLessonScreen() {
       ) : null}
 
       {idle || !live ? (
-        <View style={styles.waiting}>
-          <View style={styles.idleIcon}>
-            <Ionicons name="school-outline" size={32} color={colors.primaryDark} />
-          </View>
-          <Text style={styles.waitingTitle}>No live lesson yet</Text>
-          <Text style={styles.waitingSub}>
-            When your teacher starts a lesson for your group, it will appear here automatically.
-          </Text>
-          <Pressable style={styles.primaryBtn} onPress={() => void joinActive()}>
-            <Text style={styles.primaryBtnText}>Check again</Text>
-          </Pressable>
-        </View>
-      ) : open && currentStep ? (
+        <NoActiveLessonsState />
+      ) : live?.currentUnit != null ? (
         <View style={styles.room}>
           <View style={styles.exercise}>
-            <LiveExerciseView
-              key={`${live.currentExercise}-${live.currentUnit}`}
-              step={currentStep}
-              unitSteps={steps}
-              locked={isDone}
-              onAnswersChange={handleAnswersChange}
-            />
-          </View>
-          <View style={styles.actions}>
-            {isDone ? (
-              <View style={styles.completedBanner}>
-                <Ionicons name="checkmark-circle" size={20} color="#047857" />
-                <Text style={styles.completedText}>Completed — answers locked</Text>
-              </View>
+            {unitLoading ? (
+              <LiveLessonRoomSkeleton />
             ) : (
+              <ScrollView
+                contentContainerStyle={styles.previewScroll}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {visiblePages.length === 0 ? (
+                  <PageCard>
+                    <Text style={styles.waitingSub}>No exercises mapped to this unit yet.</Text>
+                  </PageCard>
+                ) : (
+                  visiblePages.map((page, i) => {
+                    const pageSteps = stepsForPage(page, steps)
+                    const banner = sectionTitleFor(page, pageSteps)
+                    return (
+                      <PageCard key={`${page.page}-${page.label}`} pageNum={page.page}>
+                        {i === 0 ? (
+                          <UnitHeader
+                            unit={live.currentUnit ?? undefined}
+                            title={unitTitle || `Unit ${live.currentUnit}`}
+                            subtitle={unitSubtitle}
+                          />
+                        ) : null}
+                        {banner ? <SectionBanner title={banner} /> : null}
+                        {pageSteps.map((step) => {
+                          const isCurrentExercise =
+                            open &&
+                            step.exerciseId === live.currentExercise &&
+                            Number(step.unitNumber) === Number(live.currentUnit)
+                          const isCompletedCurrent = isCurrentExercise && isDone
+                          const isReviewStep =
+                            review != null &&
+                            step.exerciseId === review.exerciseId &&
+                            Number(step.unitNumber) === Number(review.unitNumber)
+                          const reviewItems =
+                            isReviewStep
+                              ? buildLiveReviewItems(me, review.answerKey)
+                              : isCompletedCurrent && me?.scoreDetail
+                                ? buildLiveReviewItems(me, undefined)
+                                : undefined
+                          return (
+                            <LiveExerciseView
+                              key={step.id}
+                              step={step}
+                              unitSteps={steps}
+                              embedded
+                              locked={!isCurrentExercise || isDone}
+                              active={isCurrentExercise && !isDone}
+                              liveLessonId={live.id}
+                              bookId={live.bookId}
+                              reviewItems={reviewItems}
+                              resultMode={isReviewStep ? "full" : isCompletedCurrent ? "compact" : undefined}
+                              onAnswersChange={
+                                isCurrentExercise && !isDone ? handleAnswersChange : undefined
+                              }
+                              showReportIssue={false}
+                            />
+                          )
+                        })}
+                      </PageCard>
+                    )
+                  })
+                )}
+              </ScrollView>
+            )}
+          </View>
+          {open && currentStep && !isDone ? (
+            <View style={styles.actions}>
               <Pressable
                 style={[styles.primaryBtn, submitting && styles.btnDisabled]}
                 disabled={submitting}
                 onPress={confirmComplete}
               >
                 <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                <Text style={styles.primaryBtnText}>{submitting ? "Saving…" : "Complete"}</Text>
+                <Text style={styles.primaryBtnText}>
+                  {submitting
+                    ? "Saving…"
+                    : currentExerciseLabel
+                      ? `Complete ${currentExerciseLabel}`
+                      : "Complete"}
+                </Text>
               </Pressable>
-            )}
-          </View>
-        </View>
-      ) : review ? (
-        <View style={styles.room}>
-          <LiveExerciseReview
-            unitNumber={review.unitNumber}
-            exerciseId={review.exerciseId}
-            answerKey={review.answerKey}
-            me={me}
-          />
+            </View>
+          ) : null}
         </View>
       ) : !open ? (
-        <View style={styles.waiting}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.waitingTitle}>Waiting for teacher</Text>
-          <Text style={styles.waitingSub}>
-            You are in the lesson. Stay here — the teacher will open an exercise soon.
-          </Text>
-          {me ? (
-            <Text style={styles.waitingMeta}>
-              You are {me.status} · {me.progress}%
-              {me.score != null ? ` · score ${me.score}` : ""}
-            </Text>
-          ) : null}
-          {live.currentExercise ? (
-            <Text style={styles.waitingMeta}>Current exercise: {live.currentExercise}</Text>
-          ) : null}
+        <View style={styles.waitingWrap}>
+          <LessonStartingState />
         </View>
       ) : (
-        <View style={styles.waiting}>
-          <Text style={styles.waitingSub}>Exercise content is loading…</Text>
-          <ActivityIndicator color={colors.primary} />
+        <View style={styles.waitingWrap}>
+          <LessonStartingState />
         </View>
       )}
     </SafeAreaView>
@@ -397,6 +577,13 @@ const styles = StyleSheet.create({
     padding: spacing.screen,
     gap: spacing.sm,
   },
+  waitingWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.screen,
+    gap: spacing.md,
+  },
   idleIcon: {
     width: 64,
     height: 64,
@@ -408,9 +595,51 @@ const styles = StyleSheet.create({
   },
   waitingTitle: { ...typography.h3, color: colors.text, marginTop: spacing.md, textAlign: "center" },
   waitingSub: { ...typography.bodySm, color: colors.textSecondary, textAlign: "center" },
-  waitingMeta: { ...typography.caption, color: colors.textMuted, marginTop: spacing.xs },
+  lessonStartHero: {
+    width: 132,
+    height: 132,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: spacing.sm,
+  },
+  lessonStartRing: {
+    position: "absolute",
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    backgroundColor: colors.primary,
+  },
+  lessonStartCard: {
+    width: 84,
+    height: 84,
+    borderRadius: 28,
+    backgroundColor: colors.primaryLight,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyStateHero: {
+    marginBottom: spacing.sm,
+  },
+  emptyStateIcon: {
+    width: 84,
+    height: 84,
+    borderRadius: 28,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   room: { flex: 1 },
-  exercise: { flex: 1, paddingHorizontal: spacing.screen, paddingTop: spacing.md },
+  exercise: { flex: 1 },
+  previewScroll: {
+    paddingHorizontal: spacing.screen,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    gap: spacing.md,
+  },
   actions: {
     paddingHorizontal: spacing.screen,
     paddingBottom: spacing.md,
@@ -433,16 +662,4 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { ...typography.label, color: "#fff", fontWeight: "700" },
   btnDisabled: { opacity: 0.6 },
-  completedBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    backgroundColor: "#ECFDF5",
-    borderRadius: radius.button,
-    paddingVertical: 14,
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
-  },
-  completedText: { ...typography.label, color: "#047857", fontWeight: "700" },
 })
