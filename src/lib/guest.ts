@@ -12,8 +12,16 @@ export function isStudentUser(user: AuthUser | null | undefined): boolean {
   return user?.type === "student"
 }
 
+export function isTeacherUser(user: AuthUser | null | undefined): boolean {
+  return user?.type === "teacher" || user?.type === "admin" || user?.type === "super_admin"
+}
+
 export function isAppUser(user: AuthUser | null | undefined): boolean {
   return isStudentUser(user) || isGuestUser(user)
+}
+
+export function isMobileUser(user: AuthUser | null | undefined): boolean {
+  return isAppUser(user) || isTeacherUser(user)
 }
 
 export function filterGuestLevels<T extends { key: string }>(levels: T[]): T[] {

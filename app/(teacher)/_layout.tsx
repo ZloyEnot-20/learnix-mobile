@@ -1,20 +1,11 @@
 import { Tabs, Redirect } from "expo-router"
-import { View, StyleSheet } from "react-native"
+import { StyleSheet } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
-import { isAppUser, isGuestUser, isTeacherUser } from "../../src/lib/guest"
-import { NotificationsBell } from "../../src/components/NotificationsBell"
+import { isTeacherUser } from "../../src/lib/guest"
 import { TabShellSkeleton } from "../../src/components/skeletons/Layouts"
-import { colors, spacing } from "../../src/theme/tokens"
-
-function HeaderRight() {
-  return (
-    <View style={styles.headerRight}>
-      <NotificationsBell />
-    </View>
-  )
-}
+import { colors } from "../../src/theme/tokens"
 
 type TabIcon = keyof typeof Ionicons.glyphMap
 
@@ -26,10 +17,9 @@ function tabIcon(outline: TabIcon, filled: TabIcon) {
 
 const TAB_BAR_LIFT = 6
 
-export default function TabsLayout() {
+export default function TeacherTabsLayout() {
   const { user, isLoading } = useAuth()
   const insets = useSafeAreaInsets()
-  const guest = isGuestUser(user)
   const tabBarPaddingBottom = Math.max(insets.bottom, 8) + TAB_BAR_LIFT
   const tabBarHeight = 48 + tabBarPaddingBottom
 
@@ -37,15 +27,7 @@ export default function TabsLayout() {
     return <TabShellSkeleton />
   }
 
-  if (!user) {
-    return <Redirect href="/login" />
-  }
-
-  if (isTeacherUser(user)) {
-    return <Redirect href={"/(teacher)" as never} />
-  }
-
-  if (!isAppUser(user)) {
+  if (!user || !isTeacherUser(user)) {
     return <Redirect href="/login" />
   }
 
@@ -69,7 +51,6 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: colors.background },
         headerTitle: () => null,
         headerShadowVisible: false,
-        headerRight: guest ? undefined : () => <HeaderRight />,
       }}
     >
       <Tabs.Screen
@@ -80,24 +61,17 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="courses"
+        options={{
+          title: "Courses",
+          tabBarIcon: tabIcon("people-outline", "people"),
+        }}
+      />
+      <Tabs.Screen
         name="homework"
         options={{
           title: "Homework",
           tabBarIcon: tabIcon("clipboard-outline", "clipboard"),
-        }}
-      />
-      <Tabs.Screen
-        name="games"
-        options={{
-          title: "Learn",
-          tabBarIcon: tabIcon("book-outline", "book"),
-        }}
-      />
-      <Tabs.Screen
-        name="leaderboard"
-        options={{
-          title: "Top",
-          tabBarIcon: tabIcon("trophy-outline", "trophy"),
         }}
       />
       <Tabs.Screen
@@ -110,7 +84,3 @@ export default function TabsLayout() {
     </Tabs>
   )
 }
-
-const styles = StyleSheet.create({
-  headerRight: { marginRight: spacing.screen },
-})

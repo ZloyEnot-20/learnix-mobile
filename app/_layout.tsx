@@ -34,6 +34,8 @@ function AppShell() {
           <Stack.Screen name="login" />
           <Stack.Screen name="signup" />
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="(teacher)" />
+          <Stack.Screen name="teacher" />
           <Stack.Screen name="homework" options={{ gestureEnabled: false }} />
           <Stack.Screen name="exercise/[topic]/[slug]" />
           <Stack.Screen name="vocabulary/[deck]" />

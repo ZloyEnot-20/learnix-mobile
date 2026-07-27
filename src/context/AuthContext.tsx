@@ -27,7 +27,7 @@ interface AuthContextValue {
   user: AuthUser | null
   isLoading: boolean
   isGuest: boolean
-  login: (login: string, password: string) => Promise<void>
+  login: (login: string, password: string) => Promise<AuthUser>
   loginAsGuest: () => Promise<void>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
@@ -87,10 +87,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearProfileScreenSnapshot()
     await clearLastActivity()
     await setGuestMode(false)
-    await runPerfTrace("user_login", async () => {
+    return runPerfTrace("user_login", async () => {
       const res = await authApi.login(loginStr, password)
       await setTokens(res.accessToken, res.refreshToken)
       setUser(res.user)
+      return res.user
     })
   }, [])
 

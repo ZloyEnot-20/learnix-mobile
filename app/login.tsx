@@ -11,7 +11,7 @@ import {
 import { Redirect, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useAuth } from "../src/context/AuthContext"
-import { isAppUser, isStudentUser } from "../src/lib/guest"
+import { isStudentUser, isTeacherUser } from "../src/lib/guest"
 import { ApiError, getUserFacingErrorMessage } from "../src/lib/api-client"
 import { FadeInDown } from "../src/components/ui/FadeInDown"
 import { Spinner } from "../src/components/ui/Spinner"
@@ -37,6 +37,10 @@ export default function LoginScreen() {
     )
   }
 
+  if (isTeacherUser(user)) {
+    return <Redirect href={"/(teacher)" as never} />
+  }
+
   if (isStudentUser(user)) {
     return <Redirect href="/(tabs)" />
   }
@@ -45,8 +49,12 @@ export default function LoginScreen() {
     setError("")
     setSubmitting(true)
     try {
-      await login(loginStr.trim(), password)
-      router.replace("/(tabs)")
+      const loggedInUser = await login(loginStr.trim(), password)
+      if (isTeacherUser(loggedInUser)) {
+        router.replace("/(teacher)" as never)
+      } else {
+        router.replace("/(tabs)")
+      }
     } catch (e) {
       const message =
         e instanceof ApiError && e.status === 401

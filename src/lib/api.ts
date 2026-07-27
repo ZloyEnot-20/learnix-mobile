@@ -23,6 +23,15 @@ import type {
   ViolationReason,
   ViolationResponse,
 } from "../types/domain"
+import type {
+  AttendanceRecord,
+  CreateHomeworkInput,
+  Group,
+  HomeworkCheckResponse,
+  HomeworkDetailsResponse,
+  LessonSession,
+  StaffStudent,
+} from "../types/staff"
 import type { GrammarExercise, GrammarExerciseSummary, ExerciseMeta } from "../types/grammar"
 import type { StudentLevel, LeaderboardEntry } from "../types/gamification"
 import type { StudentLanguageProfile } from "../types/language-profile"
@@ -77,7 +86,30 @@ const TTL = {
   testResults: 60_000,
   submissionActive: 30_000,
   submissionDone: 300_000,
+  groups: 60_000,
+  studentsList: 60_000,
+  lessons: 45_000,
+  homeworkStaff: 45_000,
 } as const
+
+function invalidateStaffHomeworkCaches(homeworkId?: string): void {
+  invalidateKey(cacheKey("GET", "/homework"))
+  invalidateKey(cacheKey("GET", "/homework/check"))
+  if (homeworkId) {
+    invalidateKey(cacheKey("GET", `/homework/${homeworkId}`))
+    invalidateKey(cacheKey("GET", `/homework/${homeworkId}/details`))
+  } else {
+    invalidatePrefix(cacheKey("GET", "/homework/"))
+  }
+}
+
+function invalidateLessonsCaches(groupId?: string): void {
+  if (groupId) {
+    invalidatePrefix(cacheKey("GET", `/lessons?groupId=${groupId}`))
+  } else {
+    invalidatePrefix(cacheKey("GET", "/lessons?"))
+  }
+}
 
 function submissionCacheTtl(sub: { status: string }): number {
   return sub.status === "submitted" || sub.status === "graded"
@@ -123,6 +155,15 @@ export const authApi = {
 }
 
 export const studentsApi = {
+  list: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/students")
+    return cachedFetch(
+      key,
+      TTL.studentsList,
+      () => api.get<StaffStudent[]>("/students"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
   level: (id: string, opts?: { force?: boolean }) => {
     const key = cacheKey("GET", `/students/${id}/level`)
     return cachedFetch(
@@ -167,6 +208,70 @@ export const debugApi = {
 }
 
 export const homeworkApi = {
+  list: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/homework")
+    return cachedFetch(
+      key,
+      TTL.homeworkStaff,
+      () => api.get<HomeworkAssignment[]>("/homework"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  check: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/homework/check")
+    return cachedFetch(
+      key,
+      TTL.homeworkStaff,
+      () => api.get<HomeworkCheckResponse>("/homework/check"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  create: async (input: CreateHomeworkInput) => {
+    const hw = await api.post<HomeworkAssignment>("/homework", input)
+    invalidateStaffHomeworkCaches()
+    return hw
+  },
+  details: (id: string, opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", `/homework/${id}/details`)
+    return cachedFetch(
+      key,
+      TTL.homeworkStaff,
+      () => api.get<HomeworkDetailsResponse>(`/homework/${id}/details`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  submissions: (params?: { homeworkId?: string; studentId?: string }, opts?: { force?: boolean }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(params ?? {}).filter(([, v]) => v != null && v !== ""),
+      ) as Record<string, string>,
+    ).toString()
+    const path = `/homework/submissions${qs ? `?${qs}` : ""}`
+    const key = cacheKey("GET", path)
+    return cachedFetch(
+      key,
+      TTL.homeworkStaff,
+      () => api.get<HomeworkSubmission[]>(path),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  grade: async (
+    submissionId: string,
+    patch: Partial<HomeworkSubmission> & {
+      recordingGrades?: Array<{
+        questionId: number
+        score?: number
+        feedback?: string
+      }>
+    },
+  ) => {
+    const sub = await api.patch<HomeworkSubmission>(
+      `/homework/submissions/${submissionId}`,
+      patch,
+    )
+    invalidateStaffHomeworkCaches(sub.homeworkId)
+    return sub
+  },
   mine: (opts?: { force?: boolean }) => {
     const key = cacheKey("GET", "/homework/mine")
     return cachedFetch(
@@ -251,6 +356,79 @@ export const homeworkApi = {
     })
     invalidateHomeworkCaches(homeworkId)
     return res
+  },
+}
+
+export const groupsApi = {
+  list: (opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", "/groups")
+    return cachedFetch(
+      key,
+      TTL.groups,
+      () => api.get<Group[]>("/groups"),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  get: (id: string, opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", `/groups/${id}`)
+    return cachedFetch(
+      key,
+      TTL.groups,
+      () => api.get<Group>(`/groups/${id}`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+}
+
+export const lessonsApi = {
+  list: (params: { groupId: string; month?: string }, opts?: { force?: boolean }) => {
+    const qs = new URLSearchParams(
+      Object.fromEntries(
+        Object.entries(params).filter(([, v]) => v != null && v !== ""),
+      ) as Record<string, string>,
+    ).toString()
+    const path = `/lessons?${qs}`
+    const key = cacheKey("GET", path)
+    return cachedFetch(
+      key,
+      TTL.lessons,
+      () => api.get<LessonSession[]>(path),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  get: (id: string, opts?: { force?: boolean }) => {
+    const key = cacheKey("GET", `/lessons/${id}`)
+    return cachedFetch(
+      key,
+      TTL.lessons,
+      () => api.get<LessonSession>(`/lessons/${id}`),
+      { staleWhileRevalidate: true, force: opts?.force },
+    )
+  },
+  create: async (input: {
+    groupId: string
+    date: string
+    topic?: string
+    notes?: string
+  }) => {
+    const lesson = await api.post<LessonSession>("/lessons", input)
+    invalidateLessonsCaches(input.groupId)
+    return lesson
+  },
+  update: async (
+    id: string,
+    patch: {
+      topic?: string
+      notes?: string
+      canceled?: boolean
+      cancelReason?: string
+      attendance?: AttendanceRecord[]
+    },
+  ) => {
+    const lesson = await api.patch<LessonSession>(`/lessons/${id}`, patch)
+    invalidateLessonsCaches(lesson.groupId)
+    invalidateKey(cacheKey("GET", `/lessons/${id}`))
+    return lesson
   },
 }
 

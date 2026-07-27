@@ -1,6 +1,6 @@
 import { Redirect } from "expo-router"
 import { useAuth } from "../src/context/AuthContext"
-import { isAppUser } from "../src/lib/guest"
+import { isAppUser, isMobileUser, isTeacherUser } from "../src/lib/guest"
 import { AppSplashScreen } from "../src/components/AppSplashScreen"
 
 export default function Index() {
@@ -10,6 +10,8 @@ export default function Index() {
     return <AppSplashScreen />
   }
 
-  if (!isAppUser(user)) return <Redirect href="/login" />
-  return <Redirect href="/(tabs)" />
+  if (!isMobileUser(user)) return <Redirect href="/login" />
+  if (isTeacherUser(user)) return <Redirect href={"/(teacher)" as never} />
+  if (isAppUser(user)) return <Redirect href="/(tabs)" />
+  return <Redirect href="/login" />
 }
