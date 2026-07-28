@@ -7,6 +7,7 @@ export interface Group {
   name: string
   description?: string
   teacherId?: string
+  teacherName?: string | null
   studentIds: string[]
   monthlyFee?: number
   /** JS weekday indices: 0 = Sun … 6 = Sat */

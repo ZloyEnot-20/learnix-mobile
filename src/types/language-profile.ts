@@ -37,4 +37,10 @@ export interface StudentLanguageProfile {
   lastComputedAt?: string
 }
 
-export type LanguageSkillKey = "grammar" | "vocabulary" | "reading" | "writing" | "speaking"
+export type LanguageSkillKey =
+  | "grammar"
+  | "vocabulary"
+  | "reading"
+  | "listening"
+  | "writing"
+  | "speaking"

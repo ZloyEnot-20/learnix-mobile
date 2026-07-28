@@ -4,6 +4,9 @@ import { Ionicons } from "@expo/vector-icons"
 import { colors, radius, spacing, typography } from "../../theme/tokens"
 import { teacherShadow } from "../../theme/teacher-tokens"
 
+/** Shared size so group cards can stay slightly larger. */
+export const SERVICE_CARD_SIZE = 96
+
 export type TeacherServiceItem = {
   id: string
   label: string
@@ -22,7 +25,12 @@ export function TeacherServiceGrid({ title = "Services", items }: TeacherService
   return (
     <View style={styles.wrap}>
       <Text style={styles.title}>{title}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.scroll}
+        contentContainerStyle={styles.row}
+      >
         {items.map((item) => (
           <Pressable
             key={item.id}
@@ -30,7 +38,7 @@ export function TeacherServiceGrid({ title = "Services", items }: TeacherService
             style={({ pressed }) => [styles.tile, teacherShadow.tile, pressed && styles.pressed]}
           >
             <View style={[styles.iconBox, { backgroundColor: item.bg }]}>
-              <Ionicons name={item.icon} size={24} color={item.color} />
+              <Ionicons name={item.icon} size={26} color={item.color} />
             </View>
             <Text style={styles.tileLabel} numberOfLines={2}>
               {item.label}
@@ -45,21 +53,27 @@ export function TeacherServiceGrid({ title = "Services", items }: TeacherService
 const styles = StyleSheet.create({
   wrap: { marginBottom: spacing.lg },
   title: { ...typography.label, color: colors.text, marginBottom: spacing.sm },
-  row: { gap: spacing.sm, paddingRight: spacing.screen },
+  scroll: { marginHorizontal: -spacing.screen },
+  row: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.screen,
+  },
   tile: {
-    width: 88,
+    width: SERVICE_CARD_SIZE,
+    height: SERVICE_CARD_SIZE,
     backgroundColor: colors.card,
     borderRadius: radius.card,
     padding: spacing.sm,
     alignItems: "center",
+    justifyContent: "center",
   },
   iconBox: {
-    width: 52,
-    height: 52,
+    width: 48,
+    height: 48,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
   },
   tileLabel: {
     ...typography.caption,

@@ -9,6 +9,14 @@ import {
 import { useFocusEffect, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { FadeInDown } from "../../src/components/ui/FadeInDown"
+import {
+  GROUP_CARD_PALETTES,
+  TeacherHomeGroupCards,
+} from "../../src/components/teacher/TeacherHomeGroupCards"
+import {
+  TeacherGroupInfoModal,
+  type TeacherGroupInfo,
+} from "../../src/components/teacher/TeacherGroupInfoModal"
 import { TeacherHomeSkeleton } from "../../src/components/teacher/TeacherSkeletons"
 import { TeacherServiceGrid } from "../../src/components/teacher/TeacherServiceGrid"
 import { TeacherStatCard } from "../../src/components/teacher/TeacherStatCard"
@@ -23,13 +31,16 @@ import {
 } from "../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../src/lib/api-client"
 import { fetchTeacherLessons } from "../../src/lib/teacher-data"
+import { computeGroupLessonProgress, computeGroupProgress } from "../../src/lib/teacher-homework-matrix"
 import {
+  formatGroupSchedule,
   lessonsOnDate,
   todayIsoDate,
   upcomingLessons,
   type LessonWithGroup,
 } from "../../src/lib/teacher-lessons"
-import { groupMemberCount } from "../../src/types/staff"
+import type { HomeworkAssignment, HomeworkSubmission } from "../../src/types/domain"
+import { groupMemberCount, type Group, type StaffStudent } from "../../src/types/staff"
 import { colors, radius, shadow, spacing, typography } from "../../src/theme/tokens"
 import { teacherColors } from "../../src/theme/teacher-tokens"
 
@@ -65,44 +76,77 @@ export default function TeacherHomeScreen() {
   const [selectedDate, setSelectedDate] = useState(today)
   const [allLessons, setAllLessons] = useState<LessonWithGroup[]>([])
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
-  const [groupCount, setGroupCount] = useState(0)
-  const [studentCount, setStudentCount] = useState(0)
+  const [groups, setGroups] = useState<Group[]>([])
+  const [students, setStudents] = useState<StaffStudent[]>([])
+  const [assignments, setAssignments] = useState<HomeworkAssignment[]>([])
+  const [submissions, setSubmissions] = useState<HomeworkSubmission[]>([])
   const [reviewCount, setReviewCount] = useState(0)
+  const [selectedGroup, setSelectedGroup] = useState<TeacherGroupInfo | null>(null)
 
-  const load = useCallback(
-    async (force = false) => {
-      setError("")
-      try {
-        const [{ lessons }, notifs, groups, students, check] = await Promise.all([
-          fetchTeacherLessons(undefined, { force }),
-          notificationsApi.list({ force }).catch(() => [] as NotificationItem[]),
-          groupsApi.list({ force }),
-          studentsApi.list({ force }),
-          homeworkApi.check({ force }).catch(() => ({ assignments: [], records: [] })),
-        ])
-        setAllLessons(lessons)
-        setNotifications(notifs.slice(0, 4))
-        setGroupCount(groups.length)
-        const activeStudents = students.filter((s) => !s.deletedAt)
-        setStudentCount(
-          groups.reduce((sum, g) => sum + groupMemberCount(activeStudents, g.id), 0),
-        )
-        const submitted = check.records.filter((r) => r.status === "submitted").length
-        setReviewCount(submitted)
-      } catch (e) {
-        setError(getUserFacingErrorMessage(e, "Could not load teacher home."))
-      } finally {
-        setLoading(false)
-        setRefreshing(false)
-      }
-    },
-    [],
-  )
+  const load = useCallback(async (force = false) => {
+    setError("")
+    try {
+      const [{ lessons }, notifs, groupList, studentList, check] = await Promise.all([
+        fetchTeacherLessons(undefined, { force }),
+        notificationsApi.list({ force }).catch(() => [] as NotificationItem[]),
+        groupsApi.list({ force }),
+        studentsApi.list({ force }),
+        homeworkApi.check({ force }).catch(() => ({ assignments: [], records: [] })),
+      ])
+      setAllLessons(lessons)
+      setNotifications(notifs.slice(0, 4))
+      setGroups(groupList.sort((a, b) => a.name.localeCompare(b.name)))
+      setStudents(studentList)
+      setAssignments(check.assignments)
+      setSubmissions(check.records)
+      setReviewCount(check.records.filter((r) => r.status === "submitted").length)
+    } catch (e) {
+      setError(getUserFacingErrorMessage(e, "Could not load teacher home."))
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [])
 
   useFocusEffect(
     useCallback(() => {
       void load()
     }, [load]),
+  )
+
+  const studentCount = useMemo(
+    () => groups.reduce((sum, g) => sum + groupMemberCount(students, g.id), 0),
+    [groups, students],
+  )
+
+  const groupCards = useMemo<TeacherGroupInfo[]>(
+    () =>
+      groups.map((group, index) => {
+        const progress = computeGroupProgress(group.id, students, assignments, submissions)
+        const lessonProgress = computeGroupLessonProgress(
+          group.id,
+          students,
+          assignments,
+          submissions,
+        )
+        const palette = GROUP_CARD_PALETTES[index % GROUP_CARD_PALETTES.length]
+        return {
+          id: group.id,
+          name: group.name,
+          description: group.description,
+          schedule: formatGroupSchedule(group),
+          teacherName: group.teacherName ?? null,
+          studentCount: progress.studentCount,
+          averagePercent: progress.averagePercent,
+          incompletePercent: progress.incompletePercent,
+          highestTopic: progress.highestTopic,
+          lowestTopic: progress.lowestTopic,
+          lessonProgress,
+          accentBg: palette.bg,
+          accentColor: palette.color,
+        }
+      }),
+    [groups, students, assignments, submissions],
   )
 
   const lessonsByDate = useMemo(() => {
@@ -124,6 +168,8 @@ export default function TeacherHomeScreen() {
   const openAttendance = (lesson: LessonWithGroup) => {
     router.push(`/teacher/courses/${lesson.groupId}/attendance?date=${lesson.date}` as never)
   }
+
+  const closeGroupModal = () => setSelectedGroup(null)
 
   if (loading) {
     return <TeacherHomeSkeleton />
@@ -167,7 +213,7 @@ export default function TeacherHomeScreen() {
           <View style={styles.statsRow}>
             <TeacherStatCard
               label="Groups"
-              value={String(groupCount)}
+              value={String(groups.length)}
               icon="people"
               iconBg={teacherColors.blueBg}
               iconColor={teacherColors.blue}
@@ -230,8 +276,13 @@ export default function TeacherHomeScreen() {
           />
         </FadeInDown>
 
+        <FadeInDown index={2}>
+          <Text style={styles.sectionTitle}>My groups</Text>
+          <TeacherHomeGroupCards groups={groupCards} onPress={setSelectedGroup} />
+        </FadeInDown>
+
         <FadeInDown index={3}>
-          <Text style={styles.sectionTitle}>Schedule</Text>
+          <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Schedule</Text>
           <TimetableDayStrip
             dates={weekDates}
             selected={selectedDate}
@@ -293,6 +344,20 @@ export default function TeacherHomeScreen() {
           </FadeInDown>
         ) : null}
       </ScrollView>
+
+      <TeacherGroupInfoModal
+        visible={selectedGroup != null}
+        group={selectedGroup}
+        onClose={closeGroupModal}
+        onOpenGroup={(groupId) => {
+          closeGroupModal()
+          router.push(`/teacher/courses/${groupId}` as never)
+        }}
+        onAssignHomework={(groupId) => {
+          closeGroupModal()
+          router.push(`/teacher/homework/assign?groupId=${groupId}` as never)
+        }}
+      />
     </View>
   )
 }

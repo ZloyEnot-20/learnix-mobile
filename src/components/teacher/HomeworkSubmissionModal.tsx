@@ -54,6 +54,33 @@ function DetailRow({
   )
 }
 
+function isAudioAnswer(value: string): boolean {
+  return /^https?:\/\//i.test(value)
+}
+
+/** Normalize mistake fields for display (legacy error-correction stored the sentence in `prompt`). */
+function mistakeDisplay(m: {
+  questionId: number
+  prompt: string
+  userAnswer: string
+  correctAnswer: string
+  explanation?: string
+  transcription?: string
+}) {
+  const legacySentence = m.userAnswer === "See sentence"
+  const rawUser = legacySentence ? m.prompt : m.userAnswer
+  const userAnswer = isAudioAnswer(rawUser)
+    ? m.transcription?.trim() || "Audio recording"
+    : rawUser || "—"
+  const prompt = legacySentence ? "" : m.prompt
+  return {
+    prompt,
+    userAnswer,
+    correctAnswer: m.correctAnswer || "—",
+    explanation: m.explanation,
+  }
+}
+
 export function HomeworkSubmissionModal({
   visible,
   onClose,
@@ -162,20 +189,35 @@ export function HomeworkSubmissionModal({
           {mistakes.length > 0 ? (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Mistakes · {mistakes.length}</Text>
-              {mistakes.map((m, i) => (
-                <View key={`${m.questionId}-${i}`} style={styles.mistakeItem}>
-                  <View style={styles.mistakeIndex}>
-                    <Text style={styles.mistakeIndexText}>{i + 1}</Text>
+              {mistakes.map((m, i) => {
+                const display = mistakeDisplay(m)
+                return (
+                  <View key={`${m.questionId}-${i}`} style={styles.mistakeItem}>
+                    <View style={styles.mistakeIndex}>
+                      <Text style={styles.mistakeIndexText}>{i + 1}</Text>
+                    </View>
+                    <View style={styles.mistakeBody}>
+                      {display.prompt ? (
+                        <Text style={styles.mistakePrompt} numberOfLines={3}>
+                          Q{m.questionId}. {display.prompt}
+                        </Text>
+                      ) : (
+                        <Text style={styles.mistakePrompt}>Q{m.questionId}</Text>
+                      )}
+                      <Text style={styles.mistakeWrong}>
+                        Answer: <Text style={styles.mistakeWrongValue}>{display.userAnswer}</Text>
+                      </Text>
+                      <Text style={styles.mistakeRight}>
+                        Correct:{" "}
+                        <Text style={styles.mistakeRightValue}>{display.correctAnswer}</Text>
+                      </Text>
+                      {display.explanation ? (
+                        <Text style={styles.mistakeExpl}>{display.explanation}</Text>
+                      ) : null}
+                    </View>
                   </View>
-                  <View style={styles.mistakeBody}>
-                    <Text style={styles.mistakePrompt}>{m.prompt}</Text>
-                    <Text style={styles.mistakeAnswer} numberOfLines={2}>
-                      {m.userAnswer || "—"}
-                      {m.correctAnswer ? ` → ${m.correctAnswer}` : ""}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+                )
+              })}
             </View>
           ) : null}
         </ScrollView>
@@ -305,9 +347,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     fontSize: 11,
   },
-  mistakeBody: { flex: 1, minWidth: 0 },
-  mistakePrompt: { ...typography.bodySm, color: colors.text },
-  mistakeAnswer: { ...typography.caption, color: colors.textSecondary, marginTop: 4 },
+  mistakeBody: { flex: 1, minWidth: 0, gap: 4 },
+  mistakePrompt: { ...typography.caption, color: colors.textMuted, fontWeight: "600" },
+  mistakeWrong: { ...typography.bodySm, color: colors.error },
+  mistakeWrongValue: { fontWeight: "700", color: colors.error },
+  mistakeRight: { ...typography.bodySm, color: colors.success },
+  mistakeRightValue: { fontWeight: "700", color: colors.success },
+  mistakeExpl: { ...typography.caption, color: colors.textSecondary, fontStyle: "italic", marginTop: 2 },
   footerBlock: {
     flexShrink: 0,
     paddingTop: spacing.sm,

@@ -137,7 +137,7 @@ export function LanguageSkillsSkeleton() {
         </View>
         <Skeleton width={44} height={30} borderRadius={8} />
       </View>
-      {Array.from({ length: 5 }).map((_, i) => (
+      {Array.from({ length: 6 }).map((_, i) => (
         <View key={i} style={styles.languageSkillsRow}>
           <Skeleton width={110} height={14} />
           <Skeleton width={44} height={28} borderRadius={8} />

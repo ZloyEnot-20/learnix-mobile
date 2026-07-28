@@ -1635,8 +1635,8 @@ function ErrorCorrectionRunner(props: ExerciseRunnerProps) {
           ...mistakes,
           {
             id: question.id,
-            prompt: segments.map((s) => edits[s.id] ?? s.text).join(""),
-            userAnswer: "See sentence",
+            prompt: question.text || segments.map((s) => s.text).join(""),
+            userAnswer: segments.map((s) => edits[s.id] ?? s.text).join(""),
             correctAnswer: segments.map((s) => s.correctText ?? s.text).join(""),
             explanation: question.explanation,
           },
@@ -1953,7 +1953,7 @@ function MixedTypeRunner(props: ExerciseRunnerProps) {
         }
         isCorrect = allCorrect
         setEcEditingId(null)
-        userAnswer = "See sentence"
+        userAnswer = segments.map((s) => ecEdits[s.id] ?? s.text).join("")
         correctAnswer = segments.map((s) => s.correctText ?? s.text).join("")
         break
       }

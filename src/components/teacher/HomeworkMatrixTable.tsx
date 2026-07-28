@@ -1,6 +1,7 @@
 import React from "react"
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
@@ -8,6 +9,7 @@ import {
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import {
+  MATRIX_CELL_WIDTH,
   MATRIX_ROW_HEIGHT,
   MATRIX_STUDENT_COL_WIDTH,
   MATRIX_SUBHEADER_HEIGHT,
@@ -36,11 +38,13 @@ function MatrixCell({
   folder,
   percent,
   submission,
+  width,
   onPress,
 }: {
   folder: HomeworkMatrixColumn["folder"]
   percent: number | null
   submission: HomeworkMatrixRow["cells"][0]["submission"]
+  width: number
   onPress: () => void
 }) {
   const meta = subjectFolderMeta[folder]
@@ -50,7 +54,7 @@ function MatrixCell({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.cell, pressed && styles.cellPressed]}
+      style={({ pressed }) => [styles.cell, { width }, pressed && styles.cellPressed]}
     >
       <View
         style={[
@@ -83,6 +87,8 @@ export function HomeworkMatrixTable({ columns, rows, onCellPress }: HomeworkMatr
   const { width: screenWidth } = useWindowDimensions()
   const tableWidth = screenWidth - spacing.screen * 2
   const dataWidth = Math.max(0, tableWidth - MATRIX_STUDENT_COL_WIDTH)
+  const cellWidth = Math.max(MATRIX_CELL_WIDTH, dataWidth / Math.max(columns.length, 1))
+  const contentWidth = cellWidth * columns.length
 
   if (columns.length === 0) {
     return (
@@ -100,65 +106,88 @@ export function HomeworkMatrixTable({ columns, rows, onCellPress }: HomeworkMatr
           <Ionicons name="people" size={14} color={TABLE_THEME.headerText} />
           <Text style={styles.cornerLabel}>Students</Text>
         </View>
-        {rows.map((row, index) => (
-          <View
-            key={row.student.id}
-            style={[
-              styles.studentRow,
-              { height: MATRIX_ROW_HEIGHT },
-              index % 2 === 1 && styles.studentRowAlt,
-            ]}
-          >
-            <Text style={styles.rowIndex}>{index + 1}</Text>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {row.student.name
-                  .split(/\s+/)
-                  .slice(0, 2)
-                  .map((p) => p[0]?.toUpperCase() ?? "")
-                  .join("")}
+        {rows.map((row, index) => {
+          const nameParts = row.student.name.trim().split(/\s+/).filter(Boolean)
+          const firstName = nameParts[0] ?? ""
+          const lastName = nameParts.slice(1).join(" ")
+          return (
+            <View
+              key={row.student.id}
+              style={[
+                styles.studentRow,
+                { height: MATRIX_ROW_HEIGHT },
+                index % 2 === 1 && styles.studentRowAlt,
+              ]}
+            >
+              <Text style={styles.rowIndex} numberOfLines={1}>
+                {index + 1}
               </Text>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {nameParts
+                    .slice(0, 2)
+                    .map((p) => p[0]?.toUpperCase() ?? "")
+                    .join("")}
+                </Text>
+              </View>
+              <View style={styles.studentNameCol}>
+                <Text style={styles.studentName} numberOfLines={1}>
+                  {firstName}
+                </Text>
+                {lastName ? (
+                  <Text style={styles.studentName} numberOfLines={1}>
+                    {lastName}
+                  </Text>
+                ) : null}
+              </View>
             </View>
-            <Text style={styles.studentName} numberOfLines={1}>
-              {row.student.name.split(" ")[0]}{" "}
-              {row.student.name.split(" ").slice(1).map((p) => `${p[0]}.`).join(" ")}
-            </Text>
-          </View>
-        ))}
+          )
+        })}
       </View>
 
-      <View style={[styles.dataArea, { width: dataWidth }]}>
-        <View style={[styles.taskHeaderRow, { height: MATRIX_SUBHEADER_HEIGHT }]}>
-          {columns.map((col) => (
-            <View key={col.homework.id} style={[styles.taskHeaderCell, { flex: 1 }]}>
-              <Text style={styles.taskHeaderText} numberOfLines={1}>
-                {col.taskLabel}
-              </Text>
+      <ScrollView
+        horizontal
+        style={[styles.dataArea, { width: dataWidth }]}
+        contentContainerStyle={{ width: contentWidth }}
+        showsHorizontalScrollIndicator
+        nestedScrollEnabled
+        bounces={contentWidth > dataWidth}
+        directionalLockEnabled
+      >
+        <View style={{ width: contentWidth }}>
+          <View style={[styles.taskHeaderRow, { height: MATRIX_SUBHEADER_HEIGHT }]}>
+            {columns.map((col) => (
+              <View key={col.homework.id} style={[styles.taskHeaderCell, { width: cellWidth }]}>
+                <Text style={styles.taskHeaderText} numberOfLines={1}>
+                  {col.taskLabel}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {rows.map((row, rowIndex) => (
+            <View
+              key={row.student.id}
+              style={[
+                styles.dataRow,
+                { height: MATRIX_ROW_HEIGHT, width: contentWidth },
+                rowIndex % 2 === 1 && styles.dataRowAlt,
+              ]}
+            >
+              {row.cells.map((cell, colIndex) => (
+                <MatrixCell
+                  key={cell.homework.id}
+                  folder={columns[colIndex]?.folder ?? "grammar"}
+                  percent={cell.percent}
+                  submission={cell.submission}
+                  width={cellWidth}
+                  onPress={() => onCellPress(row, colIndex)}
+                />
+              ))}
             </View>
           ))}
         </View>
-
-        {rows.map((row, rowIndex) => (
-          <View
-            key={row.student.id}
-            style={[
-              styles.dataRow,
-              { height: MATRIX_ROW_HEIGHT },
-              rowIndex % 2 === 1 && styles.dataRowAlt,
-            ]}
-          >
-            {row.cells.map((cell, colIndex) => (
-              <MatrixCell
-                key={cell.homework.id}
-                folder={columns[colIndex]?.folder ?? "grammar"}
-                percent={cell.percent}
-                submission={cell.submission}
-                onPress={() => onCellPress(row, colIndex)}
-              />
-            ))}
-          </View>
-        ))}
-      </View>
+      </ScrollView>
     </View>
   )
 }
@@ -179,6 +208,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     borderRightColor: TABLE_THEME.border,
     backgroundColor: TABLE_THEME.wrap,
+    zIndex: 1,
   },
   cornerHeader: {
     flexDirection: "row",
@@ -194,44 +224,51 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: TABLE_THEME.headerText,
     fontWeight: "800",
-    fontSize: 11,
+    fontSize: 10,
   },
   studentRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 6,
+    paddingHorizontal: 5,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: TABLE_THEME.border,
-    gap: 4,
+    gap: 3,
     backgroundColor: "#FFFCF0",
   },
   studentRowAlt: {
     backgroundColor: TABLE_THEME.rowAlt,
   },
   rowIndex: {
-    ...typography.caption,
     color: TABLE_THEME.headerText,
-    width: 12,
-    fontSize: 10,
+    width: 16,
+    fontSize: 9,
+    fontWeight: "700",
     opacity: 0.7,
+    textAlign: "center",
+    flexShrink: 0,
   },
   avatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: teacherColors.accent,
     alignItems: "center",
     justifyContent: "center",
+    flexShrink: 0,
   },
-  avatarText: { fontSize: 9, fontWeight: "800", color: colors.text },
-  studentName: {
-    ...typography.caption,
-    color: colors.text,
+  avatarText: { fontSize: 8, fontWeight: "800", color: colors.text },
+  studentNameCol: {
     flex: 1,
-    fontSize: 11,
-    fontWeight: "600",
+    minWidth: 0,
+    justifyContent: "center",
   },
-  dataArea: { flexGrow: 1 },
+  studentName: {
+    color: colors.text,
+    fontSize: 9,
+    fontWeight: "600",
+    lineHeight: 11,
+  },
+  dataArea: { flexGrow: 0 },
   taskHeaderRow: {
     flexDirection: "row",
     backgroundColor: TABLE_THEME.header,
@@ -248,7 +285,7 @@ const styles = StyleSheet.create({
   taskHeaderText: {
     ...typography.caption,
     color: TABLE_THEME.headerText,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "800",
   },
   dataRow: {
@@ -261,7 +298,6 @@ const styles = StyleSheet.create({
     backgroundColor: TABLE_THEME.rowAlt,
   },
   cell: {
-    flex: 1,
     alignItems: "center",
     justifyContent: "center",
     borderRightWidth: StyleSheet.hairlineWidth,
@@ -277,7 +313,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
   },
   cellIcon: { marginBottom: 1 },
-  cellPercent: { fontSize: 11, fontWeight: "900" },
+  cellPercent: { fontSize: 10, fontWeight: "900" },
   empty: {
     marginHorizontal: spacing.screen,
     backgroundColor: TABLE_THEME.wrap,

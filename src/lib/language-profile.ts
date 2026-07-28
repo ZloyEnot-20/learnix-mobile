@@ -20,6 +20,7 @@ export const PROFILE_SKILL_ROWS: {
   { key: "grammar", label: "Grammar", icon: "school-outline" },
   { key: "vocabulary", label: "Vocabulary", icon: "book-outline" },
   { key: "reading", label: "Reading", icon: "reader-outline" },
+  { key: "listening", label: "Listening", icon: "headset-outline" },
   { key: "writing", label: "Writing", icon: "create-outline" },
   { key: "speaking", label: "Speaking", icon: "mic-outline" },
 ]

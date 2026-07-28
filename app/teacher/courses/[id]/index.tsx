@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react"
+import React, { useCallback, useMemo, useState } from "react"
 import {
   Pressable,
   RefreshControl,
@@ -13,9 +13,13 @@ import { Ionicons } from "@expo/vector-icons"
 import { ScreenBackBar } from "../../../../src/components/ui/ScreenBackBar"
 import { FadeInDown } from "../../../../src/components/ui/FadeInDown"
 import { TeacherDetailSkeleton } from "../../../../src/components/teacher/TeacherSkeletons"
-import { groupsApi, studentsApi } from "../../../../src/lib/api"
+import { TeacherStudentInfoModal } from "../../../../src/components/teacher/TeacherStudentInfoModal"
+import { groupsApi, homeworkApi, studentsApi } from "../../../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../../../src/lib/api-client"
+import { computeStudentHomeworkProgressMap } from "../../../../src/lib/teacher-homework-matrix"
+import { percentColors } from "../../../../src/lib/teacher-homework"
 import { formatGroupSchedule, todayIsoDate } from "../../../../src/lib/teacher-lessons"
+import type { HomeworkAssignment, HomeworkSubmission } from "../../../../src/types/domain"
 import { studentsInGroup, type Group, type StaffStudent } from "../../../../src/types/staff"
 import { colors, radius, shadow, spacing, typography } from "../../../../src/theme/tokens"
 
@@ -28,18 +32,24 @@ export default function TeacherCourseDetailScreen() {
   const [error, setError] = useState("")
   const [group, setGroup] = useState<Group | null>(null)
   const [students, setStudents] = useState<StaffStudent[]>([])
+  const [assignments, setAssignments] = useState<HomeworkAssignment[]>([])
+  const [submissions, setSubmissions] = useState<HomeworkSubmission[]>([])
+  const [selectedStudent, setSelectedStudent] = useState<StaffStudent | null>(null)
 
   const load = useCallback(
     async (force = false) => {
       if (!id) return
       setError("")
       try {
-        const [g, allStudents] = await Promise.all([
+        const [g, allStudents, check] = await Promise.all([
           groupsApi.get(id, { force }),
           studentsApi.list({ force }),
+          homeworkApi.check({ force }).catch(() => ({ assignments: [], records: [] })),
         ])
         setGroup(g)
         setStudents(studentsInGroup(allStudents, id))
+        setAssignments(check.assignments)
+        setSubmissions(check.records)
       } catch (e) {
         setError(getUserFacingErrorMessage(e, "Could not load group."))
       } finally {
@@ -55,6 +65,15 @@ export default function TeacherCourseDetailScreen() {
       void load()
     }, [load]),
   )
+
+  const studentProgress = useMemo(() => {
+    if (!id) return new Map<string, number | null>()
+    return computeStudentHomeworkProgressMap(id, students, assignments, submissions)
+  }, [id, students, assignments, submissions])
+
+  const selectedPerformancePercent = selectedStudent
+    ? studentProgress.get(selectedStudent.id) ?? null
+    : null
 
   if (loading) {
     return (
@@ -128,9 +147,23 @@ export default function TeacherCourseDetailScreen() {
             <Text style={styles.emptyText}>No students in this group</Text>
           </View>
         ) : (
-          students.map((student, index) => (
+          students.map((student, index) => {
+            const performancePercent = studentProgress.get(student.id) ?? null
+            const performancePalette =
+              performancePercent != null ? percentColors(performancePercent) : null
+
+            return (
             <FadeInDown key={student.id} index={Math.min(index + 2, 8)}>
-              <View style={[styles.studentCard, shadow.card]}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.studentCard,
+                  shadow.card,
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => setSelectedStudent(student)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${student.name}`}
+              >
                 <View style={styles.avatar}>
                   <Text style={styles.avatarText}>
                     {student.name
@@ -146,11 +179,27 @@ export default function TeacherCourseDetailScreen() {
                     <Text style={styles.studentMeta}>@{student.login}</Text>
                   ) : null}
                 </View>
-              </View>
+                {performancePalette ? (
+                  <Text style={[styles.studentPercent, { color: performancePalette.bg }]}>
+                    {performancePercent}%
+                  </Text>
+                ) : (
+                  <Text style={styles.studentPercentDash}>—</Text>
+                )}
+              </Pressable>
             </FadeInDown>
-          ))
+            )
+          })
         )}
       </ScrollView>
+
+      <TeacherStudentInfoModal
+        visible={selectedStudent != null}
+        student={selectedStudent}
+        group={group}
+        performancePercent={selectedPerformancePercent}
+        onClose={() => setSelectedStudent(null)}
+      />
     </View>
   )
 }
@@ -215,6 +264,8 @@ const styles = StyleSheet.create({
   studentMain: { flex: 1, minWidth: 0 },
   studentName: { ...typography.label, color: colors.text },
   studentMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  studentPercent: { fontSize: 18, fontWeight: "800" },
+  studentPercentDash: { ...typography.h3, color: colors.textMuted },
   emptyCard: {
     backgroundColor: colors.card,
     borderRadius: radius.card,

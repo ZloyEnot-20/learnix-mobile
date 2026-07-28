@@ -37,11 +37,18 @@ export function TeacherHomeSkeleton() {
       </View>
 
       <Skeleton width={80} height={14} style={styles.gapLg} />
-      <View style={styles.servicesRow}>
-        {[1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} width={88} height={100} borderRadius={radius.card} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bleedScroll} contentContainerStyle={styles.servicesRow}>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Skeleton key={i} width={96} height={96} borderRadius={radius.card} />
         ))}
-      </View>
+      </ScrollView>
+
+      <Skeleton width={100} height={14} style={styles.gapLg} />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bleedScroll} contentContainerStyle={styles.groupRow}>
+        {[1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} width={124} height={124} borderRadius={radius.card} />
+        ))}
+      </ScrollView>
 
       <Skeleton width={100} height={14} style={styles.gapLg} />
       <View style={styles.daysRow}>
@@ -149,6 +156,89 @@ export function TeacherAttendanceSkeleton() {
   )
 }
 
+export function TeacherStudentDetailSkeleton() {
+  return (
+    <View style={styles.pad}>
+      <View style={styles.headerRow}>
+        <Skeleton width={64} height={64} borderRadius={32} />
+        <View style={styles.flex}>
+          <Skeleton width="70%" height={20} />
+          <Skeleton width="45%" height={13} style={styles.gapSm} />
+          <Skeleton width="55%" height={12} style={styles.gapSm} />
+        </View>
+      </View>
+      <View style={[styles.statsRow, styles.gapMd]}>
+        <SkeletonCard style={styles.statCard}>
+          <Skeleton width="50%" height={12} />
+          <Skeleton width="40%" height={22} style={styles.gapSm} />
+        </SkeletonCard>
+        <SkeletonCard style={styles.statCard}>
+          <Skeleton width="50%" height={12} />
+          <Skeleton width="40%" height={22} style={styles.gapSm} />
+        </SkeletonCard>
+        <SkeletonCard style={styles.statCard}>
+          <Skeleton width="50%" height={12} />
+          <Skeleton width="40%" height={22} style={styles.gapSm} />
+        </SkeletonCard>
+      </View>
+      <SkeletonCard style={styles.listRow}>
+        <View style={styles.headerRow}>
+          <Skeleton width={36} height={36} borderRadius={10} />
+          <View style={styles.flex}>
+            <Skeleton width={130} height={16} />
+            <Skeleton width={160} height={12} style={styles.gapSm} />
+          </View>
+          <Skeleton width={44} height={28} borderRadius={8} />
+        </View>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <View key={i} style={[styles.statsRow, styles.gapMd]}>
+            <Skeleton width={110} height={14} />
+            <View style={styles.flex} />
+            <Skeleton width={44} height={28} borderRadius={8} />
+          </View>
+        ))}
+      </SkeletonCard>
+      <SkeletonCard style={styles.listRow}>
+        <Skeleton width="40%" height={14} />
+        <Skeleton width="80%" height={12} style={styles.gapSm} />
+        <Skeleton width="65%" height={12} style={styles.gapSm} />
+      </SkeletonCard>
+    </View>
+  )
+}
+
+export function TeacherStudentModalSkeleton() {
+  return (
+    <View>
+      <View style={styles.headerRow}>
+        <Skeleton width={52} height={52} borderRadius={26} />
+        <View style={styles.flex}>
+          <Skeleton width="65%" height={18} />
+          <Skeleton width="40%" height={12} style={styles.gapSm} />
+        </View>
+      </View>
+      <View style={[styles.statsRow, styles.gapMd]}>
+        {Array.from({ length: 4 }).map((_, i) => (
+          <SkeletonCard key={i} style={styles.statCard}>
+            <Skeleton width="55%" height={10} />
+            <Skeleton width="45%" height={18} style={styles.gapSm} />
+          </SkeletonCard>
+        ))}
+      </View>
+      <SkeletonCard style={styles.listRow}>
+        <Skeleton width={80} height={12} />
+        {Array.from({ length: 4 }).map((_, i) => (
+          <View key={i} style={[styles.statsRow, styles.gapMd]}>
+            <Skeleton width={70} height={12} />
+            <View style={styles.flex} />
+            <Skeleton width="45%" height={14} />
+          </View>
+        ))}
+      </SkeletonCard>
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   pad: {
     flex: 1,
@@ -164,7 +254,19 @@ const styles = StyleSheet.create({
   },
   statsRow: { flexDirection: "row", gap: spacing.sm },
   statCard: { flex: 1, marginBottom: spacing.sm, minHeight: 100 },
-  servicesRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.lg },
+  servicesRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.screen,
+    marginBottom: spacing.lg,
+  },
+  groupRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.screen,
+    marginBottom: spacing.lg,
+  },
+  bleedScroll: { marginHorizontal: -spacing.screen },
   daysRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
   folderRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.md },
   groupScroll: { marginBottom: spacing.md },

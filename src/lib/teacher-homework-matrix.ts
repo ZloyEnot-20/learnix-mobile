@@ -1,7 +1,8 @@
 import { isPodcastHomework } from "../types/podcast"
 import type { HomeworkAssignment, HomeworkSubmission } from "../types/domain"
 import type { AssignFolder } from "../theme/teacher-tokens"
-import type { StaffStudent } from "../types/staff"
+import { subjectFolderMeta } from "../theme/teacher-tokens"
+import { studentsInGroup, type StaffStudent } from "../types/staff"
 import { percentColors, submissionPercent } from "./teacher-homework"
 
 export const MATRIX_STUDENT_COL_WIDTH = 128
@@ -205,6 +206,200 @@ export function matrixGroupStats(
     homeworkDone,
     homeworkTotal: columns.length,
     averagePercent: percentCount > 0 ? Math.round(percentSum / percentCount) : null,
+  }
+}
+
+export type GroupTopicProgress = {
+  folder: AssignFolder
+  label: string
+  averagePercent: number
+}
+
+export type GroupLessonProgressPoint = {
+  dateKey: string
+  dateLabel: string
+  averagePercent: number | null
+  assignmentCount: number
+}
+
+function roundAverage(values: number[]): number | null {
+  if (values.length === 0) return null
+  return Math.round(values.reduce((sum, v) => sum + v, 0) / values.length)
+}
+
+function collectPercentsForColumns(
+  rows: HomeworkMatrixRow[],
+  homeworkIds: Set<string>,
+): number[] {
+  const percents: number[] = []
+  for (const row of rows) {
+    for (const cell of row.cells) {
+      if (!homeworkIds.has(cell.homework.id)) continue
+      if (cell.percent != null) percents.push(cell.percent)
+    }
+  }
+  return percents
+}
+
+/** Share of student-assignment slots without a scored result. */
+function computeIncompletePercent(rows: HomeworkMatrixRow[]): number | null {
+  let total = 0
+  let incomplete = 0
+  for (const row of rows) {
+    for (const cell of row.cells) {
+      total += 1
+      if (cell.percent == null) incomplete += 1
+    }
+  }
+  if (total === 0) return null
+  return Math.round((incomplete / total) * 100)
+}
+
+/** Mean of completed student scores per lesson day, then averaged across days. */
+function computeLessonDayAveragePercent(
+  rows: HomeworkMatrixRow[],
+  dateGroups: HomeworkDateGroup[],
+): number | null {
+  const dayAverages: number[] = []
+  for (const day of dateGroups) {
+    const ids = new Set(day.columns.map((col) => col.homework.id))
+    const avg = roundAverage(collectPercentsForColumns(rows, ids))
+    if (avg != null) dayAverages.push(avg)
+  }
+  return roundAverage(dayAverages)
+}
+
+function computeTopicProgress(
+  rows: HomeworkMatrixRow[],
+  columns: HomeworkMatrixColumn[],
+): GroupTopicProgress[] {
+  const byFolder = new Map<AssignFolder, HomeworkMatrixColumn[]>()
+  for (const col of columns) {
+    const list = byFolder.get(col.folder) ?? []
+    list.push(col)
+    byFolder.set(col.folder, list)
+  }
+
+  const topics: GroupTopicProgress[] = []
+  for (const [folder, cols] of byFolder) {
+    const ids = new Set(cols.map((col) => col.homework.id))
+    const avg = roundAverage(collectPercentsForColumns(rows, ids))
+    if (avg == null) continue
+    topics.push({
+      folder,
+      label: subjectFolderMeta[folder]?.label ?? folder,
+      averagePercent: avg,
+    })
+  }
+  return topics.sort((a, b) => b.averagePercent - a.averagePercent)
+}
+
+function pickTopicExtremes(topics: GroupTopicProgress[]): {
+  highestTopic: GroupTopicProgress | null
+  lowestTopic: GroupTopicProgress | null
+} {
+  if (topics.length === 0) {
+    return { highestTopic: null, lowestTopic: null }
+  }
+  const topicsForBest = topics.filter((topic) => topic.folder !== "podcast")
+  const highestTopic =
+    topicsForBest.length > 0
+      ? topicsForBest.reduce((best, topic) =>
+          topic.averagePercent >= best.averagePercent ? topic : best,
+        )
+      : null
+  const lowestTopic = topics.reduce((worst, topic) =>
+    topic.averagePercent <= worst.averagePercent ? topic : worst,
+  )
+  return { highestTopic, lowestTopic }
+}
+
+/** Average score per lesson day that had homework assigned. */
+export function computeGroupLessonProgress(
+  groupId: string,
+  students: StaffStudent[],
+  assignments: HomeworkAssignment[],
+  submissions: HomeworkSubmission[],
+): GroupLessonProgressPoint[] {
+  const members = studentsInGroup(students, groupId)
+  const columns = buildHomeworkColumns(assignments, groupId)
+  if (columns.length === 0) return []
+
+  const rows = buildHomeworkMatrix(members, columns, submissions)
+  const dateGroups = groupColumnsByDate(columns)
+
+  return dateGroups.map((day) => {
+    const ids = new Set(day.columns.map((col) => col.homework.id))
+    return {
+      dateKey: day.dateKey,
+      dateLabel: day.dateLabel,
+      averagePercent: roundAverage(collectPercentsForColumns(rows, ids)),
+      assignmentCount: day.columns.length,
+    }
+  })
+}
+
+/** Per-student homework success % (lesson-day average, same method as group Overall). */
+export function computeStudentHomeworkProgressMap(
+  groupId: string,
+  students: StaffStudent[],
+  assignments: HomeworkAssignment[],
+  submissions: HomeworkSubmission[],
+): Map<string, number | null> {
+  const members = studentsInGroup(students, groupId)
+  const columns = buildHomeworkColumns(assignments, groupId)
+  const rows = buildHomeworkMatrix(members, columns, submissions)
+  const dateGroups = groupColumnsByDate(columns)
+
+  const map = new Map<string, number | null>()
+  for (const row of rows) {
+    const dayAverages: number[] = []
+    for (const day of dateGroups) {
+      const ids = new Set(day.columns.map((col) => col.homework.id))
+      const percents: number[] = []
+      for (const cell of row.cells) {
+        if (!ids.has(cell.homework.id)) continue
+        if (cell.percent != null) percents.push(cell.percent)
+      }
+      const avg = roundAverage(percents)
+      if (avg != null) dayAverages.push(avg)
+    }
+    map.set(row.student.id, roundAverage(dayAverages))
+  }
+  return map
+}
+
+/** Overall homework progress for a group (all assignments, not month-filtered). */
+export function computeGroupProgress(
+  groupId: string,
+  students: StaffStudent[],
+  assignments: HomeworkAssignment[],
+  submissions: HomeworkSubmission[],
+): {
+  studentCount: number
+  homeworkDone: number
+  homeworkTotal: number
+  averagePercent: number | null
+  incompletePercent: number | null
+  highestTopic: GroupTopicProgress | null
+  lowestTopic: GroupTopicProgress | null
+} {
+  const members = studentsInGroup(students, groupId)
+  const columns = buildHomeworkColumns(assignments, groupId)
+  const rows = buildHomeworkMatrix(members, columns, submissions)
+  const stats = matrixGroupStats(rows, columns)
+  const dateGroups = groupColumnsByDate(columns)
+  const topics = computeTopicProgress(rows, columns)
+  const { highestTopic, lowestTopic } = pickTopicExtremes(topics)
+
+  return {
+    studentCount: members.length,
+    homeworkDone: stats.homeworkDone,
+    homeworkTotal: stats.homeworkTotal,
+    averagePercent: computeLessonDayAveragePercent(rows, dateGroups),
+    incompletePercent: computeIncompletePercent(rows),
+    highestTopic,
+    lowestTopic,
   }
 }
 

@@ -24,6 +24,10 @@ interface LanguageSkillsCardProps {
   studentId: string
   profile?: StudentLanguageProfile | null
   loading?: boolean
+  /** When true, skills stay open (no collapse toggle). */
+  alwaysExpanded?: boolean
+  /** Override the header subtitle. */
+  subtitle?: string
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window")
@@ -50,13 +54,15 @@ export function LanguageSkillsCard({
   studentId,
   profile: profileProp,
   loading: loadingProp,
+  alwaysExpanded = false,
+  subtitle: subtitleProp,
 }: LanguageSkillsCardProps) {
-  const isMobile = SCREEN_WIDTH <= MOBILE_COLLAPSE_MAX_WIDTH
+  const isMobile = !alwaysExpanded && SCREEN_WIDTH <= MOBILE_COLLAPSE_MAX_WIDTH
   const [profile, setProfile] = useState<StudentLanguageProfile | null>(profileProp ?? null)
   const [loading, setLoading] = useState(loadingProp ?? profileProp === undefined)
   const [collapsed, setCollapsed] = useState(isMobile)
   const [contentHeight, setContentHeight] = useState<number | null>(null)
-  const expandAnim = useRef(new Animated.Value(0)).current
+  const expandAnim = useRef(new Animated.Value(alwaysExpanded || !isMobile ? 1 : 0)).current
 
   const load = useCallback(
     async (force?: boolean) => {
@@ -152,6 +158,14 @@ export function LanguageSkillsCard({
     </>
   )
 
+  const subtitle =
+    subtitleProp ??
+    (profile?.ieltsEstimation?.estimatedBand
+      ? `Estimated IELTS ${profile.ieltsEstimation.estimatedBand.toFixed(1)}`
+      : hasAnyData
+        ? "Based on practice & homework"
+        : "No skill data yet")
+
   if (loading) {
     return <LanguageSkillsSkeleton />
   }
@@ -173,13 +187,7 @@ export function LanguageSkillsCard({
           </View>
           <View style={styles.headerText}>
             <Text style={styles.title}>Language skills</Text>
-            <Text style={styles.subtitle}>
-              {profile?.ieltsEstimation?.estimatedBand
-                ? `Estimated IELTS ${profile.ieltsEstimation.estimatedBand.toFixed(1)}`
-                : hasAnyData
-                  ? "Based on your practice & homework"
-                  : "Complete lessons to unlock levels"}
-            </Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
           </View>
         </View>
 

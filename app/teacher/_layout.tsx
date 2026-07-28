@@ -12,6 +12,7 @@ export default function TeacherStackLayout() {
     >
       <Stack.Screen name="courses/[id]/index" />
       <Stack.Screen name="courses/[id]/attendance" />
+      <Stack.Screen name="students/[id]" />
       <Stack.Screen name="homework/[id]" />
       <Stack.Screen name="homework/assign" />
     </Stack>
