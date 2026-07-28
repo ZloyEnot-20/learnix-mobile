@@ -44,7 +44,7 @@ export function AdminHomeSkeleton() {
         style={styles.bleedScroll}
         contentContainerStyle={styles.servicesRow}
       >
-        {[1, 2, 3, 4, 5].map((i) => (
+        {[1, 2, 3, 4].map((i) => (
           <Skeleton key={i} width={96} height={96} borderRadius={radius.card} />
         ))}
       </ScrollView>

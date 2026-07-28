@@ -30,6 +30,8 @@ type TeacherGroupInfoModalProps = {
   onClose: () => void
   onOpenGroup: (groupId: string) => void
   onAssignHomework: (groupId: string) => void
+  /** Hide open/assign actions (e.g. admin read-only view). */
+  readOnly?: boolean
 }
 
 type SheetView = "info" | "chart"
@@ -124,6 +126,7 @@ export function TeacherGroupInfoModal({
   onClose,
   onOpenGroup,
   onAssignHomework,
+  readOnly = false,
 }: TeacherGroupInfoModalProps) {
   const { width: windowWidth } = useWindowDimensions()
   const panelWidth = windowWidth - spacing.screen * 2
@@ -254,30 +257,42 @@ export function TeacherGroupInfoModal({
             {group.description ? <DetailRow label="About" value={group.description} last /> : null}
           </View>
 
-          <View style={styles.actions}>
-            <Pressable
-              onPress={() => onOpenGroup(group.id)}
-              style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
-            >
-              <Text style={styles.primaryBtnText}>Open group</Text>
-            </Pressable>
-            <View style={styles.secondaryRow}>
+          {!readOnly ? (
+            <View style={styles.actions}>
               <Pressable
-                onPress={() => onAssignHomework(group.id)}
-                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+                onPress={() => onOpenGroup(group.id)}
+                style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
               >
-                <Ionicons name="add-circle-outline" size={18} color={teacherColors.accentDark} />
-                <Text style={styles.secondaryBtnText}>Assign HW</Text>
+                <Text style={styles.primaryBtnText}>Open group</Text>
               </Pressable>
+              <View style={styles.secondaryRow}>
+                <Pressable
+                  onPress={() => onAssignHomework(group.id)}
+                  style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={teacherColors.accentDark} />
+                  <Text style={styles.secondaryBtnText}>Assign HW</Text>
+                </Pressable>
+                <Pressable
+                  onPress={openChart}
+                  style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+                >
+                  <Ionicons name="bar-chart-outline" size={18} color={teacherColors.accentDark} />
+                  <Text style={styles.secondaryBtnText}>Matrix</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.actions}>
               <Pressable
                 onPress={openChart}
-                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed]}
+                style={({ pressed }) => [styles.primaryBtn, styles.primaryBtnRow, pressed && styles.pressed]}
               >
-                <Ionicons name="bar-chart-outline" size={18} color={teacherColors.accentDark} />
-                <Text style={styles.secondaryBtnText}>Matrix</Text>
+                <Ionicons name="bar-chart-outline" size={18} color="#fff" />
+                <Text style={styles.primaryBtnText}>Progress by lesson</Text>
               </Pressable>
             </View>
-          </View>
+          )}
           </View>
           </View>
 
@@ -470,6 +485,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  primaryBtnRow: { flexDirection: "row", gap: 8 },
   primaryBtnText: { ...typography.label, color: "#FFFFFF", fontSize: 15 },
   secondaryRow: { flexDirection: "row", gap: spacing.sm },
   secondaryBtn: {

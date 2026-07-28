@@ -39,7 +39,7 @@ import type { StudentContextResponse } from "./lesson-schedule"
 import type { VocabDeck, TopicMeta, VocabDeckSummary } from "../types/vocabulary"
 import type { PodcastEpisode, PodcastSummary } from "../types/podcast"
 import type { IssueReport, IssueReportPayload } from "../types/issue-report"
-import type { AdminDashboardStats, AdminTeacherOverview, HomeworkReviewItem, AdminBroadcastRecord, AdminAlert } from "../types/admin"
+import type { AdminDashboardStats, AdminTeacherOverview, AdminBroadcastRecord, AdminAlert } from "../types/admin"
 import { runPerfTrace, type PerfAttributes } from "./perf"
 
 export { peekCached, peekStale, clearApiCache }
@@ -883,7 +883,6 @@ export const issueReportsApi = {
 export type {
   AdminDashboardStats,
   AdminTeacherOverview,
-  HomeworkReviewItem,
   AdminBroadcastRecord,
   AdminAlert,
   AdminAlertType,
@@ -892,7 +891,6 @@ export type {
 export const adminApi = {
   dashboard: () => api.get<AdminDashboardStats>("/admin/dashboard"),
   teachers: () => api.get<AdminTeacherOverview[]>("/admin/teachers"),
-  homeworkReviewQueue: () => api.get<HomeworkReviewItem[]>("/admin/homework-review"),
   broadcast: (input: {
     audience: "all" | "group" | "student"
     audienceId?: string

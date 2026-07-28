@@ -43,7 +43,7 @@ export default function TeacherTabsLayout() {
 
   return (
     <Tabs
-      screenOptions={({ route }) => ({
+      screenOptions={() => ({
         tabBarActiveTintColor: teacherColors.accentDark,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
@@ -61,8 +61,8 @@ export default function TeacherTabsLayout() {
         headerStyle: { backgroundColor: colors.background },
         headerTitle: () => null,
         headerShadowVisible: false,
-        headerLeft: () => <TeacherTabHeaderLeft showName={route.name === "index"} />,
-        headerLeftContainerStyle: route.name === "index" ? styles.headerLeftWide : undefined,
+        headerLeft: () => <TeacherTabHeaderLeft />,
+        headerLeftContainerStyle: styles.headerLeftWide,
         headerRight: () => <TeacherTabHeaderRight />,
       })}
     >

@@ -5,7 +5,7 @@ export interface AdminDashboardStats {
   totalTeachers: number
   activeUsersToday: number
   usersOnlineNow: number
-  pendingHomeworkReview: number
+  homeworkCompletedToday: number
   newRegistrationsToday: number
 }
 
@@ -68,7 +68,6 @@ export const ADMIN_SECTION_TITLES: Record<string, string> = {
   index: "Dashboard",
   users: "Users",
   teachers: "Teachers",
-  homework: "Homework review",
   push: "Push notifications",
   alerts: "Notifications",
 }

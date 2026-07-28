@@ -11,8 +11,11 @@ import {
 import { useFocusEffect, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
+import { useStaffMode } from "../../src/context/StaffModeContext"
+import { staffModeLabel } from "../../src/lib/staff-mode"
 import { FadeInDown } from "../../src/components/ui/FadeInDown"
 import { ProfileAvatar } from "../../src/components/ProfileAvatar"
+import { StaffModeProfileSection } from "../../src/components/teacher/StaffModeProfileSection"
 import { TeacherListSkeleton } from "../../src/components/teacher/TeacherSkeletons"
 import { colors, radius, shadow, spacing, typography } from "../../src/theme/tokens"
 
@@ -24,6 +27,7 @@ function roleLabel(type: string | undefined): string {
 
 export default function TeacherProfileScreen() {
   const { user, logout } = useAuth()
+  const { mode, canSwitch } = useStaffMode()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -84,14 +88,22 @@ export default function TeacherProfileScreen() {
               />
               <View style={styles.heroText}>
                 <Text style={styles.name}>{user?.name || "Teacher"}</Text>
-                <Text style={styles.role}>{roleLabel(user?.type)}</Text>
+                <Text style={styles.role}>
+                  {canSwitch ? staffModeLabel(mode) : roleLabel(user?.type)}
+                </Text>
                 {user?.email ? <Text style={styles.email}>{user.email}</Text> : null}
               </View>
             </View>
           </View>
         </FadeInDown>
 
-        <FadeInDown index={2}>
+        {canSwitch ? (
+          <FadeInDown index={2}>
+            <StaffModeProfileSection />
+          </FadeInDown>
+        ) : null}
+
+        <FadeInDown index={canSwitch ? 3 : 2}>
           <Pressable
             onPress={handleLogout}
             style={({ pressed }) => [styles.logoutBtn, pressed && styles.pressed]}

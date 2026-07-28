@@ -14,9 +14,11 @@ import { colors, spacing, typography } from "../../theme/tokens"
 
 type StaffModeHeaderControlProps = {
   showName?: boolean
+  /** When false, parent supplies horizontal inset (e.g. combined tab header). */
+  inset?: boolean
 }
 
-export function StaffModeHeaderControl({ showName = false }: StaffModeHeaderControlProps) {
+export function StaffModeHeaderControl({ showName = false, inset = true }: StaffModeHeaderControlProps) {
   const { user } = useAuth()
   const { mode, canSwitch } = useStaffMode()
   const router = useRouter()
@@ -34,7 +36,7 @@ export function StaffModeHeaderControl({ showName = false }: StaffModeHeaderCont
   }
 
   const onPress = () => {
-    if (canSwitch && showName) {
+    if (canSwitch) {
       openMenu()
       return
     }
@@ -43,7 +45,11 @@ export function StaffModeHeaderControl({ showName = false }: StaffModeHeaderCont
 
   return (
     <>
-      <View ref={anchorRef} collapsable={false} style={[styles.left, showName && styles.leftWithName]}>
+      <View
+        ref={anchorRef}
+        collapsable={false}
+        style={[inset && styles.left, showName && styles.leftWithName]}
+      >
         <Pressable
           onPress={onPress}
           style={({ pressed }) => [styles.pressable, pressed && styles.pressed]}

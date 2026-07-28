@@ -11,7 +11,18 @@ import {
 } from "react-native"
 import { useFocusEffect } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
-import { BottomSheet } from "../../ui/BottomSheet"
+import {
+  AdminBottomSheet,
+  AdminSheetBody,
+  AdminSheetDetailRow,
+  AdminSheetHeaderCard,
+  AdminSheetInfoCard,
+  AdminSheetMenuCard,
+  AdminSheetMenuItem,
+  AdminSheetPickRow,
+  AdminSheetPrimaryButton,
+  AdminSheetSectionTitle,
+} from "../admin-sheet-ui"
 import { AdminListSkeleton } from "../AdminListSkeleton"
 import { adminApi, groupsApi, studentsApi } from "../../../lib/api"
 import { formatLastLogin } from "../../../lib/admin-format"
@@ -220,63 +231,92 @@ export function AdminUsersScreen() {
         ListEmptyComponent={<Text style={styles.empty}>No users found</Text>}
       />
 
-      <BottomSheet visible={sheet === "detail"} onClose={() => setSheet(null)} title={selected?.name ?? "User"}>
+      <AdminBottomSheet visible={sheet === "detail"} onClose={() => setSheet(null)} title={selected?.name ?? "User"}>
         {selected ? (
-          <View style={styles.sheetBody}>
-            <Text style={styles.sheetMeta}>Group: {groupName(selected.groupId)}</Text>
-            <Text style={styles.sheetMeta}>Teacher: {teacherForStudent(selected)}</Text>
-            <Text style={styles.sheetMeta}>Last activity: {formatLastLogin(selected.lastLoginAt)}</Text>
-            <Pressable style={styles.actionBtn} onPress={() => setSheet("group")}>
-              <Text style={styles.actionText}>Change group</Text>
-            </Pressable>
-            <Pressable style={styles.actionBtn} onPress={() => setSheet("teacher")}>
-              <Text style={styles.actionText}>Assign teacher</Text>
-            </Pressable>
-            <Pressable style={styles.actionBtn} onPress={() => void resetPassword()}>
-              <Text style={styles.actionText}>Reset password</Text>
-            </Pressable>
-            <Pressable style={[styles.actionBtn, styles.dangerBtn]} onPress={() => void toggleBlock()}>
-              <Text style={styles.dangerText}>
-                {selected.isActive === false ? "Unblock account" : "Block account"}
-              </Text>
-            </Pressable>
-          </View>
+          <AdminSheetBody>
+            <AdminSheetHeaderCard
+              title={selected.name}
+              subtitle={selected.login ? `@${selected.login}` : undefined}
+              initials={initials(selected.name)}
+              badge={
+                selected.isActive === false
+                  ? { label: "Blocked", tone: "danger" }
+                  : { label: "Active", tone: "success" }
+              }
+            />
+            <AdminSheetInfoCard>
+              <AdminSheetDetailRow label="Group" value={groupName(selected.groupId)} />
+              <AdminSheetDetailRow label="Teacher" value={teacherForStudent(selected)} />
+              <AdminSheetDetailRow
+                label="Last activity"
+                value={formatLastLogin(selected.lastLoginAt)}
+                last
+              />
+            </AdminSheetInfoCard>
+            <AdminSheetSectionTitle title="Actions" />
+            <AdminSheetMenuCard>
+              <AdminSheetMenuItem
+                icon="people-outline"
+                label="Change group"
+                onPress={() => setSheet("group")}
+              />
+              <AdminSheetMenuItem
+                icon="school-outline"
+                label="Assign teacher"
+                onPress={() => setSheet("teacher")}
+              />
+              <AdminSheetMenuItem
+                icon="key-outline"
+                label="Reset password"
+                onPress={() => void resetPassword()}
+              />
+              <AdminSheetMenuItem
+                icon={selected.isActive === false ? "lock-open-outline" : "ban-outline"}
+                label={selected.isActive === false ? "Unblock account" : "Block account"}
+                onPress={() => void toggleBlock()}
+                danger
+                last
+              />
+            </AdminSheetMenuCard>
+          </AdminSheetBody>
         ) : null}
-      </BottomSheet>
+      </AdminBottomSheet>
 
-      <BottomSheet visible={sheet === "group"} onClose={() => setSheet("detail")} title="Change group">
-        <View style={styles.sheetBody}>
+      <AdminBottomSheet visible={sheet === "group"} onClose={() => setSheet("detail")} title="Change group">
+        <AdminSheetBody>
           {groups.map((g) => (
-            <Pressable
+            <AdminSheetPickRow
               key={g.id}
+              label={g.name}
+              selected={pickedGroupId === g.id}
               onPress={() => setPickedGroupId(g.id)}
-              style={[styles.pickRow, pickedGroupId === g.id && styles.pickRowActive]}
-            >
-              <Text style={styles.pickText}>{g.name}</Text>
-            </Pressable>
+            />
           ))}
-          <Pressable style={styles.primaryBtn} onPress={() => void saveGroup()} disabled={saving}>
-            <Text style={styles.primaryBtnText}>{saving ? "Saving…" : "Save"}</Text>
-          </Pressable>
-        </View>
-      </BottomSheet>
+          <AdminSheetPrimaryButton
+            label={saving ? "Saving…" : "Save"}
+            onPress={() => void saveGroup()}
+            disabled={saving}
+          />
+        </AdminSheetBody>
+      </AdminBottomSheet>
 
-      <BottomSheet visible={sheet === "teacher"} onClose={() => setSheet("detail")} title="Assign teacher">
-        <View style={styles.sheetBody}>
+      <AdminBottomSheet visible={sheet === "teacher"} onClose={() => setSheet("detail")} title="Assign teacher">
+        <AdminSheetBody>
           {teachers.map((t) => (
-            <Pressable
+            <AdminSheetPickRow
               key={t.id}
+              label={t.name}
+              selected={pickedTeacherId === t.id}
               onPress={() => setPickedTeacherId(t.id)}
-              style={[styles.pickRow, pickedTeacherId === t.id && styles.pickRowActive]}
-            >
-              <Text style={styles.pickText}>{t.name}</Text>
-            </Pressable>
+            />
           ))}
-          <Pressable style={styles.primaryBtn} onPress={() => void saveTeacher()} disabled={saving}>
-            <Text style={styles.primaryBtnText}>{saving ? "Saving…" : "Assign"}</Text>
-          </Pressable>
-        </View>
-      </BottomSheet>
+          <AdminSheetPrimaryButton
+            label={saving ? "Assigning…" : "Assign"}
+            onPress={() => void saveTeacher()}
+            disabled={saving}
+          />
+        </AdminSheetBody>
+      </AdminBottomSheet>
     </>
   )
 }
@@ -337,32 +377,4 @@ const styles = StyleSheet.create({
   badgeText: { ...typography.caption, fontSize: 10, fontWeight: "600", color: colors.success },
   badgeTextBlocked: { color: colors.error },
   empty: { ...typography.bodySm, color: colors.textMuted, textAlign: "center", marginTop: spacing.xl },
-  sheetBody: { gap: spacing.sm },
-  sheetMeta: { ...typography.bodySm, color: colors.textSecondary },
-  actionBtn: {
-    backgroundColor: colors.background,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  actionText: { ...typography.label, color: colors.text },
-  dangerBtn: { borderColor: colors.errorBg, backgroundColor: colors.errorBg },
-  dangerText: { ...typography.label, color: colors.error },
-  pickRow: {
-    padding: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  pickRowActive: { borderColor: colors.primary, backgroundColor: colors.primaryLight },
-  pickText: { ...typography.body, color: colors.text },
-  primaryBtn: {
-    marginTop: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: radius.pill,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  primaryBtnText: { ...typography.label, color: "#fff" },
 })

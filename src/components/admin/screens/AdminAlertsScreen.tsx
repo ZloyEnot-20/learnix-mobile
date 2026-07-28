@@ -17,25 +17,23 @@ import { getUserFacingErrorMessage } from "../../../lib/api-client"
 import type { AdminAlert, AdminAlertType } from "../../../types/admin"
 import { colors, radius, shadow, spacing, typography } from "../../../theme/tokens"
 
+const HIDDEN_ALERT_TYPES = new Set<AdminAlertType>(["homework", "review_delay"])
+
 const TYPE_META: Record<
-  AdminAlertType,
+  Exclude<AdminAlertType, "homework" | "review_delay">,
   { label: string; icon: keyof typeof Ionicons.glyphMap; bg: string; color: string }
 > = {
   registration: { label: "Registration", icon: "person-add-outline", bg: "#D1FAE5", color: "#059669" },
-  homework: { label: "Homework", icon: "clipboard-outline", bg: "#E0F2FE", color: "#0284C7" },
   complaint: { label: "Complaint", icon: "warning-outline", bg: "#FEF3C7", color: "#D97706" },
   payment: { label: "Payment", icon: "card-outline", bg: "#FFE4E6", color: "#E11D48" },
-  review_delay: { label: "Review delay", icon: "time-outline", bg: "#EDE9FE", color: "#7C3AED" },
   system: { label: "System", icon: "notifications-outline", bg: colors.borderLight, color: colors.textSecondary },
 }
 
-const TYPE_FILTERS: Array<{ key: "all" | AdminAlertType; label: string }> = [
+const TYPE_FILTERS: Array<{ key: "all" | Exclude<AdminAlertType, "homework" | "review_delay">; label: string }> = [
   { key: "all", label: "All" },
   { key: "registration", label: "Reg." },
-  { key: "homework", label: "HW" },
   { key: "complaint", label: "Complaint" },
   { key: "payment", label: "Payment" },
-  { key: "review_delay", label: "Delay" },
 ]
 
 export function AdminAlertsScreen() {
@@ -43,12 +41,13 @@ export function AdminAlertsScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [alerts, setAlerts] = useState<AdminAlert[]>([])
-  const [typeFilter, setTypeFilter] = useState<"all" | AdminAlertType>("all")
+  const [typeFilter, setTypeFilter] = useState<"all" | Exclude<AdminAlertType, "homework" | "review_delay">>("all")
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest")
 
   const load = useCallback(async () => {
     try {
-      setAlerts(await adminApi.alerts())
+      const rows = await adminApi.alerts()
+      setAlerts(rows.filter((a) => !HIDDEN_ALERT_TYPES.has(a.type)))
     } catch (e) {
       Alert.alert("Error", getUserFacingErrorMessage(e, "Could not load alerts."))
     } finally {
@@ -97,9 +96,7 @@ export function AdminAlertsScreen() {
 
   const openRelated = (alert: AdminAlert) => {
     void markRead(alert)
-    if (alert.type === "homework" || alert.type === "review_delay" || alert.type === "complaint") {
-      router.push("/(admin)/homework" as never)
-    } else if (alert.type === "registration") {
+    if (alert.type === "registration") {
       router.push("/(admin)/users" as never)
     }
   }
@@ -155,7 +152,8 @@ export function AdminAlertsScreen() {
         </View>
       }
       renderItem={({ item }) => {
-        const meta = TYPE_META[item.type] ?? TYPE_META.system
+        const meta =
+          TYPE_META[item.type as Exclude<AdminAlertType, "homework" | "review_delay">] ?? TYPE_META.system
         return (
           <Pressable
             onPress={() => openRelated(item)}

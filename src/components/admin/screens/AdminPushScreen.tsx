@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from "react"
 import {
   Alert,
-  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,7 +11,13 @@ import {
 } from "react-native"
 import { useFocusEffect } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
-import { BottomSheet } from "../../ui/BottomSheet"
+import {
+  AdminBottomSheet,
+  AdminSheetBody,
+  AdminSheetPickRow,
+  AdminSheetPrimaryButton,
+  adminSheetStyles,
+} from "../admin-sheet-ui"
 import { AdminListSkeleton } from "../AdminListSkeleton"
 import { adminApi, groupsApi, studentsApi } from "../../../lib/api"
 import { formatDateTime } from "../../../lib/admin-format"
@@ -36,6 +41,7 @@ export function AdminPushScreen() {
   const [sending, setSending] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerSearch, setPickerSearch] = useState("")
 
   const activeStudents = useMemo(
     () => students.filter((s) => s.isActive !== false),
@@ -114,14 +120,40 @@ export function AdminPushScreen() {
   }
 
   const pickerItems = useMemo(() => {
+    const sortByLabel = <T extends { label: string }>(items: T[]) =>
+      [...items].sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }))
+
     if (audience === "group") {
-      return groups.map((g) => ({ id: g.id, label: g.name }))
+      return sortByLabel(
+        groups.map((g) => ({
+          id: g.id,
+          label: g.name,
+          searchText: [g.name, g.teacherName].filter(Boolean).join(" "),
+        })),
+      )
     }
     if (audience === "student") {
-      return activeStudents.map((s) => ({ id: s.id, label: s.name }))
+      return sortByLabel(
+        activeStudents.map((s) => ({
+          id: s.id,
+          label: s.name,
+          searchText: [s.name, s.login, s.email, s.phone].filter(Boolean).join(" "),
+        })),
+      )
     }
     return []
   }, [audience, groups, activeStudents])
+
+  const filteredPickerItems = useMemo(() => {
+    const q = pickerSearch.trim().toLowerCase()
+    if (!q) return pickerItems
+    return pickerItems.filter((item) => item.searchText.toLowerCase().includes(q))
+  }, [pickerItems, pickerSearch])
+
+  const closePicker = () => {
+    setPickerOpen(false)
+    setPickerSearch("")
+  }
 
   if (loading) return <AdminListSkeleton />
 
@@ -218,50 +250,72 @@ export function AdminPushScreen() {
         )}
       </ScrollView>
 
-      <BottomSheet visible={previewOpen} onClose={() => setPreviewOpen(false)} title="Preview">
-        <View style={styles.previewCard}>
-          <View style={styles.previewIcon}>
-            <Ionicons name="notifications" size={20} color={colors.primary} />
+      <AdminBottomSheet visible={previewOpen} onClose={() => setPreviewOpen(false)} title="Preview">
+        <AdminSheetBody>
+          <View style={adminSheetStyles.previewCard}>
+            <View style={adminSheetStyles.previewIcon}>
+              <Ionicons name="notifications" size={20} color={colors.primary} />
+            </View>
+            <View style={adminSheetStyles.previewBody}>
+              <Text style={adminSheetStyles.previewTitle}>{title.trim() || "Title"}</Text>
+              <Text style={adminSheetStyles.previewMessage}>{message.trim() || "Message"}</Text>
+            </View>
           </View>
-          <View style={styles.previewBody}>
-            <Text style={styles.previewTitle}>{title.trim() || "Title"}</Text>
-            <Text style={styles.previewMessage}>{message.trim() || "Message"}</Text>
-          </View>
-        </View>
-        <Text style={styles.previewMeta}>
-          To: {audienceLabel} ({recipientCount} recipients)
-        </Text>
-        <Pressable style={styles.primaryBtn} onPress={() => void send()} disabled={sending}>
-          <Text style={styles.primaryBtnText}>{sending ? "Sending…" : "Confirm & send"}</Text>
-        </Pressable>
-      </BottomSheet>
+          <Text style={adminSheetStyles.previewMeta}>
+            To: {audienceLabel} ({recipientCount} recipients)
+          </Text>
+          <AdminSheetPrimaryButton
+            label={sending ? "Sending…" : "Confirm & send"}
+            onPress={() => void send()}
+            disabled={sending}
+          />
+        </AdminSheetBody>
+      </AdminBottomSheet>
 
-      <BottomSheet
+      <AdminBottomSheet
         visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}
+        onClose={closePicker}
         title={audience === "group" ? "Select group" : "Select student"}
       >
-        <FlatList
-          data={pickerItems}
-          keyExtractor={(item) => item.id}
-          style={styles.pickerList}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.pickerRow}
-              onPress={() => {
-                setAudienceId(item.id)
-                setPickerOpen(false)
-              }}
-            >
-              <Text style={styles.pickerRowText}>{item.label}</Text>
-              {audienceId === item.id ? (
-                <Ionicons name="checkmark" size={18} color={colors.primary} />
-              ) : null}
-            </Pressable>
+        <AdminSheetBody>
+          <View style={styles.pickerSearchWrap}>
+            <Ionicons name="search" size={18} color={colors.textMuted} />
+            <TextInput
+              value={pickerSearch}
+              onChangeText={setPickerSearch}
+              placeholder={audience === "group" ? "Search group or teacher" : "Search name, email or phone"}
+              placeholderTextColor={colors.textMuted}
+              style={styles.pickerSearchInput}
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {pickerSearch.length > 0 ? (
+              <Pressable onPress={() => setPickerSearch("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+              </Pressable>
+            ) : null}
+          </View>
+          {filteredPickerItems.length === 0 ? (
+            <Text style={styles.empty}>
+              {pickerItems.length === 0 ? "Nothing to select" : "No matches found"}
+            </Text>
+          ) : (
+            <View style={adminSheetStyles.pickerList}>
+              {filteredPickerItems.map((item) => (
+                <AdminSheetPickRow
+                  key={item.id}
+                  label={item.label}
+                  selected={audienceId === item.id}
+                  onPress={() => {
+                    setAudienceId(item.id)
+                    closePicker()
+                  }}
+                />
+              ))}
+            </View>
           )}
-          ListEmptyComponent={<Text style={styles.empty}>Nothing to select</Text>}
-        />
-      </BottomSheet>
+        </AdminSheetBody>
+      </AdminBottomSheet>
     </>
   )
 }
@@ -347,35 +401,20 @@ const styles = StyleSheet.create({
   historyMessage: { ...typography.bodySm, color: colors.textSecondary },
   historyMeta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   empty: { ...typography.bodySm, color: colors.textMuted, textAlign: "center" },
-  previewCard: {
+  pickerSearchWrap: {
     flexDirection: "row",
-    gap: spacing.md,
+    alignItems: "center",
+    gap: spacing.sm,
     backgroundColor: colors.background,
-    borderRadius: radius.card,
-    padding: spacing.md,
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
-  previewIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.primaryLight,
-    alignItems: "center",
-    justifyContent: "center",
+  pickerSearchInput: {
+    flex: 1,
+    ...typography.body,
+    color: colors.text,
+    paddingVertical: 12,
   },
-  previewBody: { flex: 1 },
-  previewTitle: { ...typography.label, color: colors.text },
-  previewMessage: { ...typography.bodySm, color: colors.textSecondary, marginTop: 4 },
-  previewMeta: { ...typography.caption, color: colors.textMuted, marginVertical: spacing.md },
-  pickerList: { maxHeight: 320 },
-  pickerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.borderLight,
-  },
-  pickerRowText: { ...typography.body, color: colors.text },
 })

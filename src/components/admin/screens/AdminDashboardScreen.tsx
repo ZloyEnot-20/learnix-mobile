@@ -9,6 +9,7 @@ import {
 import { useFocusEffect, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { FadeInDown } from "../../ui/FadeInDown"
+import { AdminGroupProgressSection } from "../AdminGroupProgressSection"
 import { TeacherStatCard } from "../../teacher/TeacherStatCard"
 import { TeacherServiceGrid } from "../../teacher/TeacherServiceGrid"
 import { AdminHomeSkeleton } from "../AdminHomeSkeleton"
@@ -21,7 +22,7 @@ const EMPTY: AdminDashboardStats = {
   totalTeachers: 0,
   activeUsersToday: 0,
   usersOnlineNow: 0,
-  pendingHomeworkReview: 0,
+  homeworkCompletedToday: 0,
   newRegistrationsToday: 0,
 }
 
@@ -43,7 +44,9 @@ export function AdminDashboardScreen() {
         adminApi.alerts().catch(() => []),
       ])
       setStats(dashboard)
-      setUnreadAlerts(alerts.filter((a) => !a.read).length)
+      setUnreadAlerts(
+        alerts.filter((a) => !a.read && a.type !== "homework" && a.type !== "review_delay").length,
+      )
     } catch (e) {
       setError(getUserFacingErrorMessage(e, "Could not load dashboard."))
     } finally {
@@ -71,14 +74,6 @@ export function AdminDashboardScreen() {
         onPress: () => router.push("/(admin)/teachers" as never),
       },
       {
-        id: "review",
-        label: stats.pendingHomeworkReview > 0 ? `Review (${stats.pendingHomeworkReview})` : "Review HW",
-        icon: "clipboard" as const,
-        bg: "#FFE4E6",
-        color: "#E11D48",
-        onPress: () => router.push("/(admin)/homework" as never),
-      },
-      {
         id: "push",
         label: "Push",
         icon: "notifications" as const,
@@ -95,7 +90,7 @@ export function AdminDashboardScreen() {
         onPress: () => router.push("/(admin)/alerts" as never),
       },
     ],
-    [router, stats.pendingHomeworkReview, unreadAlerts],
+    [router, unreadAlerts],
   )
 
   useFocusEffect(
@@ -165,13 +160,13 @@ export function AdminDashboardScreen() {
       <FadeInDown index={2}>
         <View style={styles.statsRow}>
           <TeacherStatCard
-            label="Awaiting review"
-            value={String(stats.pendingHomeworkReview)}
-            icon="clipboard-outline"
-            iconBg="#FFE4E6"
-            iconColor="#E11D48"
-            accent={stats.pendingHomeworkReview > 0 ? "#E11D48" : undefined}
-            onPress={() => router.push("/(admin)/homework" as never)}
+            label="Done today"
+            value={String(stats.homeworkCompletedToday)}
+            icon="checkmark-done-outline"
+            iconBg="#D1FAE5"
+            iconColor="#059669"
+            accent={stats.homeworkCompletedToday > 0 ? "#059669" : undefined}
+            onPress={() => router.push("/(admin)/teachers" as never)}
           />
           <TeacherStatCard
             label="New today"
@@ -185,6 +180,10 @@ export function AdminDashboardScreen() {
       </FadeInDown>
 
       <FadeInDown index={3}>
+        <AdminGroupProgressSection title="All groups" />
+      </FadeInDown>
+
+      <FadeInDown index={4}>
         <TeacherServiceGrid title="Services" items={serviceItems} />
       </FadeInDown>
     </ScrollView>

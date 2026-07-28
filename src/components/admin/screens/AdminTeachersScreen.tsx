@@ -11,8 +11,16 @@ import {
 } from "react-native"
 import { useFocusEffect } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
-import { BottomSheet } from "../../ui/BottomSheet"
+import {
+  AdminBottomSheet,
+  AdminSheetBody,
+  AdminSheetDetailRow,
+  AdminSheetHeaderCard,
+  AdminSheetInfoCard,
+} from "../admin-sheet-ui"
+import { AdminGroupProgressSection } from "../AdminGroupProgressSection"
 import { AdminListSkeleton } from "../AdminListSkeleton"
+import { GROUP_CARD_PALETTES } from "../../teacher/TeacherHomeGroupCards"
 import { adminApi } from "../../../lib/api"
 import { formatLastLogin } from "../../../lib/admin-format"
 import { getUserFacingErrorMessage } from "../../../lib/api-client"
@@ -35,6 +43,7 @@ export function AdminTeachersScreen() {
   const [teachers, setTeachers] = useState<AdminTeacherOverview[]>([])
   const [search, setSearch] = useState("")
   const [selected, setSelected] = useState<AdminTeacherOverview | null>(null)
+  const [groupSheetOpen, setGroupSheetOpen] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -62,6 +71,11 @@ export function AdminTeachersScreen() {
         t.groupNames.some((g) => g.toLowerCase().includes(q)),
     )
   }, [teachers, search])
+
+  const closeTeacherSheet = () => {
+    setSelected(null)
+    setGroupSheetOpen(false)
+  }
 
   if (loading) return <AdminListSkeleton />
 
@@ -101,7 +115,7 @@ export function AdminTeachersScreen() {
             <View style={styles.cardBody}>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.meta}>
-                {item.studentCount} students · {item.pendingReview} to review
+                {item.studentCount} students · {item.groupNames.length} groups
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
@@ -110,34 +124,51 @@ export function AdminTeachersScreen() {
         ListEmptyComponent={<Text style={styles.empty}>No teachers found</Text>}
       />
 
-      <BottomSheet
-        visible={!!selected}
-        onClose={() => setSelected(null)}
+      <AdminBottomSheet
+        visible={!!selected && !groupSheetOpen}
+        onClose={closeTeacherSheet}
         title={selected?.name ?? "Teacher"}
       >
         {selected ? (
-          <View style={styles.sheetBody}>
-            <View style={styles.statusRow}>
-              <View style={[styles.statusPill, selected.isOnline ? styles.online : styles.offline]}>
-                <Text style={styles.statusText}>{selected.isOnline ? "Online" : "Offline"}</Text>
-              </View>
-              <Text style={styles.sheetMeta}>Last activity: {formatLastLogin(selected.lastActivityAt)}</Text>
+          <View style={styles.sheetContent}>
+            <AdminSheetBody>
+              <AdminSheetHeaderCard
+                title={selected.name}
+                subtitle={`${selected.studentCount} students · ${selected.groupIds.length} groups`}
+                initials={initials(selected.name)}
+                accentBg="#EDE9FE"
+                accentColor="#7C3AED"
+                badge={
+                  selected.isOnline
+                    ? { label: "Online", tone: "success" }
+                    : { label: "Offline", tone: "muted" }
+                }
+              />
+              <AdminSheetInfoCard>
+                <AdminSheetDetailRow label="Students" value={String(selected.studentCount)} />
+                <AdminSheetDetailRow
+                  label="Groups"
+                  value={String(selected.groupIds.length)}
+                />
+                <AdminSheetDetailRow
+                  label="Last activity"
+                  value={formatLastLogin(selected.lastActivityAt)}
+                  last
+                />
+              </AdminSheetInfoCard>
+            </AdminSheetBody>
+            <View style={styles.groupsSection}>
+              <AdminGroupProgressSection
+                title="Groups"
+                groupIds={selected.groupIds}
+                embedded
+                bleed={false}
+                onModalVisibilityChange={setGroupSheetOpen}
+              />
             </View>
-            <Text style={styles.statLine}>{selected.studentCount} assigned students</Text>
-            <Text style={styles.statLine}>{selected.pendingReview} homework awaiting review</Text>
-            <Text style={styles.groupsTitle}>Groups</Text>
-            {selected.groupNames.length ? (
-              selected.groupNames.map((name, i) => (
-                <Text key={`${selected.id}-${i}`} style={styles.groupItem}>
-                  • {name}
-                </Text>
-              ))
-            ) : (
-              <Text style={styles.sheetMeta}>No groups assigned</Text>
-            )}
           </View>
         ) : null}
-      </BottomSheet>
+      </AdminBottomSheet>
     </>
   )
 }
@@ -169,8 +200,8 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#EDE9FE",
-    color: "#7C3AED",
+    backgroundColor: GROUP_CARD_PALETTES[1].bg,
+    color: GROUP_CARD_PALETTES[1].color,
     textAlign: "center",
     ...typography.label,
     lineHeight: 44,
@@ -191,19 +222,9 @@ const styles = StyleSheet.create({
   name: { ...typography.label, color: colors.text },
   meta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   empty: { ...typography.bodySm, color: colors.textMuted, textAlign: "center", marginTop: spacing.xl },
-  sheetBody: { gap: spacing.sm },
-  statusRow: { gap: spacing.xs },
-  statusPill: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
+  sheetContent: { gap: spacing.sm },
+  groupsSection: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: spacing.sm,
   },
-  online: { backgroundColor: colors.successBg },
-  offline: { backgroundColor: colors.borderLight },
-  statusText: { ...typography.caption, fontWeight: "600" },
-  sheetMeta: { ...typography.bodySm, color: colors.textSecondary },
-  statLine: { ...typography.body, color: colors.text },
-  groupsTitle: { ...typography.label, color: colors.text, marginTop: spacing.sm },
-  groupItem: { ...typography.bodySm, color: colors.textSecondary },
 })

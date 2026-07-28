@@ -10,7 +10,6 @@ import { useFocusEffect, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
 import { FadeInDown } from "../../src/components/ui/FadeInDown"
 import {
-  GROUP_CARD_PALETTES,
   TeacherHomeGroupCards,
 } from "../../src/components/teacher/TeacherHomeGroupCards"
 import {
@@ -31,9 +30,8 @@ import {
 } from "../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../src/lib/api-client"
 import { fetchTeacherLessons } from "../../src/lib/teacher-data"
-import { computeGroupLessonProgress, computeGroupProgress } from "../../src/lib/teacher-homework-matrix"
+import { buildTeacherGroupInfoList } from "../../src/lib/teacher-group-info"
 import {
-  formatGroupSchedule,
   lessonsOnDate,
   todayIsoDate,
   upcomingLessons,
@@ -121,30 +119,8 @@ export default function TeacherHomeScreen() {
 
   const groupCards = useMemo<TeacherGroupInfo[]>(
     () =>
-      groups.map((group, index) => {
-        const progress = computeGroupProgress(group.id, students, assignments, submissions)
-        const lessonProgress = computeGroupLessonProgress(
-          group.id,
-          students,
-          assignments,
-          submissions,
-        )
-        const palette = GROUP_CARD_PALETTES[index % GROUP_CARD_PALETTES.length]
-        return {
-          id: group.id,
-          name: group.name,
-          description: group.description,
-          schedule: formatGroupSchedule(group),
-          teacherName: group.teacherName ?? null,
-          studentCount: progress.studentCount,
-          averagePercent: progress.averagePercent,
-          incompletePercent: progress.incompletePercent,
-          highestTopic: progress.highestTopic,
-          lowestTopic: progress.lowestTopic,
-          lessonProgress,
-          accentBg: palette.bg,
-          accentColor: palette.color,
-        }
+      buildTeacherGroupInfoList(groups, students, assignments, submissions, undefined, {
+        includeLessonProgress: true,
       }),
     [groups, students, assignments, submissions],
   )

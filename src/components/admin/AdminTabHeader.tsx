@@ -4,12 +4,8 @@ import { StaffModeHeaderControl } from "../teacher/StaffModeHeaderControl"
 import { spacing } from "../../theme/tokens"
 import { StyleSheet, View } from "react-native"
 
-type AdminTabHeaderLeftProps = {
-  showName?: boolean
-}
-
-export function AdminTabHeaderLeft({ showName = false }: AdminTabHeaderLeftProps) {
-  return <StaffModeHeaderControl showName={showName} />
+export function AdminTabHeaderLeft() {
+  return <StaffModeHeaderControl showName />
 }
 
 export function AdminTabHeaderRight() {

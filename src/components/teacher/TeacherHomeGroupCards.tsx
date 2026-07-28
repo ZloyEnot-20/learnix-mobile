@@ -1,5 +1,5 @@
-import React from "react"
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import React, { memo } from "react"
+import { FlatList, Pressable, StyleSheet, Text, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import { percentColors } from "../../lib/teacher-homework"
 import { colors, radius, spacing, typography } from "../../theme/tokens"
@@ -21,9 +21,11 @@ export const GROUP_CARD_PALETTES = [
 type TeacherHomeGroupCardsProps = {
   groups: TeacherGroupInfo[]
   onPress: (group: TeacherGroupInfo) => void
+  /** When rendered inside a bottom sheet, avoid nesting horizontal scroll in vertical scroll. */
+  embedded?: boolean
 }
 
-export function TeacherHomeGroupCards({ groups, onPress }: TeacherHomeGroupCardsProps) {
+function TeacherHomeGroupCardsInner({ groups, onPress, embedded = false }: TeacherHomeGroupCardsProps) {
   if (groups.length === 0) {
     return (
       <View style={[styles.emptyCard, teacherShadow.card]}>
@@ -34,18 +36,20 @@ export function TeacherHomeGroupCards({ groups, onPress }: TeacherHomeGroupCards
   }
 
   return (
-    <ScrollView
+    <FlatList
       horizontal
+      data={groups}
+      keyExtractor={(item) => item.id}
       showsHorizontalScrollIndicator={false}
-      style={styles.scroll}
-      contentContainerStyle={styles.row}
-    >
-      {groups.map((group) => {
+      style={[styles.scroll, embedded && styles.scrollEmbedded]}
+      contentContainerStyle={[styles.row, embedded && styles.rowEmbedded]}
+      nestedScrollEnabled
+      keyboardShouldPersistTaps="handled"
+      renderItem={({ item: group }) => {
         const percent = group.averagePercent
         const score = percent != null ? percentColors(percent) : null
         return (
           <Pressable
-            key={group.id}
             onPress={() => onPress(group)}
             style={({ pressed }) => [
               styles.card,
@@ -64,17 +68,21 @@ export function TeacherHomeGroupCards({ groups, onPress }: TeacherHomeGroupCards
             )}
           </Pressable>
         )
-      })}
-    </ScrollView>
+      }}
+    />
   )
 }
 
+export const TeacherHomeGroupCards = memo(TeacherHomeGroupCardsInner)
+
 const styles = StyleSheet.create({
   scroll: { marginHorizontal: -spacing.screen },
+  scrollEmbedded: { marginHorizontal: 0, flexGrow: 0 },
   row: {
     gap: spacing.sm,
     paddingHorizontal: spacing.screen,
   },
+  rowEmbedded: { paddingHorizontal: 0 },
   card: {
     width: GROUP_CARD_SIZE,
     height: GROUP_CARD_SIZE,
