@@ -3,6 +3,7 @@ import React from "react"
 import { Stack } from "expo-router"
 import { StatusBar } from "expo-status-bar"
 import { AuthProvider, useAuth } from "../src/context/AuthContext"
+import { StaffModeProvider } from "../src/context/StaffModeContext"
 import { LocaleProvider } from "../src/context/LocaleContext"
 import { AppErrorBoundary } from "../src/components/ui/AppErrorBoundary"
 import { AppSplashScreen } from "../src/components/AppSplashScreen"
@@ -15,7 +16,7 @@ function PushNotificationsBootstrap() {
 }
 
 function AppShell() {
-  const { isLoading } = useAuth()
+  const { isLoading, user } = useAuth()
 
   return (
     <>
@@ -23,7 +24,8 @@ function AppShell() {
       {isLoading ? (
         <AppSplashScreen />
       ) : (
-        <Stack
+        <StaffModeProvider user={user}>
+          <Stack
           screenOptions={{
             headerShown: false,
             presentation: "card",
@@ -35,6 +37,7 @@ function AppShell() {
           <Stack.Screen name="signup" />
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="(teacher)" />
+          <Stack.Screen name="(admin)" />
           <Stack.Screen name="teacher" />
           <Stack.Screen name="homework" options={{ gestureEnabled: false }} />
           <Stack.Screen name="exercise/[topic]/[slug]" />
@@ -54,6 +57,7 @@ function AppShell() {
           <Stack.Screen name="demo/individuality" />
           <Stack.Screen name="privacy-policy" />
         </Stack>
+        </StaffModeProvider>
       )}
     </>
   )

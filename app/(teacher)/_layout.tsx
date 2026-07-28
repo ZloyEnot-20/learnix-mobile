@@ -3,6 +3,7 @@ import { StyleSheet } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
+import { useStaffMode } from "../../src/context/StaffModeContext"
 import { isTeacherUser } from "../../src/lib/guest"
 import { TabShellSkeleton } from "../../src/components/skeletons/Layouts"
 import {
@@ -23,16 +24,21 @@ const TAB_BAR_LIFT = 6
 
 export default function TeacherTabsLayout() {
   const { user, isLoading } = useAuth()
+  const { isReady, mode, canSwitch } = useStaffMode()
   const insets = useSafeAreaInsets()
   const tabBarPaddingBottom = Math.max(insets.bottom, 8) + TAB_BAR_LIFT
   const tabBarHeight = 48 + tabBarPaddingBottom
 
-  if (isLoading) {
+  if (isLoading || (canSwitch && !isReady)) {
     return <TabShellSkeleton />
   }
 
   if (!user || !isTeacherUser(user)) {
     return <Redirect href="/login" />
+  }
+
+  if (canSwitch && mode === "admin") {
+    return <Redirect href={"/(admin)" as never} />
   }
 
   return (

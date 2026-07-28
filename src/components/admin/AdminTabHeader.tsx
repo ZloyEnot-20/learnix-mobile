@@ -1,18 +1,18 @@
 import React from "react"
 import { NotificationsBell } from "../NotificationsBell"
-import { StaffModeHeaderControl } from "./StaffModeHeaderControl"
+import { StaffModeHeaderControl } from "../teacher/StaffModeHeaderControl"
 import { spacing } from "../../theme/tokens"
 import { StyleSheet, View } from "react-native"
 
-type TeacherTabHeaderLeftProps = {
+type AdminTabHeaderLeftProps = {
   showName?: boolean
 }
 
-export function TeacherTabHeaderLeft({ showName = false }: TeacherTabHeaderLeftProps) {
+export function AdminTabHeaderLeft({ showName = false }: AdminTabHeaderLeftProps) {
   return <StaffModeHeaderControl showName={showName} />
 }
 
-export function TeacherTabHeaderRight() {
+export function AdminTabHeaderRight() {
   return (
     <View style={styles.right}>
       <NotificationsBell />

@@ -39,6 +39,7 @@ import type { StudentContextResponse } from "./lesson-schedule"
 import type { VocabDeck, TopicMeta, VocabDeckSummary } from "../types/vocabulary"
 import type { PodcastEpisode, PodcastSummary } from "../types/podcast"
 import type { IssueReport, IssueReportPayload } from "../types/issue-report"
+import type { AdminDashboardStats, AdminTeacherOverview, HomeworkReviewItem, AdminBroadcastRecord, AdminAlert } from "../types/admin"
 import { runPerfTrace, type PerfAttributes } from "./perf"
 
 export { peekCached, peekStale, clearApiCache }
@@ -193,6 +194,29 @@ export const studentsApi = {
   },
   deleteAccount: (id: string) =>
     api.post<{ ok: true; deletedAt: string }>(`/students/${id}/delete-account`),
+  update: async (id: string, patch: Partial<StaffStudent>) => {
+    const student = await api.patch<StaffStudent>(`/students/${id}`, patch)
+    invalidateKey(cacheKey("GET", "/students"))
+    return student
+  },
+  block: async (id: string) => {
+    const student = await api.post<StaffStudent>(`/students/${id}/block`)
+    invalidateKey(cacheKey("GET", "/students"))
+    return student
+  },
+  unblock: async (id: string) => {
+    const student = await api.post<StaffStudent>(`/students/${id}/unblock`)
+    invalidateKey(cacheKey("GET", "/students"))
+    return student
+  },
+  resetPassword: (id: string) =>
+    api.post<{
+      login: string
+      password: string
+      confirmation: { login: string; code: string; expiresAt: string }
+    }>(`/students/${id}/reset-password`),
+  notify: (id: string, input: { title: string; message: string }) =>
+    api.post(`/students/${id}/notify`, { ...input, type: "system" }),
 }
 
 export const pushTokenApi = {
@@ -854,5 +878,32 @@ export const analyticsApi = {
 export const issueReportsApi = {
   create: (payload: IssueReportPayload) =>
     api.post<IssueReport>("/issue-reports", payload),
+}
+
+export type {
+  AdminDashboardStats,
+  AdminTeacherOverview,
+  HomeworkReviewItem,
+  AdminBroadcastRecord,
+  AdminAlert,
+  AdminAlertType,
+} from "../types/admin"
+
+export const adminApi = {
+  dashboard: () => api.get<AdminDashboardStats>("/admin/dashboard"),
+  teachers: () => api.get<AdminTeacherOverview[]>("/admin/teachers"),
+  homeworkReviewQueue: () => api.get<HomeworkReviewItem[]>("/admin/homework-review"),
+  broadcast: (input: {
+    audience: "all" | "group" | "student"
+    audienceId?: string
+    title: string
+    message: string
+  }) => api.post<AdminBroadcastRecord>("/admin/notifications/broadcast", input),
+  broadcastHistory: () => api.get<AdminBroadcastRecord[]>("/admin/notifications/history"),
+  alerts: () => api.get<AdminAlert[]>("/admin/alerts"),
+  readAlert: (alertKey: string) =>
+    api.patch<{ ok: boolean }>("/admin/alerts/read", { alertKey }),
+  readAllAlerts: (alertKeys: string[]) =>
+    api.post<{ ok: boolean }>("/admin/alerts/read-all", { alertKeys }),
 }
 

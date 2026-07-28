@@ -21,6 +21,7 @@ import { clearHomeworkListSnapshot } from "../lib/homework-list-cache"
 import { clearLastActivity } from "../lib/last-activity"
 import { prefetchAppMediaAssets } from "../lib/app-cache"
 import { GUEST_USER_ID, isGuestUser } from "../lib/guest"
+import { clearStaffMode } from "../lib/staff-mode"
 import { runPerfTrace } from "../lib/perf"
 
 interface AuthContextValue {
@@ -111,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const userId = user?.id
     const guest = isGuestUser(user)
     await clearTokens()
+    await clearStaffMode()
     clearApiCache()
     clearHomeworkListSnapshot()
     clearHomeScreenSnapshot()
