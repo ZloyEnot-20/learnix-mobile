@@ -34,7 +34,10 @@ let unsubscribeForeground: (() => void) | null = null
 let unsubscribeTokenRefresh: (() => void) | null = null
 let unsubscribeOpenedApp: (() => void) | null = null
 
+const MOBILE_HIDDEN_PUSH_TYPES = new Set(["attendance"])
+
 function refreshFromPush(data?: Record<string, string>): void {
+  if (data?.type && MOBILE_HIDDEN_PUSH_TYPES.has(data.type)) return
   requestNotificationsRefresh()
   if (isLiveLessonPush(data)) {
     requestLiveLessonRefresh()

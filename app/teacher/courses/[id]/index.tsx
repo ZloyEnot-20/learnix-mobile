@@ -10,7 +10,7 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
-import { BackButton } from "../../../../src/components/ui/BackButton"
+import { ScreenBackBar } from "../../../../src/components/ui/ScreenBackBar"
 import { FadeInDown } from "../../../../src/components/ui/FadeInDown"
 import { TeacherDetailSkeleton } from "../../../../src/components/teacher/TeacherSkeletons"
 import { groupsApi, studentsApi } from "../../../../src/lib/api"
@@ -41,7 +41,7 @@ export default function TeacherCourseDetailScreen() {
         setGroup(g)
         setStudents(studentsInGroup(allStudents, id))
       } catch (e) {
-        setError(getUserFacingErrorMessage(e, "Could not load course."))
+        setError(getUserFacingErrorMessage(e, "Could not load group."))
       } finally {
         setLoading(false)
         setRefreshing(false)
@@ -57,14 +57,21 @@ export default function TeacherCourseDetailScreen() {
   )
 
   if (loading) {
-    return <TeacherDetailSkeleton />
+    return (
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        <ScreenBackBar />
+        <TeacherDetailSkeleton />
+      </View>
+    )
   }
 
   const schedule = group ? formatGroupSchedule(group) : null
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <ScreenBackBar />
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -77,9 +84,8 @@ export default function TeacherCourseDetailScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <BackButton />
         <FadeInDown index={0}>
-          <Text style={styles.title}>{group?.name ?? "Course"}</Text>
+          <Text style={styles.title}>{group?.name ?? "Group"}</Text>
           {schedule ? <Text style={styles.subtitle}>{schedule}</Text> : null}
           {group?.description ? (
             <Text style={styles.description}>{group.description}</Text>
@@ -151,11 +157,12 @@ export default function TeacherCourseDetailScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: {
     paddingHorizontal: spacing.screen,
     paddingBottom: spacing.xxl,
   },
-  title: { ...typography.h2, color: colors.text, marginTop: spacing.sm },
+  title: { ...typography.h2, color: colors.text },
   subtitle: { ...typography.bodySm, color: colors.textSecondary, marginTop: 4 },
   description: { ...typography.bodySm, color: colors.textMuted, marginTop: spacing.sm },
   actions: {

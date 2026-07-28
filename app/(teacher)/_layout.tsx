@@ -5,8 +5,12 @@ import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../../src/context/AuthContext"
 import { isTeacherUser } from "../../src/lib/guest"
 import { TabShellSkeleton } from "../../src/components/skeletons/Layouts"
+import {
+  TeacherTabHeaderLeft,
+  TeacherTabHeaderRight,
+} from "../../src/components/teacher/TeacherTabHeader"
 import { colors } from "../../src/theme/tokens"
-
+import { teacherColors } from "../../src/theme/teacher-tokens"
 type TabIcon = keyof typeof Ionicons.glyphMap
 
 function tabIcon(outline: TabIcon, filled: TabIcon) {
@@ -33,8 +37,8 @@ export default function TeacherTabsLayout() {
 
   return (
     <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.primary,
+      screenOptions={({ route }) => ({
+        tabBarActiveTintColor: teacherColors.accentDark,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           backgroundColor: colors.card,
@@ -51,7 +55,10 @@ export default function TeacherTabsLayout() {
         headerStyle: { backgroundColor: colors.background },
         headerTitle: () => null,
         headerShadowVisible: false,
-      }}
+        headerLeft: () => <TeacherTabHeaderLeft showName={route.name === "index"} />,
+        headerLeftContainerStyle: route.name === "index" ? styles.headerLeftWide : undefined,
+        headerRight: () => <TeacherTabHeaderRight />,
+      })}
     >
       <Tabs.Screen
         name="index"
@@ -63,7 +70,7 @@ export default function TeacherTabsLayout() {
       <Tabs.Screen
         name="courses"
         options={{
-          title: "Courses",
+          title: "Groups",
           tabBarIcon: tabIcon("people-outline", "people"),
         }}
       />
@@ -84,3 +91,10 @@ export default function TeacherTabsLayout() {
     </Tabs>
   )
 }
+
+const styles = StyleSheet.create({
+  headerLeftWide: {
+    flexGrow: 1,
+    maxWidth: "72%",
+  },
+})

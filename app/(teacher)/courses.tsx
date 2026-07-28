@@ -15,7 +15,15 @@ import { groupsApi, studentsApi } from "../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../src/lib/api-client"
 import { formatGroupSchedule } from "../../src/lib/teacher-lessons"
 import { groupMemberCount, type Group, type StaffStudent } from "../../src/types/staff"
-import { colors, radius, shadow, spacing, typography } from "../../src/theme/tokens"
+import { colors, radius, spacing, typography } from "../../src/theme/tokens"
+import { teacherColors, teacherShadow } from "../../src/theme/teacher-tokens"
+
+const COURSE_COLORS = [
+  { bg: teacherColors.blueBg, color: teacherColors.blue },
+  { bg: teacherColors.purpleBg, color: teacherColors.purple },
+  { bg: teacherColors.greenBg, color: teacherColors.greenDark },
+  { bg: teacherColors.orangeBg, color: teacherColors.orange },
+]
 
 export default function TeacherCoursesScreen() {
   const router = useRouter()
@@ -35,7 +43,7 @@ export default function TeacherCoursesScreen() {
       setGroups(groupList.sort((a, b) => a.name.localeCompare(b.name)))
       setStudents(studentList)
     } catch (e) {
-      setError(getUserFacingErrorMessage(e, "Could not load courses."))
+      setError(getUserFacingErrorMessage(e, "Could not load groups."))
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -68,45 +76,53 @@ export default function TeacherCoursesScreen() {
         showsVerticalScrollIndicator={false}
       >
         <FadeInDown index={0}>
-          <Text style={styles.title}>My courses</Text>
-          <Text style={styles.subtitle}>Groups you teach</Text>
+          <Text style={styles.title}>My groups</Text>
+          <Text style={styles.subtitle}>{groups.length} groups · tap to open</Text>
         </FadeInDown>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         {groups.length === 0 ? (
-          <View style={[styles.emptyCard, shadow.card]}>
-            <Text style={styles.emptyText}>No courses assigned yet</Text>
+          <View style={[styles.emptyCard, teacherShadow.card]}>
+            <Ionicons name="school-outline" size={36} color={colors.textMuted} />
+            <Text style={styles.emptyText}>No groups assigned yet</Text>
           </View>
         ) : (
           groups.map((group, index) => {
             const count = groupMemberCount(students, group.id)
             const schedule = formatGroupSchedule(group)
+            const palette = COURSE_COLORS[index % COURSE_COLORS.length]
             return (
               <FadeInDown key={group.id} index={Math.min(index + 1, 6)}>
                 <Pressable
                   onPress={() => router.push(`/teacher/courses/${group.id}` as never)}
-                  style={({ pressed }) => [styles.card, shadow.card, pressed && styles.pressed]}
+                  style={({ pressed }) => [
+                    styles.card,
+                    teacherShadow.card,
+                    pressed && styles.pressed,
+                  ]}
                 >
-                  <View style={styles.cardTop}>
-                    <View style={styles.iconWrap}>
-                      <Ionicons name="people" size={18} color={colors.primary} />
-                    </View>
-                    <View style={styles.cardMain}>
-                      <Text style={styles.cardTitle} numberOfLines={1}>
-                        {group.name}
-                      </Text>
-                      {schedule ? (
-                        <Text style={styles.cardMeta} numberOfLines={1}>
-                          {schedule}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+                  <View style={[styles.iconWrap, { backgroundColor: palette.bg }]}>
+                    <Ionicons name="people" size={22} color={palette.color} />
                   </View>
-                  <Text style={styles.count}>
-                    {count} student{count === 1 ? "" : "s"}
-                  </Text>
+                  <View style={styles.cardMain}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                      {group.name}
+                    </Text>
+                    {schedule ? (
+                      <Text style={styles.cardMeta} numberOfLines={1}>
+                        {schedule}
+                      </Text>
+                    ) : null}
+                    <View style={styles.countRow}>
+                      <View style={[styles.countBadge, { backgroundColor: palette.bg }]}>
+                        <Text style={[styles.countText, { color: palette.color }]}>
+                          {count} students
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
                 </Pressable>
               </FadeInDown>
             )
@@ -131,26 +147,34 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     padding: spacing.md,
     marginBottom: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
   },
-  pressed: { opacity: 0.85 },
-  cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  pressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
   iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: colors.primaryLight,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
   cardMain: { flex: 1, minWidth: 0 },
-  cardTitle: { ...typography.label, color: colors.text },
+  cardTitle: { ...typography.label, fontSize: 16, color: colors.text },
   cardMeta: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  count: { ...typography.bodySm, color: colors.textMuted, marginTop: spacing.sm },
+  countRow: { flexDirection: "row", marginTop: spacing.sm },
+  countBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  countText: { ...typography.caption, fontWeight: "700", fontSize: 11 },
   emptyCard: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
-    padding: spacing.lg,
+    padding: spacing.xl,
+    alignItems: "center",
   },
-  emptyText: { ...typography.bodySm, color: colors.textMuted, textAlign: "center" },
+  emptyText: { ...typography.bodySm, color: colors.textMuted, marginTop: spacing.sm },
   error: { ...typography.bodySm, color: colors.error, marginBottom: spacing.sm },
 })

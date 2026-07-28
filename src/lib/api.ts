@@ -524,7 +524,7 @@ export interface NotificationItem {
   createdAt: string
 }
 
-const MOBILE_HIDDEN_NOTIFICATION_TYPES = new Set<string>([])
+const MOBILE_HIDDEN_NOTIFICATION_TYPES = new Set<string>(["attendance"])
 export function filterMobileNotifications<T extends { type: string }>(items: T[]): T[] {
   return items.filter((item) => !MOBILE_HIDDEN_NOTIFICATION_TYPES.has(item.type))
 }
@@ -566,8 +566,12 @@ export const exercisesApi = {
       { staleWhileRevalidate: true, force: opts?.force },
     )
   },
-  summaries: (topic?: string, opts?: { force?: boolean }) => {
-    const path = `/exercises/summary${topic ? `?topic=${encodeURIComponent(topic)}` : ""}`
+  summaries: (topic?: string, opts?: { force?: boolean; category?: string }) => {
+    const params = new URLSearchParams()
+    if (topic) params.set("topic", topic)
+    if (opts?.category) params.set("category", opts.category)
+    const qs = params.toString()
+    const path = `/exercises/summary${qs ? `?${qs}` : ""}`
     const key = cacheKey("GET", path)
     return cachedFetch(
       key,

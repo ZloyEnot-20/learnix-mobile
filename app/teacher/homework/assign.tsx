@@ -12,26 +12,70 @@ import { useLocalSearchParams, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { Ionicons } from "@expo/vector-icons"
 import { BackButton } from "../../../src/components/ui/BackButton"
-import { FadeInDown } from "../../../src/components/ui/FadeInDown"
-import { Spinner } from "../../../src/components/ui/Spinner"
+import { AssignConfirmModal } from "../../../src/components/teacher/AssignConfirmModal"
+import { HorizontalBadgeStrip } from "../../../src/components/teacher/HorizontalBadgeStrip"
+import { HomeworkListRow } from "../../../src/components/teacher/HomeworkListRow"
+import { TeacherMaterialPreviewModal } from "../../../src/components/teacher/TeacherMaterialPreviewModal"
 import { TeacherListSkeleton } from "../../../src/components/teacher/TeacherSkeletons"
 import { useAuth } from "../../../src/context/AuthContext"
-import { exercisesApi, groupsApi, homeworkApi } from "../../../src/lib/api"
+import { groupsApi, homeworkApi } from "../../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../../src/lib/api-client"
-import type { Subject } from "../../../src/types/domain"
+import {
+  ASSIGN_LEVEL_ORDER,
+  materialCartKey,
+  type TeacherMaterialOption,
+} from "../../../src/lib/teacher-materials"
+import {
+  ensureTeacherMaterials,
+  getCachedFilteredMaterials,
+  getCachedFolderMaterials,
+  getCachedLevelCounts,
+  isFolderMaterialsLoading,
+  preloadTeacherMaterials,
+  subscribeTeacherMaterialsCache,
+} from "../../../src/lib/teacher-materials-cache"
 import type { Group } from "../../../src/types/staff"
-import { VOCAB_SLUG_PREFIX } from "../../../src/types/vocabulary"
-import { readingHomeworkSlug } from "../../../src/types/reading"
-import { listeningHomeworkSlug } from "../../../src/types/listening"
-import { colors, radius, shadow, spacing, subjectColors, typography } from "../../../src/theme/tokens"
+import { colors, radius, spacing, typography } from "../../../src/theme/tokens"
+import {
+  ASSIGN_FOLDERS,
+  assignLevelMeta,
+  subjectFolderMeta,
+  teacherColors,
+  type AssignFolder,
+} from "../../../src/theme/teacher-tokens"
 
-const SUBJECTS: Subject[] = ["grammar", "vocabulary", "reading", "listening"]
+type CartItem = TeacherMaterialOption
 
-type MaterialOption = {
-  slug: string
-  title: string
-  subtitle?: string
-}
+const TASK_PAGE_SIZE = 20
+
+const AssignTaskRow = React.memo(function AssignTaskRow({
+  material,
+  folderLabel,
+  selected,
+  assignedPreviously,
+  onToggle,
+  onPreview,
+}: {
+  material: TeacherMaterialOption
+  folderLabel: string
+  selected: boolean
+  assignedPreviously: boolean
+  onToggle: (item: TeacherMaterialOption) => void
+  onPreview: (item: TeacherMaterialOption) => void
+}) {
+  return (
+    <HomeworkListRow
+      title={material.title}
+      subtitle={material.subtitle ?? folderLabel}
+      subject={material.folder}
+      selected={selected}
+      selectionMode
+      assignedPreviously={assignedPreviously}
+      onPress={() => onToggle(material)}
+      onPreview={() => onPreview(material)}
+    />
+  )
+})
 
 function endOfDayIso(dateYmd: string): string {
   const [y, m, d] = dateYmd.split("-").map(Number)
@@ -48,6 +92,10 @@ function defaultDueDate(): string {
   return `${y}-${m}-${day}`
 }
 
+function folderSkipsLevel(folder: AssignFolder | null): boolean {
+  return folder === "listening"
+}
+
 export default function TeacherAssignHomeworkScreen() {
   const { groupId: prefillGroupId } = useLocalSearchParams<{ groupId?: string }>()
   const router = useRouter()
@@ -56,15 +104,26 @@ export default function TeacherAssignHomeworkScreen() {
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [groups, setGroups] = useState<Group[]>([])
   const [groupId, setGroupId] = useState(prefillGroupId ?? "")
-  const [subject, setSubject] = useState<Subject>("grammar")
-  const [materials, setMaterials] = useState<MaterialOption[]>([])
-  const [materialsLoading, setMaterialsLoading] = useState(false)
-  const [exerciseSlug, setExerciseSlug] = useState("")
-  const [title, setTitle] = useState("")
+  const [folder, setFolder] = useState<AssignFolder | null>(null)
+  const [level, setLevel] = useState<string | null>(null)
+  const [cacheVersion, setCacheVersion] = useState(0)
+  const [cart, setCart] = useState<CartItem[]>([])
   const [dueDate, setDueDate] = useState(defaultDueDate())
   const [error, setError] = useState("")
+  const [taskSearch, setTaskSearch] = useState("")
+  const [previewMaterial, setPreviewMaterial] = useState<TeacherMaterialOption | null>(null)
+  const [groupAssignedSlugs, setGroupAssignedSlugs] = useState<Set<string>>(() => new Set())
+  const [taskPage, setTaskPage] = useState(1)
+
+  useEffect(() => {
+    void preloadTeacherMaterials()
+    return subscribeTeacherMaterialsCache(() => {
+      setCacheVersion((v) => v + 1)
+    })
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -80,97 +139,189 @@ export default function TeacherAssignHomeworkScreen() {
     })()
   }, [])
 
-  const loadMaterials = useCallback(async (nextSubject: Subject) => {
-    setMaterialsLoading(true)
-    setExerciseSlug("")
-    try {
-      let options: MaterialOption[] = []
-      if (nextSubject === "grammar") {
-        const topics = await exercisesApi.topics()
-        const topicSlugs = topics
-          .map((t) => t.slug || t.topic)
-          .filter((s): s is string => Boolean(s))
-          .slice(0, 12)
-        const summaries = await Promise.all(
-          topicSlugs.map((slug) => exercisesApi.summaries(slug)),
-        )
-        options = summaries.flat().map((ex) => ({
-          slug: ex.slug,
-          title: ex.title,
-          subtitle: ex.topic,
-        }))
-      } else if (nextSubject === "vocabulary") {
-        const decks = await exercisesApi.vocabSummaries()
-        options = decks.map((d) => ({
-          slug: d.slug.startsWith(VOCAB_SLUG_PREFIX) ? d.slug : `${VOCAB_SLUG_PREFIX}${d.slug}`,
-          title: d.title,
-          subtitle: d.level,
-        }))
-      } else if (nextSubject === "reading") {
-        const items = await exercisesApi.readingSummaries()
-        options = items.map((r) => ({
-          slug: readingHomeworkSlug(r.slug),
-          title: r.title,
-          subtitle: r.level ?? r.subtitle,
-        }))
-      } else if (nextSubject === "listening") {
-        const items = await exercisesApi.listeningSummaries()
-        options = items.map((l) => ({
-          slug: listeningHomeworkSlug(l.slug),
-          title: l.title,
-          subtitle: l.subtitle,
-        }))
-      }
-      setMaterials(options)
-    } catch (e) {
-      setMaterials([])
-      setError(getUserFacingErrorMessage(e, "Could not load materials."))
-    } finally {
-      setMaterialsLoading(false)
+  useEffect(() => {
+    if (!groupId) {
+      setGroupAssignedSlugs(new Set())
+      return
     }
+
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await homeworkApi.list()
+        if (cancelled) return
+        const slugs = new Set<string>()
+        for (const hw of list) {
+          if (hw.groupId === groupId && hw.exerciseSlug) slugs.add(hw.exerciseSlug)
+        }
+        setGroupAssignedSlugs(slugs)
+      } catch {
+        if (!cancelled) setGroupAssignedSlugs(new Set())
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [groupId])
+
+  const selectFolder = useCallback((nextFolder: AssignFolder) => {
+    setFolder(nextFolder)
+    setTaskSearch("")
+    setTaskPage(1)
+    if (folderSkipsLevel(nextFolder)) {
+      setLevel("IELTS")
+    }
+    void ensureTeacherMaterials(nextFolder)
+  }, [])
+
+  const selectLevel = useCallback((nextLevel: string) => {
+    setLevel(nextLevel)
+    setTaskSearch("")
+    setTaskPage(1)
   }, [])
 
   useEffect(() => {
-    void loadMaterials(subject)
-  }, [subject, loadMaterials])
+    setTaskPage(1)
+  }, [folder, level, taskSearch])
 
-  useEffect(() => {
-    const selected = materials.find((m) => m.slug === exerciseSlug)
-    if (selected && !title.trim()) {
-      setTitle(selected.title)
-    }
-  }, [exerciseSlug])
+  const folderMaterialsReady = folder ? getCachedFolderMaterials(folder) !== undefined : false
+
+  const materials = useMemo(() => {
+    if (!folder || !level || !folderMaterialsReady) return []
+    return getCachedFilteredMaterials(folder, level) ?? []
+  }, [folder, level, folderMaterialsReady, cacheVersion])
+
+  const filteredMaterials = useMemo(() => {
+    const query = taskSearch.trim().toLowerCase()
+    if (!query) return materials
+    return materials.filter((m) => {
+      const title = m.title.toLowerCase()
+      const subtitle = (m.subtitle ?? "").toLowerCase()
+      return title.includes(query) || subtitle.includes(query)
+    })
+  }, [materials, taskSearch])
+
+  const visibleMaterials = useMemo(
+    () => filteredMaterials.slice(0, taskPage * TASK_PAGE_SIZE),
+    [filteredMaterials, taskPage],
+  )
+
+  const hasMoreTasks = visibleMaterials.length < filteredMaterials.length
+
+  const folderMaterialsLoading = folder ? isFolderMaterialsLoading(folder) : false
 
   const selectedGroup = useMemo(
     () => groups.find((g) => g.id === groupId) ?? null,
     [groups, groupId],
   )
 
-  const canSubmit = Boolean(groupId && subject && exerciseSlug && title.trim() && dueDate)
+  const cartKeys = useMemo(() => new Set(cart.map(materialCartKey)), [cart])
+  const canAssign = Boolean(groupId && cart.length > 0)
+  const levelCounts = useMemo(() => {
+    if (!folder || !folderMaterialsReady) return {}
+    return getCachedLevelCounts(folder) ?? {}
+  }, [folder, folderMaterialsReady, cacheVersion])
+  const folderLabel = folder ? (subjectFolderMeta[folder]?.label ?? folder) : ""
 
-  const submit = async () => {
-    if (!canSubmit) return
+  const typeBadges = useMemo(
+    () =>
+      ASSIGN_FOLDERS.map((id) => {
+        const meta = subjectFolderMeta[id]
+        return {
+          id,
+          label: meta?.label ?? id,
+          icon: meta?.icon,
+          bg: meta?.bg,
+          color: meta?.color,
+        }
+      }),
+    [],
+  )
+
+  const levelBadges = useMemo(
+    () =>
+      ASSIGN_LEVEL_ORDER.map((id) => {
+        const meta = assignLevelMeta[id]
+        const count = folderMaterialsReady ? (levelCounts[id] ?? 0) : null
+        return {
+          id,
+          label: meta?.label ?? id,
+          sublabel: count != null ? String(count) : undefined,
+          icon: meta?.icon,
+          bg: meta?.bg,
+          color: meta?.color,
+        }
+      }),
+    [levelCounts, folderMaterialsReady],
+  )
+
+  const toggleMaterial = useCallback((material: TeacherMaterialOption) => {
+    const key = materialCartKey(material)
+    setCart((prev) => {
+      if (prev.some((item) => materialCartKey(item) === key)) {
+        return prev.filter((item) => materialCartKey(item) !== key)
+      }
+      return [...prev, material]
+    })
+  }, [])
+
+  const openPreview = useCallback((material: TeacherMaterialOption) => {
+    setPreviewMaterial(material)
+  }, [])
+
+  const loadMoreTasks = useCallback(() => {
+    if (visibleMaterials.length < filteredMaterials.length) {
+      setTaskPage((page) => page + 1)
+    }
+  }, [visibleMaterials.length, filteredMaterials.length])
+
+  const removeFromCart = useCallback((material: CartItem) => {
+    const key = materialCartKey(material)
+    setCart((prev) => prev.filter((item) => materialCartKey(item) !== key))
+  }, [])
+
+  const submit = async (pickedDueDate: string) => {
+    if (!groupId || cart.length === 0 || !pickedDueDate) return
     setSubmitting(true)
     setError("")
     try {
-      await homeworkApi.create({
-        title: title.trim(),
-        subject,
-        groupId,
-        dueAt: endOfDayIso(dueDate),
-        exerciseSlug,
-        estimatedMinutes: 15,
-        createdBy: user?.id,
+      const dueAt = endOfDayIso(pickedDueDate)
+      setDueDate(pickedDueDate)
+      await Promise.all(
+        cart.map((item) =>
+          homeworkApi.create({
+            title: item.title,
+            subject: item.homeworkSubject,
+            groupId,
+            dueAt,
+            exerciseSlug: item.slug,
+            estimatedMinutes: item.estimatedMinutes ?? 15,
+            createdBy: user?.id,
+          }),
+        ),
+      )
+      setGroupAssignedSlugs((prev) => {
+        const next = new Set(prev)
+        for (const item of cart) next.add(item.slug)
+        return next
       })
-      Alert.alert("Assigned", "Homework has been assigned to the group.", [
-        {
-          text: "OK",
-          onPress: () => {
-            if (router.canGoBack()) router.back()
-            else router.replace("/(teacher)/homework" as never)
+      setConfirmOpen(false)
+      Alert.alert(
+        "Assigned",
+        cart.length === 1
+          ? "Homework has been assigned to the group."
+          : `${cart.length} assignments have been sent to the group.`,
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              if (router.canGoBack()) router.back()
+              else router.replace("/(teacher)/homework" as never)
+            },
           },
-        },
-      ])
+        ],
+      )
     } catch (e) {
       setError(getUserFacingErrorMessage(e, "Could not assign homework."))
     } finally {
@@ -178,213 +329,360 @@ export default function TeacherAssignHomeworkScreen() {
     }
   }
 
+  const renderListEmpty = useCallback(() => {
+    if (!folder || !level) return null
+    if (materials.length === 0) {
+      return (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>No materials in this folder</Text>
+        </View>
+      )
+    }
+    if (filteredMaterials.length === 0) {
+      return (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>No tests match your search</Text>
+        </View>
+      )
+    }
+    return null
+  }, [folder, level, materials.length, filteredMaterials.length])
+
+  const showTaskSkeleton = Boolean(folder && level && folderMaterialsLoading && !folderMaterialsReady)
+  const listEmpty = renderListEmpty()
+
   if (loading) {
-    return <TeacherListSkeleton count={3} />
+    return (
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        <View style={styles.topBar}>
+          <BackButton onPress={() => router.back()} />
+          <Text style={styles.screenTitle}>Assign homework</Text>
+          <View style={styles.topSpacer} />
+        </View>
+        <TeacherListSkeleton count={3} />
+      </View>
+    )
   }
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <View style={styles.topBar}>
+        <BackButton onPress={() => router.back()} />
+        <Text style={styles.screenTitle}>Assign homework</Text>
+        {cart.length > 0 ? (
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>{cart.length}</Text>
+          </View>
+        ) : (
+          <View style={styles.topSpacer} />
+        )}
+      </View>
+
       <ScrollView
-        contentContainerStyle={styles.content}
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <BackButton />
-        <FadeInDown index={0}>
-          <Text style={styles.title}>Assign homework</Text>
-          <Text style={styles.subtitle}>Pick a group, material, and due date</Text>
-        </FadeInDown>
-
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Text style={styles.label}>Group</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-          {groups.map((g) => {
-            const active = g.id === groupId
-            return (
-              <Pressable
-                key={g.id}
-                onPress={() => setGroupId(g.id)}
-                style={[styles.chip, active && styles.chipActive]}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>{g.name}</Text>
-              </Pressable>
-            )
-          })}
-        </ScrollView>
-        {selectedGroup ? (
-          <Text style={styles.hint}>Selected: {selectedGroup.name}</Text>
-        ) : null}
-
-        <Text style={[styles.label, styles.labelSpaced]}>Subject</Text>
-        <View style={styles.subjectRow}>
-          {SUBJECTS.map((s) => {
-            const active = s === subject
-            const color = subjectColors[s] ?? colors.primary
-            return (
-              <Pressable
-                key={s}
-                onPress={() => setSubject(s)}
-                style={[
-                  styles.subjectChip,
-                  active && { backgroundColor: `${color}33`, borderColor: color },
-                ]}
-              >
-                <Text style={[styles.subjectText, active && { color: colors.text, fontWeight: "700" }]}>
-                  {s}
-                </Text>
-              </Pressable>
-            )
-          })}
+        <Text style={styles.sectionLabel}>Group</Text>
+        <View style={styles.groupScrollWrap}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.badgeScroll}
+            nestedScrollEnabled
+          >
+            {groups.map((g) => {
+              const active = g.id === groupId
+              return (
+                <Pressable
+                  key={g.id}
+                  onPress={() => setGroupId(g.id)}
+                  style={({ pressed }) => [
+                    styles.chip,
+                    active && styles.chipActive,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
+                    {g.name}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </ScrollView>
         </View>
 
-        <Text style={[styles.label, styles.labelSpaced]}>Material</Text>
-        {materialsLoading ? (
-          <View style={styles.materialsLoading}>
-            <Spinner size={28} />
-          </View>
-        ) : materials.length === 0 ? (
-          <View style={[styles.emptyCard, shadow.card]}>
-            <Text style={styles.emptyText}>No materials for this subject</Text>
-          </View>
-        ) : (
-          materials.slice(0, 40).map((m) => {
-            const active = m.slug === exerciseSlug
-            return (
+        <Text style={styles.sectionLabel}>Type</Text>
+        <HorizontalBadgeStrip
+          items={typeBadges}
+          selectedId={folder}
+          onSelect={(id) => selectFolder(id as AssignFolder)}
+          edgeToEdge
+        />
+
+        <Text style={styles.sectionLabel}>Level</Text>
+        <HorizontalBadgeStrip
+          items={levelBadges}
+          selectedId={level}
+          onSelect={selectLevel}
+          edgeToEdge
+          reserveSublabel={Boolean(folder)}
+        />
+
+        {folder && level ? (
+          <>
+            <Text style={styles.sectionLabel}>
+              Tasks · {folderLabel} · {level}
+              {filteredMaterials.length > 0 ? ` · ${filteredMaterials.length}` : ""}
+            </Text>
+            <View style={styles.searchWrap}>
+              <Ionicons name="search" size={18} color={colors.textMuted} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                value={taskSearch}
+                onChangeText={setTaskSearch}
+                placeholder="Search by test name"
+                placeholderTextColor={colors.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+              {taskSearch.length > 0 ? (
+                <Pressable onPress={() => setTaskSearch("")} hitSlop={8} style={styles.searchClear}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {showTaskSkeleton ? (
+              <TeacherListSkeleton count={4} />
+            ) : listEmpty ? (
+              listEmpty
+            ) : (
+              visibleMaterials.map((m) => (
+                <AssignTaskRow
+                  key={m.slug}
+                  material={m}
+                  folderLabel={folderLabel}
+                  selected={cartKeys.has(materialCartKey(m))}
+                  assignedPreviously={groupAssignedSlugs.has(m.slug)}
+                  onToggle={toggleMaterial}
+                  onPreview={openPreview}
+                />
+              ))
+            )}
+
+            {hasMoreTasks ? (
               <Pressable
-                key={m.slug}
-                onPress={() => {
-                  setExerciseSlug(m.slug)
-                  setTitle(m.title)
-                }}
-                style={[styles.materialCard, shadow.card, active && styles.materialActive]}
+                onPress={loadMoreTasks}
+                style={({ pressed }) => [styles.loadMoreBtn, pressed && styles.pressed]}
               >
-                <View style={styles.materialMain}>
-                  <Text style={styles.materialTitle} numberOfLines={1}>
-                    {m.title}
-                  </Text>
-                  {m.subtitle ? (
-                    <Text style={styles.materialSub} numberOfLines={1}>
-                      {m.subtitle}
-                    </Text>
-                  ) : null}
-                </View>
-                {active ? <Ionicons name="checkmark-circle" size={20} color={colors.primary} /> : null}
+                <Text style={styles.loadMoreText}>
+                  Load more · {visibleMaterials.length} of {filteredMaterials.length}
+                </Text>
               </Pressable>
-            )
-          })
+            ) : null}
+          </>
+        ) : folder && folderSkipsLevel(folder) ? null : (
+          <Text style={styles.hint}>Pick a type and level to see tasks.</Text>
         )}
 
-        <Text style={[styles.label, styles.labelSpaced]}>Title</Text>
-        <TextInput
-          style={styles.input}
-          value={title}
-          onChangeText={setTitle}
-          placeholder="Homework title"
-          placeholderTextColor={colors.textMuted}
-        />
+        {cart.length > 0 ? (
+          <View style={styles.cartSection}>
+            <Text style={styles.sectionLabel}>Selected · {cart.length}</Text>
+            {cart.map((item) => (
+              <View key={materialCartKey(item)} style={styles.cartRow}>
+                <View style={styles.cartRowMain}>
+                  <Text style={styles.cartRowTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.cartRowMeta}>
+                    {subjectFolderMeta[item.folder]?.label ?? item.folder}
+                  </Text>
+                </View>
+                <Pressable onPress={() => removeFromCart(item)} hitSlop={8}>
+                  <Ionicons name="close" size={18} color={colors.textMuted} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
-        <Text style={styles.label}>Due date (YYYY-MM-DD)</Text>
-        <TextInput
-          style={styles.input}
-          value={dueDate}
-          onChangeText={setDueDate}
-          autoCapitalize="none"
-          placeholder="2026-08-03"
-          placeholderTextColor={colors.textMuted}
-        />
+        <View style={styles.listBottomSpacer} />
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+        <Text style={styles.footerMeta} numberOfLines={1}>
+          {selectedGroup?.name ?? "Group"} · {cart.length} task{cart.length === 1 ? "" : "s"}
+        </Text>
         <Pressable
-          style={[styles.submitBtn, (!canSubmit || submitting) && styles.submitDisabled]}
-          onPress={() => void submit()}
-          disabled={!canSubmit || submitting}
+          style={[styles.submitBtn, (!canAssign || submitting) && styles.submitDisabled]}
+          onPress={() => setConfirmOpen(true)}
+          disabled={!canAssign || submitting}
         >
-          {submitting ? <Spinner size={22} /> : <Text style={styles.submitText}>Assign homework</Text>}
+          <Text style={styles.submitText}>
+            Assign{cart.length > 0 ? ` (${cart.length})` : ""}
+          </Text>
         </Pressable>
       </View>
+
+      <AssignConfirmModal
+        visible={confirmOpen}
+        onClose={() => !submitting && setConfirmOpen(false)}
+        onConfirm={(date) => void submit(date)}
+        onRemoveItem={removeFromCart}
+        onPreviewItem={setPreviewMaterial}
+        submitting={submitting}
+        groupName={selectedGroup?.name ?? "Group"}
+        cart={cart}
+        initialDueDate={dueDate}
+      />
+
+      <TeacherMaterialPreviewModal
+        visible={previewMaterial != null}
+        material={previewMaterial}
+        onClose={() => setPreviewMaterial(null)}
+      />
     </View>
   )
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
-  content: {
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: spacing.screen,
-    paddingBottom: 110,
+    paddingBottom: spacing.sm,
+    gap: spacing.sm,
   },
-  title: { ...typography.h2, color: colors.text, marginTop: spacing.sm },
-  subtitle: {
-    ...typography.bodySm,
-    color: colors.textSecondary,
-    marginTop: 4,
-    marginBottom: spacing.lg,
+  screenTitle: { ...typography.h3, color: colors.text, flex: 1, fontSize: 18 },
+  cartBadge: {
+    minWidth: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: teacherColors.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
   },
-  label: { ...typography.label, color: colors.text, marginBottom: spacing.sm },
-  labelSpaced: { marginTop: spacing.lg },
-  chipScroll: { marginBottom: spacing.xs },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: radius.button,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: spacing.sm,
+  cartBadgeText: { ...typography.caption, fontWeight: "800", color: "#FFFFFF" },
+  topSpacer: { width: 28 },
+  scroll: {
+    flex: 1,
   },
-  chipActive: {
-    backgroundColor: colors.primaryLight,
-    borderColor: colors.primary,
+  scrollContent: {
+    paddingHorizontal: spacing.screen,
+    paddingBottom: spacing.sm,
   },
-  chipText: { ...typography.label, color: colors.textSecondary, fontSize: 13 },
-  chipTextActive: { color: colors.primary },
-  hint: { ...typography.caption, color: colors.textMuted, marginBottom: spacing.sm },
-  subjectRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
-  subjectChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.button,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    textTransform: "capitalize",
+  groupScrollWrap: {
+    flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: spacing.xs,
   },
-  subjectText: { ...typography.caption, color: colors.textSecondary, textTransform: "capitalize" },
-  materialsLoading: { paddingVertical: spacing.xl, alignItems: "center" },
-  materialCard: {
-    backgroundColor: colors.card,
-    borderRadius: radius.card,
-    padding: spacing.md,
+  listBottomSpacer: {
+    height: 120,
+  },
+  loadMoreBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.sm,
     marginBottom: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    backgroundColor: colors.card,
+  },
+  loadMoreText: {
+    ...typography.label,
+    color: teacherColors.accentDark,
+    fontSize: 13,
+  },
+  sectionLabel: {
+    ...typography.caption,
+    color: colors.textMuted,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
+  },
+  searchWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderRadius: radius.input,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.md,
+    minHeight: 44,
+  },
+  searchIcon: {
+    marginRight: spacing.xs,
+  },
+  searchInput: {
+    flex: 1,
+    ...typography.bodySm,
+    color: colors.text,
+    paddingVertical: 10,
+  },
+  searchClear: {
+    marginLeft: spacing.xs,
+  },
+  badgeScroll: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.sm,
-    borderWidth: 1,
-    borderColor: "transparent",
+    paddingBottom: spacing.xs,
   },
-  materialActive: { borderColor: colors.primary },
-  materialMain: { flex: 1, minWidth: 0 },
-  materialTitle: { ...typography.label, color: colors.text },
-  materialSub: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.input,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.text,
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: radius.pill,
     backgroundColor: colors.card,
-    marginBottom: spacing.md,
+    marginRight: spacing.sm,
+    alignSelf: "center",
   },
+  chipActive: {
+    backgroundColor: teacherColors.accentLight,
+    borderWidth: 1,
+    borderColor: teacherColors.accentMuted,
+  },
+  chipText: { ...typography.label, color: colors.text, fontSize: 13 },
+  chipTextActive: { fontWeight: "800", color: teacherColors.accentDark },
+  loadingBox: { paddingVertical: spacing.md, alignItems: "center" },
   emptyCard: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
     padding: spacing.lg,
-    marginBottom: spacing.md,
+    alignItems: "center",
   },
-  emptyText: { ...typography.bodySm, color: colors.textMuted, textAlign: "center" },
+  emptyText: { ...typography.bodySm, color: colors.textMuted },
+  hint: {
+    ...typography.bodySm,
+    color: colors.textMuted,
+    textAlign: "center",
+    paddingVertical: spacing.lg,
+  },
+  cartSection: {
+    marginTop: spacing.sm,
+  },
+  cartRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: 6,
+  },
+  cartRowMain: { flex: 1, minWidth: 0 },
+  cartRowTitle: { ...typography.label, color: colors.text, fontSize: 13 },
+  cartRowMeta: { ...typography.caption, color: colors.textMuted, marginTop: 2 },
   footer: {
     position: "absolute",
     left: 0,
@@ -395,16 +693,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderLight,
+    gap: spacing.sm,
+  },
+  footerMeta: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: "center",
   },
   submitBtn: {
-    backgroundColor: colors.primary,
+    backgroundColor: teacherColors.accent,
     borderRadius: radius.button,
     paddingVertical: 16,
     alignItems: "center",
     minHeight: 52,
     justifyContent: "center",
   },
-  submitDisabled: { opacity: 0.6 },
-  submitText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  submitDisabled: { opacity: 0.5 },
+  submitText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
   error: { ...typography.bodySm, color: colors.error, marginBottom: spacing.sm },
+  pressed: { opacity: 0.88 },
 })

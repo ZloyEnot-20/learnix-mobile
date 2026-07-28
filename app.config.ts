@@ -101,6 +101,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         cameraPermission: false,
       },
     ],
+    "@react-native-community/datetimepicker",
   ],
   experiments: {
     typedRoutes: true,

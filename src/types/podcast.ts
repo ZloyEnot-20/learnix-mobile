@@ -49,6 +49,10 @@ export function podcastHasWords(episode: PodcastEpisode): boolean {
 
 export const PODCAST_SLUG_PREFIX = "podcast:"
 
+export function podcastHomeworkSlug(slug: string): string {
+  return `${PODCAST_SLUG_PREFIX}${slug}`
+}
+
 export function parsePodcastHomeworkSlug(exerciseSlug: string | undefined): string | null {
   if (!exerciseSlug) return null
   return exerciseSlug.startsWith(PODCAST_SLUG_PREFIX)

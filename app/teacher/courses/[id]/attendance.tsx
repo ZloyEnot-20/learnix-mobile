@@ -11,7 +11,7 @@ import {
 } from "react-native"
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { BackButton } from "../../../../src/components/ui/BackButton"
+import { ScreenBackBar } from "../../../../src/components/ui/ScreenBackBar"
 import { FadeInDown } from "../../../../src/components/ui/FadeInDown"
 import { Spinner } from "../../../../src/components/ui/Spinner"
 import { TeacherAttendanceSkeleton } from "../../../../src/components/teacher/TeacherSkeletons"
@@ -147,12 +147,19 @@ export default function TeacherAttendanceScreen() {
   }
 
   if (loading) {
-    return <TeacherAttendanceSkeleton />
+    return (
+      <View style={[styles.root, { paddingTop: insets.top }]}>
+        <ScreenBackBar />
+        <TeacherAttendanceSkeleton />
+      </View>
+    )
   }
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
+      <ScreenBackBar />
       <ScrollView
+        style={styles.scroll}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
@@ -166,7 +173,6 @@ export default function TeacherAttendanceScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <BackButton />
         <FadeInDown index={0}>
           <Text style={styles.title}>Attendance</Text>
           <Text style={styles.subtitle}>
@@ -254,11 +260,12 @@ export default function TeacherAttendanceScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
+  scroll: { flex: 1 },
   content: {
     paddingHorizontal: spacing.screen,
     paddingBottom: 100,
   },
-  title: { ...typography.h2, color: colors.text, marginTop: spacing.sm },
+  title: { ...typography.h2, color: colors.text },
   subtitle: { ...typography.bodySm, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.md },
   label: { ...typography.label, color: colors.text, marginBottom: spacing.xs },
   input: {

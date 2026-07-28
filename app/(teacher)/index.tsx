@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react"
+import React, { useCallback, useMemo, useState } from "react"
 import {
   RefreshControl,
   ScrollView,
@@ -8,11 +8,19 @@ import {
 } from "react-native"
 import { useFocusEffect, useRouter } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
-import { useAuth } from "../../src/context/AuthContext"
 import { FadeInDown } from "../../src/components/ui/FadeInDown"
 import { TeacherHomeSkeleton } from "../../src/components/teacher/TeacherSkeletons"
-import { TeacherLessonCard } from "../../src/components/teacher/TeacherLessonCard"
-import { notificationsApi, type NotificationItem } from "../../src/lib/api"
+import { TeacherServiceGrid } from "../../src/components/teacher/TeacherServiceGrid"
+import { TeacherStatCard } from "../../src/components/teacher/TeacherStatCard"
+import { TimetableDayStrip } from "../../src/components/teacher/TimetableDayStrip"
+import { TimetableLessonBlock } from "../../src/components/teacher/TimetableLessonBlock"
+import {
+  groupsApi,
+  homeworkApi,
+  notificationsApi,
+  studentsApi,
+  type NotificationItem,
+} from "../../src/lib/api"
 import { getUserFacingErrorMessage } from "../../src/lib/api-client"
 import { fetchTeacherLessons } from "../../src/lib/teacher-data"
 import {
@@ -21,32 +29,66 @@ import {
   upcomingLessons,
   type LessonWithGroup,
 } from "../../src/lib/teacher-lessons"
+import { groupMemberCount } from "../../src/types/staff"
 import { colors, radius, shadow, spacing, typography } from "../../src/theme/tokens"
+import { teacherColors } from "../../src/theme/teacher-tokens"
+
+function buildWeekDates(center: string): string[] {
+  const [y, m, d] = center.split("-").map(Number)
+  const base = new Date(y, (m || 1) - 1, d || 1)
+  const dates: string[] = []
+  for (let i = -2; i <= 4; i += 1) {
+    const dt = new Date(base)
+    dt.setDate(dt.getDate() + i)
+    const yy = dt.getFullYear()
+    const mm = String(dt.getMonth() + 1).padStart(2, "0")
+    const dd = String(dt.getDate()).padStart(2, "0")
+    dates.push(`${yy}-${mm}-${dd}`)
+  }
+  return dates
+}
+
+function formatHeaderDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  const dt = new Date(y, (m || 1) - 1, d || 1)
+  return dt.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })
+}
 
 export default function TeacherHomeScreen() {
-  const { user } = useAuth()
   const router = useRouter()
+  const today = todayIsoDate()
+  const weekDates = useMemo(() => buildWeekDates(today), [today])
+
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState("")
-  const [todayLessons, setTodayLessons] = useState<LessonWithGroup[]>([])
-  const [upcoming, setUpcoming] = useState<LessonWithGroup[]>([])
+  const [selectedDate, setSelectedDate] = useState(today)
+  const [allLessons, setAllLessons] = useState<LessonWithGroup[]>([])
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
-
-  const firstName = user?.name?.split(" ")[0] || "Teacher"
-  const today = todayIsoDate()
+  const [groupCount, setGroupCount] = useState(0)
+  const [studentCount, setStudentCount] = useState(0)
+  const [reviewCount, setReviewCount] = useState(0)
 
   const load = useCallback(
     async (force = false) => {
       setError("")
       try {
-        const [{ lessons }, notifs] = await Promise.all([
+        const [{ lessons }, notifs, groups, students, check] = await Promise.all([
           fetchTeacherLessons(undefined, { force }),
           notificationsApi.list({ force }).catch(() => [] as NotificationItem[]),
+          groupsApi.list({ force }),
+          studentsApi.list({ force }),
+          homeworkApi.check({ force }).catch(() => ({ assignments: [], records: [] })),
         ])
-        setTodayLessons(lessonsOnDate(lessons, today))
-        setUpcoming(upcomingLessons(lessons, today, 5))
-        setNotifications(notifs.slice(0, 5))
+        setAllLessons(lessons)
+        setNotifications(notifs.slice(0, 4))
+        setGroupCount(groups.length)
+        const activeStudents = students.filter((s) => !s.deletedAt)
+        setStudentCount(
+          groups.reduce((sum, g) => sum + groupMemberCount(activeStudents, g.id), 0),
+        )
+        const submitted = check.records.filter((r) => r.status === "submitted").length
+        setReviewCount(submitted)
       } catch (e) {
         setError(getUserFacingErrorMessage(e, "Could not load teacher home."))
       } finally {
@@ -54,7 +96,7 @@ export default function TeacherHomeScreen() {
         setRefreshing(false)
       }
     },
-    [today],
+    [],
   )
 
   useFocusEffect(
@@ -62,6 +104,22 @@ export default function TeacherHomeScreen() {
       void load()
     }, [load]),
   )
+
+  const lessonsByDate = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const l of allLessons) {
+      if (l.canceled) continue
+      map[l.date] = (map[l.date] ?? 0) + 1
+    }
+    return map
+  }, [allLessons])
+
+  const dayLessons = useMemo(
+    () => lessonsOnDate(allLessons, selectedDate),
+    [allLessons, selectedDate],
+  )
+  const todayLessons = useMemo(() => lessonsOnDate(allLessons, today), [allLessons, today])
+  const upcoming = useMemo(() => upcomingLessons(allLessons, today, 3), [allLessons, today])
 
   const openAttendance = (lesson: LessonWithGroup) => {
     router.push(`/teacher/courses/${lesson.groupId}/attendance?date=${lesson.date}` as never)
@@ -87,59 +145,141 @@ export default function TeacherHomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <FadeInDown index={0}>
-          <Text style={styles.greeting}>Hello, {firstName}</Text>
-          <Text style={styles.subGreeting}>Today’s classes and updates</Text>
+          <View style={styles.statsRow}>
+            <TeacherStatCard
+              label="Today's lessons"
+              value={String(todayLessons.length)}
+              icon="calendar"
+              iconBg={teacherColors.accentLight}
+              iconColor={teacherColors.accentDark}
+              onPress={() => setSelectedDate(today)}
+            />
+            <TeacherStatCard
+              label="To review"
+              value={String(reviewCount)}
+              icon="clipboard"
+              iconBg={teacherColors.orangeBg}
+              iconColor={teacherColors.orange}
+              accent={reviewCount > 0 ? teacherColors.orange : undefined}
+              onPress={() => router.push("/(teacher)/homework" as never)}
+            />
+          </View>
+          <View style={styles.statsRow}>
+            <TeacherStatCard
+              label="Groups"
+              value={String(groupCount)}
+              icon="people"
+              iconBg={teacherColors.blueBg}
+              iconColor={teacherColors.blue}
+              onPress={() => router.push("/(teacher)/courses" as never)}
+            />
+            <TeacherStatCard
+              label="Students"
+              value={String(studentCount)}
+              icon="person"
+              iconBg={teacherColors.greenBg}
+              iconColor={teacherColors.greenDark}
+              tall
+              onPress={() => router.push("/(teacher)/courses" as never)}
+            />
+          </View>
         </FadeInDown>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <FadeInDown index={1}>
-          <Text style={styles.sectionTitle}>Today</Text>
-          {todayLessons.length === 0 ? (
-            <View style={[styles.emptyCard, shadow.card]}>
-              <Text style={styles.emptyText}>No lessons scheduled for today</Text>
-            </View>
-          ) : (
-            todayLessons.map((lesson) => (
-              <TeacherLessonCard
-                key={lesson.id}
-                lesson={lesson}
-                actionLabel={lesson.attendanceMarked ? "View attendance" : "Mark attendance"}
-                onPress={() => openAttendance(lesson)}
-              />
-            ))
-          )}
-        </FadeInDown>
-
-        <FadeInDown index={2}>
-          <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Upcoming</Text>
-          {upcoming.length === 0 ? (
-            <View style={[styles.emptyCard, shadow.card]}>
-              <Text style={styles.emptyText}>No upcoming lessons</Text>
-            </View>
-          ) : (
-            upcoming.map((lesson) => (
-              <TeacherLessonCard
-                key={lesson.id}
-                lesson={lesson}
-                onPress={() => openAttendance(lesson)}
-              />
-            ))
-          )}
+          <TeacherServiceGrid
+            items={[
+              {
+                id: "assign",
+                label: "Assign HW",
+                icon: "add-circle",
+                bg: teacherColors.purpleBg,
+                color: teacherColors.purple,
+                onPress: () => router.push("/teacher/homework/assign" as never),
+              },
+              {
+                id: "attendance",
+                label: "Attendance",
+                icon: "checkmark-done",
+                bg: teacherColors.greenBg,
+                color: teacherColors.greenDark,
+                onPress: () => {
+                  const lesson = todayLessons[0]
+                  if (lesson) openAttendance(lesson)
+                  else router.push("/(teacher)/courses" as never)
+                },
+              },
+              {
+                id: "groups",
+                label: "Groups",
+                icon: "school",
+                bg: teacherColors.blueBg,
+                color: teacherColors.blue,
+                onPress: () => router.push("/(teacher)/courses" as never),
+              },
+              {
+                id: "review",
+                label: "Review",
+                icon: "ribbon",
+                bg: teacherColors.orangeBg,
+                color: teacherColors.orange,
+                onPress: () => router.push("/(teacher)/homework" as never),
+              },
+            ]}
+          />
         </FadeInDown>
 
         <FadeInDown index={3}>
-          <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Notifications</Text>
-          {notifications.length === 0 ? (
+          <Text style={styles.sectionTitle}>Schedule</Text>
+          <TimetableDayStrip
+            dates={weekDates}
+            selected={selectedDate}
+            counts={lessonsByDate}
+            onSelect={setSelectedDate}
+          />
+          <Text style={styles.dateLabel}>{formatHeaderDate(selectedDate)}</Text>
+          {dayLessons.length === 0 ? (
             <View style={[styles.emptyCard, shadow.card]}>
-              <Text style={styles.emptyText}>No recent notifications</Text>
+              <Ionicons name="sunny-outline" size={28} color={teacherColors.accentDark} />
+              <Text style={styles.emptyTitle}>No lessons</Text>
+              <Text style={styles.emptyText}>Nothing scheduled for this day</Text>
             </View>
           ) : (
-            notifications.map((item) => (
+            dayLessons.map((lesson) => (
+              <TimetableLessonBlock
+                key={lesson.id}
+                lesson={lesson}
+                onPress={() => openAttendance(lesson)}
+              />
+            ))
+          )}
+        </FadeInDown>
+
+        {upcoming.length > 0 ? (
+          <FadeInDown index={4}>
+            <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Coming up</Text>
+            {upcoming.map((lesson) => (
+              <TimetableLessonBlock
+                key={lesson.id}
+                lesson={lesson}
+                onPress={() => openAttendance(lesson)}
+              />
+            ))}
+          </FadeInDown>
+        ) : null}
+
+        {notifications.length > 0 ? (
+          <FadeInDown index={5}>
+            <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Updates</Text>
+            {notifications.map((item) => (
               <View key={item.id} style={[styles.notifCard, shadow.card]}>
-                <View style={styles.notifIcon}>
-                  <Ionicons name="notifications-outline" size={18} color={colors.primary} />
-                </View>
+                <View
+                  style={[
+                    styles.notifDot,
+                    { backgroundColor: item.read ? colors.border : teacherColors.accent },
+                  ]}
+                />
                 <View style={styles.notifMain}>
                   <Text style={styles.notifTitle} numberOfLines={1}>
                     {item.title}
@@ -149,9 +289,9 @@ export default function TeacherHomeScreen() {
                   </Text>
                 </View>
               </View>
-            ))
-          )}
-        </FadeInDown>
+            ))}
+          </FadeInDown>
+        ) : null}
       </ScrollView>
     </View>
   )
@@ -164,21 +304,27 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.xxl,
   },
-  greeting: { ...typography.h2, color: colors.text },
-  subGreeting: { ...typography.bodySm, color: colors.textSecondary, marginTop: 4, marginBottom: spacing.lg },
-  sectionTitle: {
-    ...typography.label,
-    color: colors.text,
+  statsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
     marginBottom: spacing.sm,
   },
+  sectionTitle: { ...typography.label, color: colors.text, marginBottom: spacing.sm },
   sectionSpaced: { marginTop: spacing.lg },
+  dateLabel: {
+    ...typography.bodySm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
   emptyCard: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
-    padding: spacing.lg,
+    padding: spacing.xl,
+    alignItems: "center",
     marginBottom: spacing.md,
   },
-  emptyText: { ...typography.bodySm, color: colors.textMuted, textAlign: "center" },
+  emptyTitle: { ...typography.label, color: colors.text, marginTop: spacing.sm },
+  emptyText: { ...typography.bodySm, color: colors.textMuted, marginTop: 4 },
   notifCard: {
     backgroundColor: colors.card,
     borderRadius: radius.card,
@@ -186,21 +332,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     flexDirection: "row",
     gap: spacing.sm,
+    alignItems: "flex-start",
   },
-  notifIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: colors.primaryLight,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  notifDot: { width: 8, height: 8, borderRadius: 4, marginTop: 6 },
   notifMain: { flex: 1, minWidth: 0 },
   notifTitle: { ...typography.label, color: colors.text },
   notifMessage: { ...typography.bodySm, color: colors.textSecondary, marginTop: 2 },
-  error: {
-    ...typography.bodySm,
-    color: colors.error,
-    marginBottom: spacing.sm,
-  },
+  error: { ...typography.bodySm, color: colors.error, marginBottom: spacing.sm },
 })
